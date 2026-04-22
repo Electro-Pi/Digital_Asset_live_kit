@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant GUI</title>
+    <!-- Include LiveKit JS Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Include Google web fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="glass-container">
+        <!-- Visual representation of the agent -->
+        <div class="agent-avatar">
+            <div class="orbit"></div>
+            <div class="core"></div>
+        </div>
+
+        <h1>Voice Agent</h1>
+        <p class="status" id="statusText">Disconnected</p>
+
+        <div class="visualizer" id="visualizer">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+        </div>
+
+        <div id="chatContainer" class="chat-container">
+            <!-- Messages appear here -->
+        </div>
+
+        <button id="connectBtn" class="btn primary">Start Conversation</button>
+    </div>
+
+    <!-- Our application logic -->
+    <script src="app.js"></script>
+</body>
+</html>
