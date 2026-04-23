@@ -1,8 +1,19 @@
 const connectBtn = document.getElementById('connectBtn');
+const muteBtn = document.getElementById('muteBtn');
 const statusText = document.getElementById('statusText');
-const visualizer = document.getElementById('visualizer');
+const localViz = document.getElementById('localViz');
+const remoteViz = document.getElementById('remoteViz');
+const localPill = document.getElementById('localPill');
+const remotePill = document.getElementById('remotePill');
 
 let room = null;
+let remoteAudioEls = [];
+let micEnabled = false;
+
+function setVizActive(el, active) {
+    if (!el) return;
+    el.classList.toggle('active', !!active);
+}
 
 async function requestMicrophone() {
     try {
@@ -18,6 +29,7 @@ async function connectToAgent() {
         statusText.innerText = "Connecting...";
         connectBtn.disabled = true;
         connectBtn.innerText = "Please Wait...";
+        muteBtn.disabled = true;
         
         // 1. Authorize mic manually first to ensure playback policy matches
         await requestMicrophone();
@@ -45,30 +57,28 @@ async function connectToAgent() {
             // Agent's track arrived!
             if (track.kind === LivekitClient.Track.Kind.Audio) {
                 const audioEl = track.attach();
+                audioEl.autoplay = true;
+                audioEl.playsInline = true;
+                audioEl.dataset.lkParticipant = participant?.identity || '';
                 document.body.appendChild(audioEl);
-                visualizer.classList.add('active'); // Start moving visualizer bars
+                remoteAudioEls.push(audioEl);
+
+                // user gesture already happened (button click), so this should succeed
+                Promise.resolve(audioEl.play()).catch(() => {});
+
+                setVizActive(remoteViz, true);
+                remotePill.innerText = "speaking";
             }
         });
 
         room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track) => {
             track.detach();
-            visualizer.classList.remove('active');
+            setVizActive(remoteViz, false);
+            remotePill.innerText = "silent";
         });
 
         room.on(LivekitClient.RoomEvent.Disconnected, () => {
             handleDisconnectUI();
-        });
-
-        // 3.5 Handle incoming text responses from Agent over DataChannel
-        room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant, kind, topic) => {
-            const textMsg = new TextDecoder("utf-8").decode(payload);
-            const chatContainer = document.getElementById('chatContainer');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'chat-message agent-msg';
-            msgDiv.dir = 'auto'; // Support Arabic RTL formatting properly
-            msgDiv.innerText = textMsg;
-            chatContainer.appendChild(msgDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight; // Auto-scroll to bottom
         });
 
         // 4. Connect to Livekit
@@ -76,6 +86,11 @@ async function connectToAgent() {
         
         // 5. Connect and enable local mic (so agent can hear you)
         await room.localParticipant.setMicrophoneEnabled(true);
+        micEnabled = true;
+        localPill.innerText = "mic on";
+        setVizActive(localViz, true);
+        muteBtn.disabled = false;
+        muteBtn.innerText = "Mute Mic";
         
         // 6. Update UI
         statusText.innerText = "Agent is Listening";
@@ -100,11 +115,23 @@ function handleDisconnectUI() {
     }
     statusText.innerText = "Disconnected";
     statusText.classList.remove('connected');
-    visualizer.classList.remove('active');
+    micEnabled = false;
+    localPill.innerText = "mic off";
+    remotePill.innerText = "silent";
+    setVizActive(localViz, false);
+    setVizActive(remoteViz, false);
+
+    // cleanup any attached remote audio elements
+    for (const el of remoteAudioEls) {
+        try { el.remove(); } catch (_) {}
+    }
+    remoteAudioEls = [];
+
     connectBtn.innerText = "Start Conversation";
     connectBtn.classList.remove('danger');
     connectBtn.classList.add('primary');
     connectBtn.disabled = false;
+    muteBtn.disabled = true;
 }
 
 connectBtn.addEventListener('click', () => {
@@ -113,4 +140,13 @@ connectBtn.addEventListener('click', () => {
     } else {
         connectToAgent();
     }
+});
+
+muteBtn.addEventListener('click', async () => {
+    if (!room) return;
+    micEnabled = !micEnabled;
+    await room.localParticipant.setMicrophoneEnabled(micEnabled);
+    localPill.innerText = micEnabled ? "mic on" : "mic off";
+    setVizActive(localViz, micEnabled);
+    muteBtn.innerText = micEnabled ? "Mute Mic" : "Unmute Mic";
 });

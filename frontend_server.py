@@ -25,8 +25,15 @@ def get_token(room_name: str = None, participant_name: str = "web-user"):
     if "your-project" in LIVEKIT_URL or "your_api_key" in LIVEKIT_API_KEY:
         raise HTTPException(status_code=500, detail="Please replace placeholder credentials in .env.local with real ones.")
 
-    # Create an Access Token allowing the user to join, publish, and subscribe
-    grant = VideoGrants(room_join=True, room=room_name)
+    # Create an Access Token allowing the user to join, publish, subscribe, and use data channels.
+    # Some deployments require these flags explicitly even though SDK defaults may work elsewhere.
+    grant = VideoGrants(
+        room_join=True,
+        room=room_name,
+        can_publish=True,
+        can_subscribe=True,
+        can_publish_data=True,
+    )
     access_token = (
         AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
         .with_identity(participant_name)

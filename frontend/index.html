@@ -24,19 +24,32 @@
         <h1>Voice Agent</h1>
         <p class="status" id="statusText">Disconnected</p>
 
-        <div class="visualizer" id="visualizer">
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
+        <div class="levels">
+            <div class="level-card">
+                <div class="level-head">
+                    <span class="level-title">You</span>
+                    <span class="level-pill" id="localPill">mic off</span>
+                </div>
+                <div class="visualizer" id="localViz" aria-label="Your mic level">
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                </div>
+            </div>
+
+            <div class="level-card">
+                <div class="level-head">
+                    <span class="level-title">Agent</span>
+                    <span class="level-pill" id="remotePill">silent</span>
+                </div>
+                <div class="visualizer" id="remoteViz" aria-label="Agent audio level">
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                </div>
+            </div>
         </div>
 
-        <div id="chatContainer" class="chat-container">
-            <!-- Messages appear here -->
+        <div class="btn-row">
+            <button id="connectBtn" class="btn primary">Start Conversation</button>
+            <button id="muteBtn" class="btn secondary" disabled>Mute Mic</button>
         </div>
-
-        <button id="connectBtn" class="btn primary">Start Conversation</button>
     </div>
 
     <!-- Our application logic -->
