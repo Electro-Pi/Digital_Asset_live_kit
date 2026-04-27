@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import aiohttp
 from livekit import rtc
 from livekit.agents import APIConnectionError, APIStatusError, AgentSession, llm, plugin, vad
+from livekit.agents.llm.utils import build_legacy_openai_schema
 from livekit.agents.types import (
     DEFAULT_API_CONNECT_OPTIONS,
     APIConnectOptions,
@@ -95,20 +96,20 @@ class Gemma4AudioLLM(llm.LLM):
         tool_choice: NotGivenOr[llm.ToolChoice] = NOT_GIVEN,
         extra_kwargs: NotGivenOr[dict[str, object]] = NOT_GIVEN,
     ) -> llm.LLMStream:
-        if tools:
-            logger.warning("Gemma4AudioLLM ignores LiveKit tool definitions for now.")
-        if parallel_tool_calls is not NOT_GIVEN:
-            logger.warning("Gemma4AudioLLM does not support parallel tool calls.")
-        if tool_choice is not NOT_GIVEN:
-            logger.warning("Gemma4AudioLLM does not support tool_choice overrides.")
+        extra: dict[str, object] = {}
         if extra_kwargs is not NOT_GIVEN:
-            logger.warning("Gemma4AudioLLM ignores extra_kwargs for now.")
+            extra.update(extra_kwargs)
+        if tool_choice is not NOT_GIVEN:
+            extra["tool_choice"] = tool_choice
+        if parallel_tool_calls is not NOT_GIVEN:
+            extra["parallel_tool_calls"] = parallel_tool_calls
 
         return _Gemma4AudioLLMStream(
             self,
             chat_ctx=chat_ctx,
             tools=tools or [],
             conn_options=conn_options,
+            extra=extra,
         )
 
     async def generate_reply_from_audio(
@@ -174,24 +175,49 @@ class Gemma4AudioLLM(llm.LLM):
         _Gemma4RoomAudioBridge(self, room=room, session=session, vad_model=vad_model).attach()
 
     async def _build_messages(self, chat_ctx: llm.ChatContext) -> list[dict[str, object]]:
-        messages = chat_ctx.messages()
-        latest_audio_message_id = next(
-            (
-                message.id
-                for message in reversed(messages)
-                if any(isinstance(content, llm.AudioContent) for content in message.content)
-            ),
-            None,
-        )
+        items = list(chat_ctx.items)
+        latest_audio_message_id: str | None = None
+        for item in reversed(items):
+            if isinstance(item, llm.ChatMessage) and any(
+                isinstance(c, llm.AudioContent) for c in item.content
+            ):
+                latest_audio_message_id = item.id
+                break
 
         payload_messages: list[dict[str, object]] = []
-        for message in messages:
-            payload_messages.append(
-                await self._message_to_provider_payload(
-                    message,
-                    include_audio=message.id == latest_audio_message_id,
+        for item in items:
+            if isinstance(item, llm.ChatMessage):
+                payload_messages.append(
+                    await self._message_to_provider_payload(
+                        item,
+                        include_audio=item.id == latest_audio_message_id,
+                    )
                 )
-            )
+            elif isinstance(item, llm.FunctionCall):
+                payload_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": item.call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": item.name,
+                                    "arguments": item.arguments or "",
+                                },
+                            }
+                        ],
+                    }
+                )
+            elif isinstance(item, llm.FunctionCallOutput):
+                payload_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": item.call_id,
+                        "content": item.output or "",
+                    }
+                )
         return payload_messages
 
     async def _message_to_provider_payload(
@@ -311,18 +337,32 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
         chat_ctx: llm.ChatContext,
         tools: list[llm.Tool],
         conn_options: APIConnectOptions,
+        extra: dict[str, object] | None = None,
     ) -> None:
         super().__init__(llm_v, chat_ctx=chat_ctx, tools=tools, conn_options=conn_options)
         self._gemma_llm = llm_v
+        self._extra = extra or {}
 
     async def _run(self) -> None:
         messages = await self._gemma_llm._build_messages(self.chat_ctx)
-        payload = {
+        payload: dict[str, object] = {
             "model": self._gemma_llm.model,
             "messages": messages,
             "max_tokens": self._gemma_llm._max_tokens,
             "stream": True,
         }
+
+        tool_specs: list[dict[str, object]] = []
+        for tool in self._tools or []:
+            if llm.is_function_tool(tool) or llm.is_raw_function_tool(tool):
+                try:
+                    tool_specs.append(build_legacy_openai_schema(tool, internally_tagged=False))
+                except Exception as exc:
+                    logger.warning("failed to serialize tool %r: %s", tool, exc)
+        if tool_specs:
+            payload["tools"] = tool_specs
+        for key, value in self._extra.items():
+            payload[key] = value
 
         headers = {"Content-Type": "application/json"}
         if self._gemma_llm._api_key:
@@ -339,6 +379,7 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
         request_id: str | None = None
         chunk_id: str | None = None
         usage_obj: llm.CompletionUsage | None = None
+        tool_call_acc: dict[int, dict[str, str]] = {}
 
         try:
             timeout = aiohttp.ClientTimeout(total=self._conn_options.timeout)
@@ -386,6 +427,8 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
                             )
                         )
 
+                    _accumulate_tool_calls(chunk, tool_call_acc)
+
                     maybe_usage = self._gemma_llm._extract_usage(chunk)
                     if maybe_usage is not None:
                         usage_obj = maybe_usage
@@ -396,6 +439,28 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
                 f"Gemma connection error: {exc}",
                 retryable=True,
             ) from exc
+
+        if tool_call_acc:
+            tool_calls: list[llm.FunctionToolCall] = []
+            for idx in sorted(tool_call_acc.keys()):
+                entry = tool_call_acc[idx]
+                name = entry.get("name") or ""
+                if not name:
+                    continue
+                tool_calls.append(
+                    llm.FunctionToolCall(
+                        name=name,
+                        arguments=entry.get("arguments", "") or "",
+                        call_id=entry.get("id") or uuid.uuid4().hex,
+                    )
+                )
+            if tool_calls:
+                self._event_ch.send_nowait(
+                    llm.ChatChunk(
+                        id=chunk_id or uuid.uuid4().hex,
+                        delta=llm.ChoiceDelta(role="assistant", tool_calls=tool_calls),
+                    )
+                )
 
         if usage_obj is not None:
             self._event_ch.send_nowait(
@@ -424,6 +489,40 @@ def _extract_delta_text(chunk: dict[str, object]) -> str:
                     parts.append(item["text"])
         return "".join(parts)
     return ""
+
+
+def _accumulate_tool_calls(
+    chunk: dict[str, object],
+    acc: dict[int, dict[str, str]],
+) -> None:
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return
+    first = choices[0]
+    if not isinstance(first, dict):
+        return
+    delta = first.get("delta") or first.get("message")
+    if not isinstance(delta, dict):
+        return
+    tool_calls = delta.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        return
+    for i, tc in enumerate(tool_calls):
+        if not isinstance(tc, dict):
+            continue
+        idx = tc.get("index")
+        if not isinstance(idx, int):
+            idx = i
+        entry = acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+        if isinstance(tc.get("id"), str) and tc["id"]:
+            entry["id"] = tc["id"]
+        fn = tc.get("function")
+        if isinstance(fn, dict):
+            if isinstance(fn.get("name"), str) and fn["name"]:
+                entry["name"] = fn["name"]
+            args = fn.get("arguments")
+            if isinstance(args, str):
+                entry["arguments"] += args
 
 
 def _safe_json_loads(payload: str) -> object:
