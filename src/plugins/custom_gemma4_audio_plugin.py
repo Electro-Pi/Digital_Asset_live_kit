@@ -213,12 +213,12 @@ class Gemma4AudioLLM(llm.LLM):
                 if include_audio and content.frame:
                     if transcript:
                         text_parts.append(transcript)
+                    b64 = self._encode_audio_base64(content.frame)
                     multimodal_parts.append(
                         {
-                            "type": "input_audio",
-                            "input_audio": {
-                                "data": self._encode_audio_base64(content.frame),
-                                "format": "wav",
+                            "type": "audio_url",
+                            "audio_url": {
+                                "url": f"data:audio/wav;base64,{b64}",
                             },
                         }
                     )
@@ -227,9 +227,9 @@ class Gemma4AudioLLM(llm.LLM):
 
         if multimodal_parts:
             content: list[dict[str, object]] = []
+            content.extend(multimodal_parts)
             if text_parts:
                 content.append({"type": "text", "text": "\n".join(text_parts)})
-            content.extend(multimodal_parts)
             return {"role": message.role, "content": content}
 
         return {"role": message.role, "content": "\n".join(text_parts)}
@@ -328,6 +328,13 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
             headers["Authorization"] = f"Bearer {self._gemma_llm._api_key}"
 
         session = await self._gemma_llm._ensure_session()
+        debug_payload = {**payload, "messages": [
+            {**m, "content": (
+                [{**p, "audio_url": {"url": "<b64-omitted>"}} if p.get("type") == "audio_url" else p for p in m["content"]]
+                if isinstance(m.get("content"), list) else m.get("content")
+            )} for m in payload["messages"]
+        ]}
+        logger.info("Gemma payload: %s", json.dumps(debug_payload)[:2000])
         raw_response = ""
         request_id: str | None = None
 
