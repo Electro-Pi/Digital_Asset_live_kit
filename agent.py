@@ -47,7 +47,7 @@ async def my_agent(ctx: agents.JobContext):
 
     vad = silero.VAD.load()
     gemma_llm = Gemma4AudioLLM(
-        base_url="http://127.0.0.1:8000/v1",
+        base_url="http://211.21.50.85:57025/v1",
         model="gemma4",
         api_key="needed",
     )
@@ -55,7 +55,7 @@ async def my_agent(ctx: agents.JobContext):
         vad=vad,
         llm=gemma_llm,
         tts=F5FastAPIPlugin(
-            server_url="http://127.0.0.1:2222/",
+            server_url="http://211.21.50.85:57023",
             sample_rate=24000,
         ),
     )
