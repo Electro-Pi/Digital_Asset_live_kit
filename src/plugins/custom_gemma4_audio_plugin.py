@@ -173,7 +173,7 @@ class Gemma4AudioLLM(llm.LLM):
     ) -> None:
         _Gemma4RoomAudioBridge(self, room=room, session=session, vad_model=vad_model).attach()
 
-    def _build_messages(self, chat_ctx: llm.ChatContext) -> list[dict[str, object]]:
+    async def _build_messages(self, chat_ctx: llm.ChatContext) -> list[dict[str, object]]:
         messages = chat_ctx.messages()
         latest_audio_message_id = next(
             (
@@ -187,14 +187,14 @@ class Gemma4AudioLLM(llm.LLM):
         payload_messages: list[dict[str, object]] = []
         for message in messages:
             payload_messages.append(
-                self._message_to_provider_payload(
+                await self._message_to_provider_payload(
                     message,
                     include_audio=message.id == latest_audio_message_id,
                 )
             )
         return payload_messages
 
-    def _message_to_provider_payload(
+    async def _message_to_provider_payload(
         self,
         message: llm.ChatMessage,
         *,
@@ -213,7 +213,7 @@ class Gemma4AudioLLM(llm.LLM):
                 if include_audio and content.frame:
                     if transcript:
                         text_parts.append(transcript)
-                    b64 = self._encode_audio_base64(content.frame)
+                    b64 = await asyncio.to_thread(self._encode_audio_base64, content.frame)
                     multimodal_parts.append(
                         {
                             "type": "audio_url",
@@ -316,11 +316,12 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
         self._gemma_llm = llm_v
 
     async def _run(self) -> None:
+        messages = await self._gemma_llm._build_messages(self.chat_ctx)
         payload = {
             "model": self._gemma_llm.model,
-            "messages": self._gemma_llm._build_messages(self.chat_ctx),
+            "messages": messages,
             "max_tokens": self._gemma_llm._max_tokens,
-            "stream": False,
+            "stream": True,
         }
 
         headers = {"Content-Type": "application/json"}
@@ -334,9 +335,10 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
                 if isinstance(m.get("content"), list) else m.get("content")
             )} for m in payload["messages"]
         ]}
-        logger.info("Gemma payload: %s", json.dumps(debug_payload)[:2000])
-        raw_response = ""
+        logger.debug("Gemma payload: %s", json.dumps(debug_payload)[:2000])
         request_id: str | None = None
+        chunk_id: str | None = None
+        usage_obj: llm.CompletionUsage | None = None
 
         try:
             timeout = aiohttp.ClientTimeout(total=self._conn_options.timeout)
@@ -347,16 +349,46 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
                 timeout=timeout,
             ) as response:
                 request_id = response.headers.get("x-request-id")
-                raw_response = await response.text()
 
                 if response.status != 200:
+                    body = await response.text()
                     raise APIStatusError(
                         f"Gemma request failed with status {response.status}",
                         status_code=response.status,
                         request_id=request_id,
-                        body=_safe_json_loads(raw_response),
+                        body=_safe_json_loads(body),
                         retryable=response.status == 429 or response.status >= 500,
                     )
+
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8", errors="ignore").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(chunk, dict):
+                        continue
+
+                    if chunk_id is None:
+                        chunk_id = str(chunk.get("id") or request_id or uuid.uuid4().hex)
+
+                    delta_text = _extract_delta_text(chunk)
+                    if delta_text:
+                        self._event_ch.send_nowait(
+                            llm.ChatChunk(
+                                id=chunk_id,
+                                delta=llm.ChoiceDelta(role="assistant", content=delta_text),
+                            )
+                        )
+
+                    maybe_usage = self._gemma_llm._extract_usage(chunk)
+                    if maybe_usage is not None:
+                        usage_obj = maybe_usage
         except asyncio.TimeoutError as exc:
             raise APIConnectionError("Gemma request timed out.", retryable=True) from exc
         except aiohttp.ClientError as exc:
@@ -365,34 +397,33 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
                 retryable=True,
             ) from exc
 
-        try:
-            data = json.loads(raw_response) if raw_response else {}
-        except json.JSONDecodeError as exc:
-            raise APIConnectionError(
-                "Gemma response was not valid JSON.",
-                retryable=False,
-            ) from exc
-
-        if not isinstance(data, dict):
-            raise APIConnectionError(
-                "Gemma response payload was not a JSON object.",
-                retryable=False,
-            )
-
-        chunk_id = str(data.get("id") or request_id or uuid.uuid4().hex)
-        text = self._gemma_llm._extract_text(data)
-        usage = self._gemma_llm._extract_usage(data)
-
-        if text:
+        if usage_obj is not None:
             self._event_ch.send_nowait(
-                llm.ChatChunk(
-                    id=chunk_id,
-                    delta=llm.ChoiceDelta(role="assistant", content=text),
-                )
+                llm.ChatChunk(id=chunk_id or uuid.uuid4().hex, usage=usage_obj)
             )
 
-        if usage is not None:
-            self._event_ch.send_nowait(llm.ChatChunk(id=chunk_id, usage=usage))
+
+def _extract_delta_text(chunk: dict[str, object]) -> str:
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    delta = first.get("delta") or first.get("message")
+    if not isinstance(delta, dict):
+        return ""
+    content = delta.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                if item.get("type") in {"text", "output_text", None}:
+                    parts.append(item["text"])
+        return "".join(parts)
+    return ""
 
 
 def _safe_json_loads(payload: str) -> object:
@@ -461,7 +492,7 @@ class _Gemma4RoomAudioBridge:
         vad_stream = self._vad.stream()
         audio_buffer: list[rtc.AudioFrame] = []
         is_speaking = False
-        pre_buffer: collections.deque[rtc.AudioFrame] = collections.deque(maxlen=100)
+        pre_buffer: collections.deque[rtc.AudioFrame] = collections.deque(maxlen=10)
 
         async def _push_frames() -> None:
             async for event in audio_stream:

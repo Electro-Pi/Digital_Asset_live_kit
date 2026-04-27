@@ -52,6 +52,7 @@ async def my_agent(ctx: agents.JobContext):
         api_key="needed",
     )
     session = AgentSession(
+        vad=vad,
         llm=gemma_llm,
         tts=F5FastAPIPlugin(
             server_url="http://127.0.0.1:2222/",
