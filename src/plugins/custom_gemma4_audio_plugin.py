@@ -345,6 +345,13 @@ class _Gemma4AudioLLMStream(llm.LLMStream):
 
     async def _run(self) -> None:
         messages = await self._gemma_llm._build_messages(self.chat_ctx)
+        
+        if messages and messages[-1].get("role") == "user":
+            last_content = messages[-1].get("content")
+            if not last_content or (isinstance(last_content, str) and not last_content.strip()):
+                logger.debug("Ignoring empty text trigger from VoicePipelineAgent.")
+                return
+
         payload: dict[str, object] = {
             "model": self._gemma_llm.model,
             "messages": messages,
