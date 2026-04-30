@@ -4,8 +4,6 @@ from typing import Any
 import time
 from loguru import logger
 
-import httpx
-
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
@@ -17,7 +15,6 @@ from livekit.agents import (
     AgentStateChangedEvent,
     MetricsCollectedEvent,
     ToolError,
-    metrics,
 )
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -29,82 +26,54 @@ from src.prompts.agent_prompt import system_prompt
 load_dotenv(".env.local")
 
 
+MENU = {
+    "بيتزا مارغريتا": 35,
+    "بيتزا بيبروني": 42,
+    "برجر لحم": 30,
+    "برجر دجاج": 28,
+    "باستا ألفريدو": 38,
+    "سيزر سالاد": 25,
+    "موهيتو": 18,
+    "عصير برتقال": 12,
+    "ماء": 5,
+}
+
+
 class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=system_prompt,
         )
 
-
-
     @function_tool()
-    async def lookup_weather(
+    async def calculate_order(
         self,
         context: RunContext,
-        location: str,
+        item_name: str,
+        quantity: int = 1,
     ) -> dict[str, Any]:
         """
-        Look up weather information for a given location.
+        Calculate order total price and estimated delivery time.
 
         Args:
-            location: The location to look up weather information for.
+            item_name: Food or drink name from restaurant menu
+            quantity: Number of items ordered
         """
-        
-        # await context.session.say("هشفهولك حالا.")
 
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        if item_name not in MENU:
+            raise ToolError(f"Item not found: {item_name}")
 
-            # ---------------------------
-            # 1. Geocoding
-            # ---------------------------
-            geo_response = await client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={
-                    "name": location,
-                    "count": 1,
-                    "language": "en",
-                },
-            )
+        unit_price = MENU[item_name]
+        total_price = unit_price * quantity
 
-            if geo_response.status_code != 200:
-                raise ToolError(f"Geocoding API failed for: {location}")
-
-            geo_data = geo_response.json()
-
-            results = geo_data.get("results")
-            if not results:
-                raise ToolError(f"Could not find location: {location}")
-
-            lat = results[0]["latitude"]
-            lon = results[0]["longitude"]
-            place_name = results[0]["name"]
-
-            # ---------------------------
-            # 2. Weather API
-            # ---------------------------
-            weather_response = await client.get(
-                "https://api.open-meteo.com/v1/forecast",
-                params={
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": ["temperature_2m", "weathercode"],
-                    "temperature_unit": "celsius",
-                },
-            )
-
-            if weather_response.status_code != 200:
-                raise ToolError(f"Weather API failed for: {location}")
-
-            weather_data = weather_response.json()
-
-            current = weather_data.get("current", {})
-
-            if not current:
-                raise ToolError("No current weather data returned")
+        # simple mock delivery estimate
+        delivery_time = "ثلاثين إلى خمسة وأربعين دقيقة"
 
         return {
-            "location": place_name,
-            "summary": f"{current.get('temperature_2m')}°C",
+            "item_name": item_name,
+            "quantity": quantity,
+            "total_price_sar": total_price,
+            "delivery_time": delivery_time,
         }
 
 
@@ -114,45 +83,27 @@ server = AgentServer()
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     session = AgentSession(
-        # stt=groq.STT(
-        #     model="whisper-large-v3-turbo",
-        #     language="ar",
-        # ),
         stt=openai.STT(
-            base_url="http://211.21.50.85:57019/v1",
-            model="stt_ar_fastconformer_hybrid_large_pcd_v1.0",
+            base_url="http://8.213.50.155:8002/v1",
+            model="/home/ai/vllm-sera/models/cohere-transcribe",
             api_key="no-key-needed",
             language="ar",
         ),
-        # llm=groq.LLM(model="openai/gpt-oss-20b"),
+
         llm=openai.LLM(
             base_url="http://8.213.50.155:8001/v1",
             model="gemma4",
             api_key="needed",
         ),
-        # tts=openai.TTS(
-        #     base_url="http://211.21.50.85:57010/v1",
-        #     model="orpheus",
-        #     voice="tara",
-        #     api_key="no-key-needed",
-        # ),
+
         tts=F5FastAPIPlugin(
-            server_url="http://211.21.50.85:57023",  # Change to your FastAPI server URL
+            server_url="http://211.21.50.85:57023",
             sample_rate=24000,
         ),
-        # tts=groq.TTS(model="canopylabs/orpheus-arabic-saudi", voice="fahad"),
-        # tts=F5TTSPlugin(
-        #     server_url="http://45.81.32.2:11096/",
-        #     model_name="f5_tts",
-        #     reference_audio_path="speech.wav",
-        #     reference_text="جصتي تبدا من ايام ما كنا نزور بيت خوالي",
-        #     sample_rate=24000,
-        # ),
+
         vad=silero.VAD.load(),
         turn_detection=MultilingualModel(),
-        # preemptive_generation=True
     )
-
 
     last_eou_metrics = None
     collected_metrics = []
@@ -165,7 +116,6 @@ async def my_agent(ctx: agents.JobContext):
             last_eou_metrics = event.metrics
 
         collected_metrics.append(event.metrics)
-
         logger.info(f"Metrics collected: {event.metrics}")
 
     async def log_usage():
@@ -206,16 +156,11 @@ async def my_agent(ctx: agents.JobContext):
 
     await session.generate_reply(
         instructions=(
-            "Greet the user, and you must use the tool "
-            "to tell the user the weather in Egypt"
+            "ابدأ بالترحيب بالعميل في مطعم فينيرو، "
+            "واسأله بشكل طبيعي: وش تحب تطلب اليوم؟"
         )
     )
 
 
 if __name__ == "__main__":
     agents.cli.run_app(server)
-
-
-
-
-    
