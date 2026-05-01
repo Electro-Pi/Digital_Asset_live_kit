@@ -19,7 +19,7 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
+from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
 
 
@@ -95,10 +95,15 @@ async def my_agent(ctx: agents.JobContext):
             model="gemma4",
             api_key="needed",
         ),
-
-        tts=F5FastAPIPlugin(
-            server_url="http://211.21.50.85:57023",
-            sample_rate=24000,
+        # OpenAI TTS plugin: only "tts-1"/"tts-1-hd" use binary audio; other names expect SSE
+        # (speech.audio.delta). Custom PCM servers need one of those or parsing yields no frames.
+        tts=OpenAITTSWithSpeechExtraBody(
+            speech_extra_body={"language": "ars"},
+            model="tts-1",
+            voice="clone:ron_voice",
+            base_url="https://explain-known-first-disturbed.trycloudflare.com/v1",
+            api_key="no-key-needed",
+            response_format="pcm",
         ),
 
         vad=silero.VAD.load(),
