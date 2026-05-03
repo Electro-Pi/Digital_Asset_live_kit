@@ -21,8 +21,8 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
 from src.prompts.agent_prompt import system_prompt
-
-
+from src.plugins.custom_vllm_stt import CustomVLLMSTT
+    
 load_dotenv(".env.local")
 
 
@@ -83,11 +83,14 @@ server = AgentServer()
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     session = AgentSession(
-        stt=openai.STT(
+        stt=CustomVLLMSTT(
             base_url="http://8.213.50.155:8002/v1",
             model="/home/ai/vllm-sera/models/cohere-transcribe",
             api_key="no-key-needed",
             language="ar",
+            temperature=0.0,
+            task="transcribe",
+            prompt="",
         ),
 
         llm=openai.LLM(
