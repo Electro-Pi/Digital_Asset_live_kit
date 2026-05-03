@@ -19,6 +19,8 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
+from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
+from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
 
@@ -83,11 +85,12 @@ server = AgentServer()
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     session = AgentSession(
-        stt=openai.STT(
+        stt=STTWithTemperature(
             base_url="http://8.213.50.155:8002/v1",
             model="/home/ai/vllm-sera/models/cohere-transcribe",
             api_key="no-key-needed",
             language="ar",
+            temperature=0.0,
         ),
 
         llm=openai.LLM(
@@ -95,15 +98,16 @@ async def my_agent(ctx: agents.JobContext):
             model="gemma4",
             api_key="needed",
         ),
-        # OpenAI TTS plugin: only "tts-1"/"tts-1-hd" use binary audio; other names expect SSE
-        # (speech.audio.delta). Custom PCM servers need one of those or parsing yields no frames.
+        # OpenAI TTS: "tts-1"/"tts-1-hd" use binary PCM; other model names use SSE parsing.
+        # Najdi tuning: src/config/omnivoice_najdi_tts.py (OmniVoice ``ars`` + generation_*).
         tts=OpenAITTSWithSpeechExtraBody(
-            speech_extra_body={"language": "ars"},
+            speech_extra_body=najdi_omnivoice_speech_extra_body(),
             model="tts-1",
-            voice="clone:ron_voice",
-            base_url="https://explain-known-first-disturbed.trycloudflare.com/v1",
+            voice="clone:voice_ronn",
+            base_url="http://127.0.0.1:8188/v1",
             api_key="no-key-needed",
             response_format="pcm",
+            speed=1.3,
         ),
 
         vad=silero.VAD.load(),
