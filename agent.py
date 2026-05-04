@@ -3,9 +3,6 @@ import time
 from dotenv import load_dotenv
 from loguru import logger
 
-from google import genai
-from qdrant_client import QdrantClient
-
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
@@ -23,89 +20,14 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
 from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
+from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
+from src.prompts.agent_prompt import sera_system_prompt
+from src.tools.rag_tools import search_sera_knowledge_base
 
 # =============================
 # Load ENV
 # =============================
 load_dotenv(".env.local")
-
-# =============================
-# Clients
-# =============================
-genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-qdrant_client = QdrantClient(
-    url=os.getenv("QDRANT_URL"),
-    api_key=os.getenv("QDRANT_API_KEY")
-)
-
-COLLECTION_NAME = "sera_knowledge_base"
-
-
-@function_tool
-def search_sera_knowledge_base(query: str) -> str:
-    """
-    Search SERA knowledge base for electricity regulations, complaints, and billing info.
-    Use this tool whenever the question requires factual or official information.
-    """
-    try:
-        # 1. Embedding
-        result = genai_client.models.embed_content(
-            model="gemini-embedding-2-preview",
-            contents=query,
-            config={"output_dimensionality": 768}
-        )
-
-        query_vector = result.embeddings[0].values
-
-        # 2. Search
-        search_result = qdrant_client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            using="dense",
-            limit=3,
-            with_payload=True
-        )
-
-        # 3. Format results (VERY IMPORTANT)
-        chunks = [
-            point.payload.get("content", "")
-            for point in search_result.points
-        ]
-
-        if not chunks:
-            return "لا توجد معلومات متاحة في قاعدة البيانات."
-
-        formatted = "\n\n".join(
-            [f"نتيجة {i+1}:\n{text}" for i, text in enumerate(chunks)]
-        )
-
-        return formatted
-
-    except Exception as e:
-        raise ToolError(f"RAG search failed: {str(e)}")
-
-
-# =============================
-# System Prompt
-# =============================
-sera_system_prompt = """
-أنتِ سيرا (Sera)، المساعدة الافتراضية الرسمية للهيئة السعودية لتنظيم الكهرباء (SERA).
-
-مهمتك الأساسية هي مساعدة المستفيدين في:
-- اللوائح والتنظيمات
-- الفواتير
-- الشكاوى
-- إجراءات الكهرباء
-
-القواعد:
-1. تحدثي باللهجة السعودية النجدية.
-2. كوني دافئة واحترافية.
-3. لا تؤلفي معلومات أبداً.
-4. إذا كان السؤال يتطلب معلومات دقيقة أو رسمية → يجب استخدام أداة search_sera_knowledge_base أولاً.
-5. بعد استخدام الأداة، اعتمدي فقط على النتائج.
-6. لا تذكري أبداً أنك ذكاء اصطناعي.
-"""
 
 # =============================
 # Agent
@@ -114,7 +36,7 @@ class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=sera_system_prompt,
-            tools=[search_sera_knowledge_base],  # ✅ ربط الـ RAG
+            tools=[search_sera_knowledge_base],
         )
 
 
@@ -150,14 +72,9 @@ async def my_agent(ctx: agents.JobContext):
         # =============================
         # TTS
         # =============================
-        tts=OpenAITTSWithSpeechExtraBody(
-            speech_extra_body=najdi_omnivoice_speech_extra_body(),
-            model="tts-1",
-            voice="clone:voice_ronn",
-            base_url="http://127.0.0.1:8188/v1",
-            api_key="no-key-needed",
-            response_format="pcm",
-            speed=1.3,
+        tts=F5FastAPIPlugin(
+            server_url="http://127.0.0.1:1111",
+            sample_rate=24000,
         ),
 
         # =============================
