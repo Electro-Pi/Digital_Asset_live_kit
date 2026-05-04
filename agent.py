@@ -73,7 +73,7 @@ async def my_agent(ctx: agents.JobContext):
         # TTS
         # =============================
         tts=F5FastAPIPlugin(
-            server_url="http://127.0.0.1:1111",
+            server_url="http://211.21.50.85:57023",
             sample_rate=24000,
         ),
 
