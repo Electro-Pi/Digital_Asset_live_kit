@@ -1,15 +1,16 @@
-from dotenv import load_dotenv
-from typing import Any
-
+import os
 import time
+from dotenv import load_dotenv
 from loguru import logger
+
+from google import genai
+from qdrant_client import QdrantClient
 
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
-    RunContext,
     function_tool,
     room_io,
     AgentStateChangedEvent,
@@ -22,69 +23,113 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
 from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
-from src.prompts.agent_prompt import system_prompt
 
-
+# =============================
+# Load ENV
+# =============================
 load_dotenv(".env.local")
 
+# =============================
+# Clients
+# =============================
+genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-MENU = {
-    "بيتزا مارغريتا": 35,
-    "بيتزا بيبروني": 42,
-    "برجر لحم": 30,
-    "برجر دجاج": 28,
-    "باستا ألفريدو": 38,
-    "سيزر سالاد": 25,
-    "موهيتو": 18,
-    "عصير برتقال": 12,
-    "ماء": 5,
-}
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_URL"),
+    api_key=os.getenv("QDRANT_API_KEY")
+)
+
+COLLECTION_NAME = "sera_knowledge_base"
 
 
+@function_tool
+def search_sera_knowledge_base(query: str) -> str:
+    """
+    Search SERA knowledge base for electricity regulations, complaints, and billing info.
+    Use this tool whenever the question requires factual or official information.
+    """
+    try:
+        # 1. Embedding
+        result = genai_client.models.embed_content(
+            model="gemini-embedding-2-preview",
+            contents=query,
+            config={"output_dimensionality": 768}
+        )
+
+        query_vector = result.embeddings[0].values
+
+        # 2. Search
+        search_result = qdrant_client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vector,
+            using="dense",
+            limit=3,
+            with_payload=True
+        )
+
+        # 3. Format results (VERY IMPORTANT)
+        chunks = [
+            point.payload.get("content", "")
+            for point in search_result.points
+        ]
+
+        if not chunks:
+            return "لا توجد معلومات متاحة في قاعدة البيانات."
+
+        formatted = "\n\n".join(
+            [f"نتيجة {i+1}:\n{text}" for i, text in enumerate(chunks)]
+        )
+
+        return formatted
+
+    except Exception as e:
+        raise ToolError(f"RAG search failed: {str(e)}")
+
+
+# =============================
+# System Prompt
+# =============================
+sera_system_prompt = """
+أنتِ سيرا (Sera)، المساعدة الافتراضية الرسمية للهيئة السعودية لتنظيم الكهرباء (SERA).
+
+مهمتك الأساسية هي مساعدة المستفيدين في:
+- اللوائح والتنظيمات
+- الفواتير
+- الشكاوى
+- إجراءات الكهرباء
+
+القواعد:
+1. تحدثي باللهجة السعودية النجدية.
+2. كوني دافئة واحترافية.
+3. لا تؤلفي معلومات أبداً.
+4. إذا كان السؤال يتطلب معلومات دقيقة أو رسمية → يجب استخدام أداة search_sera_knowledge_base أولاً.
+5. بعد استخدام الأداة، اعتمدي فقط على النتائج.
+6. لا تذكري أبداً أنك ذكاء اصطناعي.
+"""
+
+# =============================
+# Agent
+# =============================
 class Assistant(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions=system_prompt,
+            instructions=sera_system_prompt,
+            tools=[search_sera_knowledge_base],  # ✅ ربط الـ RAG
         )
 
-    @function_tool()
-    async def calculate_order(
-        self,
-        context: RunContext,
-        item_name: str,
-        quantity: int = 1,
-    ) -> dict[str, Any]:
-        """
-        Calculate order total price and estimated delivery time.
 
-        Args:
-            item_name: Food or drink name from restaurant menu
-            quantity: Number of items ordered
-        """
-
-        if item_name not in MENU:
-            raise ToolError(f"Item not found: {item_name}")
-
-        unit_price = MENU[item_name]
-        total_price = unit_price * quantity
-
-        # simple mock delivery estimate
-        delivery_time = "ثلاثين إلى خمسة وأربعين دقيقة"
-
-        return {
-            "item_name": item_name,
-            "quantity": quantity,
-            "total_price_sar": total_price,
-            "delivery_time": delivery_time,
-        }
-
-
+# =============================
+# Server
+# =============================
 server = AgentServer()
 
 
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     session = AgentSession(
+        # =============================
+        # STT
+        # =============================
         stt=STTWithTemperature(
             base_url="http://8.213.50.155:8002/v1",
             model="/home/ai/vllm-sera/models/cohere-transcribe",
@@ -93,13 +138,18 @@ async def my_agent(ctx: agents.JobContext):
             temperature=0.0,
         ),
 
+        # =============================
+        # LLM
+        # =============================
         llm=openai.LLM(
             base_url="http://8.213.50.155:8001/v1",
             model="gemma4",
             api_key="needed",
         ),
-        # OpenAI TTS: "tts-1"/"tts-1-hd" use binary PCM; other model names use SSE parsing.
-        # Najdi tuning: src/config/omnivoice_najdi_tts.py (OmniVoice ``ars`` + generation_*).
+
+        # =============================
+        # TTS
+        # =============================
         tts=OpenAITTSWithSpeechExtraBody(
             speech_extra_body=najdi_omnivoice_speech_extra_body(),
             model="tts-1",
@@ -110,6 +160,9 @@ async def my_agent(ctx: agents.JobContext):
             speed=1.3,
         ),
 
+        # =============================
+        # Audio Processing
+        # =============================
         vad=silero.VAD.load(),
         turn_detection=MultilingualModel(),
     )
@@ -117,6 +170,9 @@ async def my_agent(ctx: agents.JobContext):
     last_eou_metrics = None
     collected_metrics = []
 
+    # =============================
+    # Metrics
+    # =============================
     @session.on("metrics_collected")
     def _on_metrics_collected(event: MetricsCollectedEvent):
         nonlocal last_eou_metrics
@@ -129,26 +185,27 @@ async def my_agent(ctx: agents.JobContext):
 
     async def log_usage():
         logger.info("Session ended.")
-        logger.info(f"Total metrics events collected: {len(collected_metrics)}")
-
-        for metric in collected_metrics:
-            logger.info(metric)
+        logger.info(f"Total metrics events: {len(collected_metrics)}")
 
     ctx.add_shutdown_callback(log_usage)
 
+    # =============================
+    # State Tracking
+    # =============================
     @session.on("agent_state_changed")
     def _on_agent_state_changed(event: AgentStateChangedEvent):
-        logger.info(f"Agent state changed: {event.new_state}")
+        logger.info(f"Agent state: {event.new_state}")
 
         if event.new_state == "speaking" and last_eou_metrics:
             try:
-                elapsed_time = time.time() - last_eou_metrics.timestamp
-                logger.info(
-                    f"Time since last EOU: {elapsed_time:.2f} seconds"
-                )
+                elapsed = time.time() - last_eou_metrics.timestamp
+                logger.info(f"EOU latency: {elapsed:.2f}s")
             except Exception as e:
-                logger.warning(f"Could not calculate EOU latency: {e}")
+                logger.warning(f"Latency calc failed: {e}")
 
+    # =============================
+    # Start Session
+    # =============================
     await session.start(
         room=ctx.room,
         agent=Assistant(),
@@ -163,13 +220,16 @@ async def my_agent(ctx: agents.JobContext):
         ),
     )
 
+    # =============================
+    # First Message
+    # =============================
     await session.generate_reply(
-        instructions=(
-            "ابدأ بالترحيب بالعميل في مطعم فينيرو، "
-            "واسأله بشكل طبيعي: وش تحب تطلب اليوم؟"
-        )
+        instructions="ابدئي بالترحيب بالمستخدم واسأليه كيف تقدري تساعدينه"
     )
 
 
+# =============================
+# Run
+# =============================
 if __name__ == "__main__":
     agents.cli.run_app(server)
