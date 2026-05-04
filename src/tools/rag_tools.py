@@ -5,9 +5,10 @@ from livekit.agents import function_tool, ToolError
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env.local")
 
 genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
 qdrant_client = QdrantClient(
     url="https://4c4a2430-c49d-4010-b4fe-d51a671b2c3b.eu-central-1-0.aws.cloud.qdrant.io", 
     api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6MTQzMGFiMTItYjMwNS00NTIxLTkxN2UtYTE2ZWNhMDI1MTk2In0.WFMOUl1DQ-BN_7mmhMCfZreMZyNQYYwkEq9c2uFYdO0"

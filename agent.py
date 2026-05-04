@@ -72,10 +72,19 @@ async def my_agent(ctx: agents.JobContext):
         # =============================
         # TTS
         # =============================
-        tts=F5FastAPIPlugin(
-            server_url="http://211.21.50.85:57023",
-            sample_rate=24000,
+        tts=OpenAITTSWithSpeechExtraBody(
+            speech_extra_body=najdi_omnivoice_speech_extra_body(),
+            model="tts-1",
+            voice="clone:voice_ronn",
+            base_url="http://211.21.50.85:57022/v1",
+            api_key="no-key-needed",
+            response_format="pcm",
+            speed=1.3,
         ),
+        # tts=F5FastAPIPlugin(
+        #     server_url="http://211.21.50.85:57022/",
+        #     sample_rate=24000,
+        # ),
 
         # =============================
         # Audio Processing
