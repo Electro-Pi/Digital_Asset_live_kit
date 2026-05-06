@@ -1,0 +1,51 @@
+[project]
+name = "musetalk-worker"
+version = "0.1.0"
+requires-python = ">=3.10,<3.11"
+description = "MuseTalk real-time lip-sync avatar worker for LiveKit"
+dependencies = [
+    # ML core — must match upstream MuseTalk requirements exactly
+    # torch 2.0.1 + cu118 is installed manually (see README) via:
+    # pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+    "diffusers==0.30.2",
+    "accelerate==0.28.0",
+    "transformers==4.39.2",
+    "einops==0.8.1",
+    "omegaconf",
+    # Audio / video processing
+    "librosa==0.11.0",
+    "soundfile==0.12.1",
+    "opencv-python==4.9.0.80",
+    "imageio[ffmpeg]",
+    "ffmpeg-python",
+    "moviepy",
+    # Data — >=1.26 required by livekit; MuseTalk upstream pins 1.23.5 but works on 1.26+
+    "numpy>=1.26,<2.0",
+    "huggingface_hub==0.30.2",
+    # LiveKit
+    "livekit>=1.0.0",
+    "livekit-agents~=1.3",
+    # Serving / utilities
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "loguru>=0.7.0",
+    "requests",
+    "gdown",
+    "tqdm>=4.66.0",
+    # mmlab via openmim (installed separately, not via uv)
+    "openmim",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.uv]
+# torch cu118 wheels must be fetched from the PyTorch index; add it here so
+# `uv pip install torch==2.0.1 ...` resolves correctly.
+extra-index-url = ["https://download.pytorch.org/whl/cu118"]
