@@ -35,23 +35,20 @@ class Assistant(Agent):
             instructions=system_prompt,
         )
         self.mcp_client = mcp_client
-        # Store the pure string session ID
         self.session_id = session_id
 
     @function_tool()
     async def sera_chat(self, context: RunContext, message: str) -> str:
-        # Wrap the user message with constraints
-        optimized_message = (
-            f"User Question: {message}\n\n"
-            "INSTRUCTION: Provide a extremely concise answer (max 2 sentences). "
-            "Do not include long lists or introductory fluff. Answer in Arabic."
-        )
-        
         try:
+            text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها."
+            await context.session.say(
+                text_to_say,
+                allow_interruptions=False,
+            )
             result = await self.mcp_client.call_tool(
                 name="sera_chat",
                 arguments={
-                    "message": optimized_message, # Use the wrapped message
+                    "message": message,
                     "session_id": self.session_id 
                 }
             )
