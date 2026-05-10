@@ -5,6 +5,7 @@ from typing import Any
 import uuid
 import time
 from loguru import logger
+import json
 
 from livekit import agents, rtc
 from livekit.agents import (
@@ -18,7 +19,9 @@ from livekit.agents import (
     MetricsCollectedEvent,
     ToolError,
 )
-from livekit.plugins import noise_cancellation, silero, openai
+from src.plugins.semantic_cache import sera_cache
+from src.plugins.crm_detector import is_crm_action
+from livekit.plugins import noise_cancellation, silero, openai, cartesia
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
@@ -40,11 +43,31 @@ class Assistant(Agent):
     @function_tool()
     async def sera_chat(self, context: RunContext, message: str) -> str:
         try:
+            # 1. USE THE NEW DETECTOR FUNCTION
+            crm_intent = is_crm_action(message)
+
+            # 2. CHECK CACHE (Only if it's a Knowledge Query)
+            if not crm_intent:
+                logger.info(f"Classified as Knowledge Query: '{message}'. Checking Cache...")
+                cached_answer = sera_cache.get_cached_response(message)
+                if cached_answer:
+                    logger.info("Cache Hit! Serving cached response.")
+                    await context.session.say(
+                        "ثواني بس، هذي المعلومة جاهزة عندي...",
+                        allow_interruptions=False,
+                    )
+                    return cached_answer
+                logger.info("Cache Miss. Proceeding to backend.")
+            else:
+                logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
+
+            # 3. CACHE MISS / CRM ACTION: Proceed to normal backend call
             text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها."
             await context.session.say(
                 text_to_say,
                 allow_interruptions=False,
             )
+            
             result = await self.mcp_client.call_tool(
                 name="sera_chat",
                 arguments={
@@ -54,23 +77,23 @@ class Assistant(Agent):
             )
             
             # FastMCP response handling
+            tool_response = ""
             if hasattr(result, 'content'):
-                # Extract only the text
                 tool_response = "\n".join(block.text for block in result.content if getattr(block, 'type', '') == "text")
                 
-                # OPTIMIZATION: If the response is a JSON string from SERA, parse it
                 try:
-                    import json
                     data = json.loads(tool_response)
-                    # Only take the 'answer' part, ignore 'sources' and 'metadata'
                     tool_response = data.get("answer", tool_response)
-                    
-                    # Optional: Hard-limit the length for the TTS
                     tool_response = tool_response[:300] + "..." if len(tool_response) > 300 else tool_response
                 except:
                     pass
             
-            logger.info(f"SERA Response: {tool_response}")
+            logger.info(f"SERA Backend Response: {tool_response}")
+
+            # 4. SAVE TO CACHE (Only save Knowledge Queries)
+            if not crm_intent and tool_response and "Error" not in tool_response:
+                sera_cache.add_to_cache(query=message, response=tool_response)
+
             return tool_response
                 
         except Exception as e:
@@ -107,15 +130,17 @@ async def my_agent(ctx: agents.JobContext):
                 model="gemma4",
                 api_key="needed",
             ),
-            tts=OpenAITTSWithSpeechExtraBody(
-                speech_extra_body=najdi_omnivoice_speech_extra_body(),
-                model="tts-1",
-                voice="clone:voice_ronn",
-                base_url="http://127.0.0.1:2222/v1",
-                api_key="no-key-needed",
-                response_format="pcm",
-                speed=1.3,
-            ),
+            # tts=OpenAITTSWithSpeechExtraBody(
+            #     speech_extra_body=najdi_omnivoice_speech_extra_body(),
+            #     model="tts-1",
+            #     voice="clone:voice_ronn",
+            #     base_url="http://127.0.0.1:2222/v1",
+            #     api_key="no-key-needed",
+            #     response_format="pcm",
+            #     speed=1.3,
+            # ),
+            tts = cartesia.TTS(),
+
             vad=silero.VAD.load(),
             turn_detection=MultilingualModel(),
         )
