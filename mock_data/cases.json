@@ -1,0 +1,390 @@
+[
+    {
+        "caseType": "انقطاع الخدمة الكهربائية",
+        "caseTypeId": "bb5c2eb9-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "db0c58cb-5620-f111-b823-c72fc3f75055",
+                "nw_name": "انقطاع الخدمة الكهربائية"
+            },
+            {
+                "nw_subcaseid": "91080c2f-260c-ee11-bae7-00155d007258",
+                "nw_name": "انقطاع متكرر"
+            },
+            {
+                "nw_subcaseid": "5ef70c36-d18e-ef11-baf8-c38ced14b76d",
+                "nw_name": "طلب تعويض عن المعايير المضمونة"
+            }
+        ]
+    },
+    {
+        "caseType": "طلب تعويض عن المعايير المضمونة",
+        "caseTypeId": "2cf1404d-30d3-ef11-baf9-eb4d2f622db1",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "5d9d0d4a-12d3-ef11-baf9-eb4d2f622db1",
+                "nw_name": "الإشعار عن الانقطاع المخطط للخدمة الكهربائية"
+            },
+            {
+                "nw_subcaseid": "7f04365f-12d3-ef11-baf9-eb4d2f622db1",
+                "nw_name": "فصل الخدمة الكهربائية لعدم السداد في الأوقات والحالات المحظورة"
+            },
+            {
+                "nw_subcaseid": "cdeb7526-6eb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "مدة إعادة الخدمة الكهربائية بعد الانطفاء الشامل."
+            },
+            {
+                "nw_subcaseid": "00ce7b58-12d3-ef11-baff-aa5fa518ce00",
+                "nw_name": "مدة إعادة الخدمة الكهربائية بعد الانقطاع الطارئ (غير المخطط)"
+            },
+            {
+                "nw_subcaseid": "c4adbc36-6eb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "مدة إعادة الخدمة الكهربائية بعد الانقطاع المخطط."
+            },
+            {
+                "nw_subcaseid": "c96b093f-12d3-ef11-baff-aa5fa518ce00",
+                "nw_name": "مدة إعادة الخدمة الكهربائية بعد السداد"
+            },
+            {
+                "nw_subcaseid": "5d06b430-12d3-ef11-baff-aa5fa518ce00",
+                "nw_name": "مدة إيصال الخدمة الكهربائية أو التعديل عليها بعد السداد"
+            },
+            {
+                "nw_subcaseid": "c3bd5224-12d3-ef11-baf9-eb4d2f622db1",
+                "nw_name": "مدة التسجيل/ الإلغاء للمستهلك الفعلي"
+            },
+            {
+                "nw_subcaseid": "bf00f46b-6eb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "مدة تسجيل العداد باسم المستهلك"
+            },
+            {
+                "nw_subcaseid": "2f1d0452-12d3-ef11-baff-aa5fa518ce00",
+                "nw_name": "مدة معالجة شكاوى الفواتير"
+            }
+        ]
+    },
+    {
+        "caseType": "الفواتير",
+        "caseTypeId": "6e4ceb2d-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "4403707c-6db2-f011-bb00-b6e474e07e6d",
+                "nw_name": ".\u2060خدمة الدفع المسبق"
+            },
+            {
+                "nw_subcaseid": "e6c65bf6-240c-ee11-bae7-00155d007258",
+                "nw_name": "إصدار فاتورة دون تسجيل قراءة للعداد"
+            },
+            {
+                "nw_subcaseid": "3e53db56-240c-ee11-bae7-00155d007258",
+                "nw_name": "إصدار فاتورة لفترة تتجاوز 30 يوم"
+            },
+            {
+                "nw_subcaseid": "6b62f500-59a9-ed11-bada-00155d00725a",
+                "nw_name": "اخرى"
+            },
+            {
+                "nw_subcaseid": "50077c11-d18e-ef11-baf8-c38ced14b76d",
+                "nw_name": "ادعاء عبث بالعداد"
+            },
+            {
+                "nw_subcaseid": "a6f0abf3-58a9-ed11-bada-00155d00725a",
+                "nw_name": "ارتفاع قيمة فاتورة الاستهلاك"
+            },
+            {
+                "nw_subcaseid": "849c578b-6db2-f011-bb00-b6e474e07e6d",
+                "nw_name": "استرداد مبلغ مسدد بالخطأ."
+            },
+            {
+                "nw_subcaseid": "9ab5d555-6db2-f011-bb00-b6e474e07e6d",
+                "nw_name": "السداد الجزئي."
+            },
+            {
+                "nw_subcaseid": "387e0bcc-240c-ee11-bae7-00155d007258",
+                "nw_name": "المطالبة بغرامة الإعادة غير النظامية"
+            },
+            {
+                "nw_subcaseid": "1f812ad8-58a9-ed11-bada-00155d00725a",
+                "nw_name": "تأخر إصدار فواتير الاستهلاك"
+            },
+            {
+                "nw_subcaseid": "66370569-6db2-f011-bb00-b6e474e07e6d",
+                "nw_name": "خدمة الأقساط."
+            },
+            {
+                "nw_subcaseid": "75d52fff-d08e-ef11-bafe-97850affbd3b",
+                "nw_name": "طلب تعويض عن المعايير المضمونة"
+            }
+        ]
+    },
+    {
+        "caseType": "السلامة الكهربائية",
+        "caseTypeId": "7cd56897-210c-ee11-bae7-00155d007258",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "2bb52084-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "أبواب محطات / كبائن التوزيع المفتوحة."
+            },
+            {
+                "nw_subcaseid": "db1cda8b-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "أخرى."
+            },
+            {
+                "nw_subcaseid": "18cee630-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "الأعمدة الساقطة/الآيلة للسقوط."
+            },
+            {
+                "nw_subcaseid": "eb4e2125-280c-ee11-bae7-00155d007258",
+                "nw_name": "السلامة الكهربائية"
+            },
+            {
+                "nw_subcaseid": "cfee0049-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "الكابلات المكشوفة."
+            },
+            {
+                "nw_subcaseid": "a3cb0670-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "الموصلات الساقطة على الأرض."
+            },
+            {
+                "nw_subcaseid": "15ac6c1c-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "عداد مكشوف"
+            },
+            {
+                "nw_subcaseid": "785d765c-6bb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "لوحة العدادات المكشوفة."
+            }
+        ]
+    },
+    {
+        "caseType": "جودة الخدمة الكهربائية",
+        "caseTypeId": "825daad3-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "f88c3764-83a9-ed11-bada-00155d00725a",
+                "nw_name": "ارتفاع/ انخفاض الجهد"
+            }
+        ]
+    },
+    {
+        "caseType": "العدادات",
+        "caseTypeId": "01ff8147-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "3ec758cb-ec05-ef11-bafd-a0756c23a320",
+                "nw_name": "أخرى"
+            },
+            {
+                "nw_subcaseid": "1bf1de64-250c-ee11-bae7-00155d007258",
+                "nw_name": "خطأ في بيانات العداد"
+            },
+            {
+                "nw_subcaseid": "96b93e16-59a9-ed11-bada-00155d00725a",
+                "nw_name": "خطأ في تركيب العداد"
+            },
+            {
+                "nw_subcaseid": "ee1ab737-59a9-ed11-bada-00155d00725a",
+                "nw_name": "خطأ في قراءة العداد"
+            },
+            {
+                "nw_subcaseid": "0ee1e550-59a9-ed11-bada-00155d00725a",
+                "nw_name": "خطأ في معامل الضرب"
+            }
+        ]
+    },
+    {
+        "caseType": "إزاحة الشبكة ومحطات التوزيع",
+        "caseTypeId": "a433f2f8-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "a6c41fc9-270c-ee11-bae7-00155d007258",
+                "nw_name": "إزاحة أو نقل صندوق توزيع"
+            },
+            {
+                "nw_subcaseid": "07c5c67e-270c-ee11-bae7-00155d007258",
+                "nw_name": "إزاحة شبكة التوزيع"
+            },
+            {
+                "nw_subcaseid": "23ffb2c6-83a9-ed11-bada-00155d00725a",
+                "nw_name": "إزاحة شبكة النقل"
+            },
+            {
+                "nw_subcaseid": "e693e6b3-83a9-ed11-bada-00155d00725a",
+                "nw_name": "إزاحة محطة التوزيع"
+            },
+            {
+                "nw_subcaseid": "74c6290b-6cb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "إزالة عداد"
+            },
+            {
+                "nw_subcaseid": "66737e42-250c-ee11-bae7-00155d007258",
+                "nw_name": "نقل العداد إلى موقع آخر"
+            }
+        ]
+    },
+    {
+        "caseType": "تسجيل الخدمة باسم المستهلك",
+        "caseTypeId": "8c3dc83d-58a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "21b98cca-6db2-f011-bb00-b6e474e07e6d",
+                "nw_name": "خدمة ذوي الاحتياجات الماسة للكهرباء “اطمئن”."
+            },
+            {
+                "nw_subcaseid": "26701d23-84a9-ed11-bada-00155d00725a",
+                "nw_name": "خطأ في التسجيل في الخدمة"
+            },
+            {
+                "nw_subcaseid": "7074534a-d18e-ef11-baf8-c38ced14b76d",
+                "nw_name": "طلب تعويض عن المعايير المضمونة"
+            },
+            {
+                "nw_subcaseid": "f92de534-84a9-ed11-bada-00155d00725a",
+                "nw_name": "عدم القدرة على التسجيل في الخدمة"
+            },
+            {
+                "nw_subcaseid": "f46cdf44-84a9-ed11-bada-00155d00725a",
+                "nw_name": "عدم القدرة على تسجيل الخروج من الخدمة"
+            }
+        ]
+    },
+    {
+        "caseType": "فئة الاستهلاك",
+        "caseTypeId": "172dc40f-58a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "602f9ef2-83a9-ed11-bada-00155d00725a",
+                "nw_name": "خطأ في تطبيق فئة الاستهلاك"
+            }
+        ]
+    },
+    {
+        "caseType": "اقتراح",
+        "caseTypeId": "8b075df8-05b3-f011-bb00-b6e474e07e6d",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "baf8bb4c-06b3-f011-bb00-b6e474e07e6d",
+                "nw_name": "اقتراح"
+            }
+        ]
+    },
+    {
+        "caseType": "إيصال الخدمة الكهربائية",
+        "caseTypeId": "90756179-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "d2d1758b-82a9-ed11-bada-00155d00725a",
+                "nw_name": "الايصال لقرية/ هجرة/ تجمع سكني"
+            },
+            {
+                "nw_subcaseid": "db3e4786-59a9-ed11-bada-00155d00725a",
+                "nw_name": "التأخر في إيصال الخدمة الكهربائية"
+            },
+            {
+                "nw_subcaseid": "ab321fa1-59a9-ed11-bada-00155d00725a",
+                "nw_name": "المطالبة بتأمين موقع محطة توزيع"
+            },
+            {
+                "nw_subcaseid": "b42672b5-59a9-ed11-bada-00155d00725a",
+                "nw_name": "المقابل المالي لإيصال الخدمة الكهربائية"
+            },
+            {
+                "nw_subcaseid": "e9a40dfb-6ab2-f011-bb00-b6e474e07e6d",
+                "nw_name": "شاحن المركبات الكهربائية"
+            },
+            {
+                "nw_subcaseid": "174a969d-6ab2-f011-bb00-b6e474e07e6d",
+                "nw_name": "طلب إيصال الخدمة الكهربائية للمخططات"
+            },
+            {
+                "nw_subcaseid": "762c538f-18f8-ef11-baf9-eb4d2f622db1",
+                "nw_name": "طلب ايصال الخدمة الكهربائية لعقار بدون صك ملكية"
+            },
+            {
+                "nw_subcaseid": "e68112d8-6ab2-f011-bb00-b6e474e07e6d",
+                "nw_name": "طلب تجزئة"
+            },
+            {
+                "nw_subcaseid": "ef3f6d2d-d18e-ef11-bafe-97850affbd3b",
+                "nw_name": "طلب تعويض عن المعايير المضمونة"
+            },
+            {
+                "nw_subcaseid": "bafd10c3-6ab2-f011-bb00-b6e474e07e6d",
+                "nw_name": "طلب تقوية"
+            }
+        ]
+    },
+    {
+        "caseType": "فصل الخدمة الكهربائية",
+        "caseTypeId": "e45cf899-57a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "ef079209-83a9-ed11-bada-00155d00725a",
+                "nw_name": "التأخر في إعادة الخدمة الكهربائية بعد السداد"
+            },
+            {
+                "nw_subcaseid": "a8c54e3c-d18e-ef11-baf8-c38ced14b76d",
+                "nw_name": "طلب تعويض عن المعايير المضمونة"
+            },
+            {
+                "nw_subcaseid": "bce18f1a-83a9-ed11-bada-00155d00725a",
+                "nw_name": "فصل الخدمة الكهربائية بدون إنذار"
+            },
+            {
+                "nw_subcaseid": "d8e495f2-82a9-ed11-bada-00155d00725a",
+                "nw_name": "فصل الخدمة الكهربائية في الأوقات المحظورة"
+            },
+            {
+                "nw_subcaseid": "c2ab4ae0-82a9-ed11-bada-00155d00725a",
+                "nw_name": "فصل الخدمة الكهربائية قبل الوقت المحدد للفصل"
+            },
+            {
+                "nw_subcaseid": "cb06c4d4-6eb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "فصل الخدمة الكهربائية لعدم السداد"
+            },
+            {
+                "nw_subcaseid": "c412271f-e565-ee11-baf4-00155d007258",
+                "nw_name": "فصل الخدمة عن ذوي الإحتياجات الماسة للكهرباء"
+            }
+        ]
+    },
+    {
+        "caseType": "اخرى",
+        "caseTypeId": "8d3dc83d-58a9-ed11-bada-00155d00725a",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "be267921-3b51-ee11-baf1-0205857feb80",
+                "nw_name": "أخرى"
+            },
+            {
+                "nw_subcaseid": "3e14fc32-6fb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "الرخص و التصاريح"
+            },
+            {
+                "nw_subcaseid": "b50f6c13-6fb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "الطاقة الشمسية"
+            },
+            {
+                "nw_subcaseid": "b43a4142-6fb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "تجربة"
+            },
+            {
+                "nw_subcaseid": "3e3c3a05-6fb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "حفريات"
+            },
+            {
+                "nw_subcaseid": "d9935f1f-6fb2-f011-bb00-b6e474e07e6d",
+                "nw_name": "مشكلة تقنية / الهيئة"
+            }
+        ]
+    },
+    {
+        "caseType": "استفسار",
+        "caseTypeId": "6eb60de5-07eb-f011-b822-a34d8aa541c2",
+        "SubcaseType": [
+            {
+                "nw_subcaseid": "ace9ae80-09eb-f011-b822-a34d8aa541c2",
+                "nw_name": "استفسار"
+            }
+        ]
+    }
+]

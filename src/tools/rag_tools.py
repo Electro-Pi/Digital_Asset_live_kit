@@ -7,14 +7,26 @@ from dotenv import load_dotenv
 
 load_dotenv(".env.local")
 
-genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-qdrant_client = QdrantClient(
-    url="https://4c4a2430-c49d-4010-b4fe-d51a671b2c3b.eu-central-1-0.aws.cloud.qdrant.io", 
-    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6MTQzMGFiMTItYjMwNS00NTIxLTkxN2UtYTE2ZWNhMDI1MTk2In0.WFMOUl1DQ-BN_7mmhMCfZreMZyNQYYwkEq9c2uFYdO0"
-)
-
 COLLECTION_NAME = "sera_knowledge_base"
+
+# Lazy initialization of clients
+_genai_client = None
+_qdrant_client = None
+
+def _get_genai_client():
+    global _genai_client
+    if _genai_client is None:
+        _genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    return _genai_client
+
+def _get_qdrant_client():
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = QdrantClient(
+            url="https://4c4a2430-c49d-4010-b4fe-d51a671b2c3b.eu-central-1-0.aws.cloud.qdrant.io", 
+            api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6MTQzMGFiMTItYjMwNS00NTIxLTkxN2UtYTE2ZWNhMDI1MTk2In0.WFMOUl1DQ-BN_7mmhMCfZreMZyNQYYwkEq9c2uFYdO0"
+        )
+    return _qdrant_client
 
 # Your Tool Definition
 @function_tool
@@ -24,6 +36,9 @@ async def search_sera_knowledge_base(query: str) -> str:
     Use this tool whenever the question requires factual or official information.
     """
     try:
+        genai_client = _get_genai_client()
+        qdrant_client = _get_qdrant_client()
+        
         # Embedding
         result = genai_client.models.embed_content(
             model="gemini-embedding-2-preview",

@@ -1,0 +1,1057 @@
+[
+    {
+        "regionName": "القطاع الشرقي",
+        "regionId": "62349519-54ea-ed11-badd-00155d00725a",
+        "cities": [
+            {
+                "cityID": "1b6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الدمام",
+                "offices": [
+                    {
+                        "officeId": "5432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات غرب الدمام"
+                    },
+                    {
+                        "officeId": "1833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القطيف"
+                    },
+                    {
+                        "officeId": "6833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدمام"
+                    },
+                    {
+                        "officeId": "8233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخبر"
+                    }
+                ]
+            },
+            {
+                "cityID": "1d6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الأحساء",
+                "offices": [
+                    {
+                        "officeId": "ea32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الهفوف"
+                    },
+                    {
+                        "officeId": "f632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المنيزلة"
+                    },
+                    {
+                        "officeId": "2c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العيون"
+                    },
+                    {
+                        "officeId": "b233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ابقيق"
+                    }
+                ]
+            },
+            {
+                "cityID": "1f6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الشمالية",
+                "offices": [
+                    {
+                        "officeId": "4a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات قرية العليا"
+                    },
+                    {
+                        "officeId": "ac32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حفر الباطن"
+                    },
+                    {
+                        "officeId": "f032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات النعيرية"
+                    },
+                    {
+                        "officeId": "1033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القيصومة"
+                    },
+                    {
+                        "officeId": "4633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الصرار"
+                    },
+                    {
+                        "officeId": "5e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الرفيعة"
+                    },
+                    {
+                        "officeId": "6433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الذيبية"
+                    },
+                    {
+                        "officeId": "7233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخفجي"
+                    },
+                    {
+                        "officeId": "9633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الجبيل"
+                    }
+                ]
+            },
+            {
+                "cityID": "216799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الجوف",
+                "offices": [
+                    {
+                        "officeId": "6a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات طبرجل"
+                    },
+                    {
+                        "officeId": "8232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات سكاكا"
+                    },
+                    {
+                        "officeId": "9a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات دومة الجندل"
+                    },
+                    {
+                        "officeId": "1a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القريات"
+                    }
+                ]
+            },
+            {
+                "cityID": "236799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الحدود الشمالية",
+                "offices": [
+                    {
+                        "officeId": "5e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عرعر"
+                    },
+                    {
+                        "officeId": "6632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات طريف"
+                    },
+                    {
+                        "officeId": "9432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رفحاء"
+                    },
+                    {
+                        "officeId": "3033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العويقيلة"
+                    }
+                ]
+            },
+            {
+                "cityID": "50325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الدمام",
+                "offices": []
+            },
+            {
+                "cityID": "52325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الأحساء",
+                "offices": []
+            },
+            {
+                "cityID": "54325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – المنطقة الشمالية",
+                "offices": []
+            },
+            {
+                "cityID": "56325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – النعيرية وحفر الباطن",
+                "offices": []
+            },
+            {
+                "cityID": "58325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الشمالي الشرقي",
+                "offices": []
+            }
+        ]
+    },
+    {
+        "regionName": "القطاع الأوسط",
+        "regionId": "99224d23-54ea-ed11-badd-00155d00725a",
+        "cities": [
+            {
+                "cityID": "056799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء مدينة الرياض",
+                "offices": [
+                    {
+                        "officeId": "a432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات خريص"
+                    },
+                    {
+                        "officeId": "4c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الشمال"
+                    },
+                    {
+                        "officeId": "5033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الشرق"
+                    },
+                    {
+                        "officeId": "6e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدرعية"
+                    },
+                    {
+                        "officeId": "8e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الجنوب"
+                    },
+                    {
+                        "officeId": "9a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الثمامة"
+                    }
+                ]
+            },
+            {
+                "cityID": "076799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء القصيم",
+                "offices": [
+                    {
+                        "officeId": "4c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات قبة"
+                    },
+                    {
+                        "officeId": "5232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات غرب القصيم"
+                    },
+                    {
+                        "officeId": "5632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عيون الجواء"
+                    },
+                    {
+                        "officeId": "5832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عنيزة"
+                    },
+                    {
+                        "officeId": "5a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عقلة الصقور"
+                    },
+                    {
+                        "officeId": "6c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ضرية"
+                    },
+                    {
+                        "officeId": "8e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رياض الخبراء"
+                    },
+                    {
+                        "officeId": "9c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات دخنة"
+                    },
+                    {
+                        "officeId": "da32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بريدة"
+                    },
+                    {
+                        "officeId": "f232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات النبهانية"
+                    },
+                    {
+                        "officeId": "0033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المذنب"
+                    },
+                    {
+                        "officeId": "1433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القوارة"
+                    },
+                    {
+                        "officeId": "4e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الشماسية"
+                    },
+                    {
+                        "officeId": "6233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الرس"
+                    },
+                    {
+                        "officeId": "6a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدليمية"
+                    },
+                    {
+                        "officeId": "7a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخرماء"
+                    },
+                    {
+                        "officeId": "8033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخبراء"
+                    },
+                    {
+                        "officeId": "9c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البكيرية"
+                    },
+                    {
+                        "officeId": "a433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البدائع"
+                    },
+                    {
+                        "officeId": "aa33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الاسياح"
+                    }
+                ]
+            },
+            {
+                "cityID": "096799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الخرج",
+                "offices": [
+                    {
+                        "officeId": "3632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات وادي الدواسر"
+                    },
+                    {
+                        "officeId": "4632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ليلى الفلاج"
+                    },
+                    {
+                        "officeId": "a632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حوطة بني تميم"
+                    },
+                    {
+                        "officeId": "ec32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الهدار"
+                    },
+                    {
+                        "officeId": "5433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات السليل"
+                    },
+                    {
+                        "officeId": "6c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدلم"
+                    },
+                    {
+                        "officeId": "7e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخرج"
+                    },
+                    {
+                        "officeId": "8c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الحريق"
+                    },
+                    {
+                        "officeId": "a233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البديع"
+                    },
+                    {
+                        "officeId": "ae33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الاحمر"
+                    }
+                ]
+            },
+            {
+                "cityID": "0b6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء ضواحي الرياض",
+                "offices": [
+                    {
+                        "officeId": "3a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات نساح"
+                    },
+                    {
+                        "officeId": "4432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات مرات"
+                    },
+                    {
+                        "officeId": "6e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ضرماء"
+                    },
+                    {
+                        "officeId": "7e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات شقراء"
+                    },
+                    {
+                        "officeId": "8632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات سدير"
+                    },
+                    {
+                        "officeId": "9232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رماح"
+                    },
+                    {
+                        "officeId": "ae32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حريملاء"
+                    },
+                    {
+                        "officeId": "c032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ثادق"
+                    },
+                    {
+                        "officeId": "c632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تمير"
+                    },
+                    {
+                        "officeId": "fe32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المزاحمية"
+                    },
+                    {
+                        "officeId": "0633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المجمعة"
+                    },
+                    {
+                        "officeId": "1233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القويعية"
+                    },
+                    {
+                        "officeId": "2433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الفروع"
+                    },
+                    {
+                        "officeId": "2a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الغاط"
+                    },
+                    {
+                        "officeId": "5833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الزلفي"
+                    },
+                    {
+                        "officeId": "5a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الرين"
+                    },
+                    {
+                        "officeId": "8a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الحصاة"
+                    },
+                    {
+                        "officeId": "9233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الجلة"
+                    },
+                    {
+                        "officeId": "ac33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الارطاوية"
+                    }
+                ]
+            },
+            {
+                "cityID": "0d6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء حائل",
+                "offices": [
+                    {
+                        "officeId": "3e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات موقق"
+                    },
+                    {
+                        "officeId": "b232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حائل"
+                    },
+                    {
+                        "officeId": "d832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بقعاء"
+                    },
+                    {
+                        "officeId": "0c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الكهفة (الشنان)"
+                    },
+                    {
+                        "officeId": "1e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القاعد"
+                    },
+                    {
+                        "officeId": "2833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الغزالة"
+                    },
+                    {
+                        "officeId": "3633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العظيم"
+                    },
+                    {
+                        "officeId": "4833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الشنان"
+                    },
+                    {
+                        "officeId": "4a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الشملي"
+                    },
+                    {
+                        "officeId": "5233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات السليمي"
+                    },
+                    {
+                        "officeId": "8633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الحليفة"
+                    }
+                ]
+            },
+            {
+                "cityID": "0f6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الدوادمي",
+                "offices": [
+                    {
+                        "officeId": "3832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات نفي"
+                    },
+                    {
+                        "officeId": "5c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عفيف"
+                    },
+                    {
+                        "officeId": "6032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات عرجاء"
+                    },
+                    {
+                        "officeId": "8c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ساجر"
+                    },
+                    {
+                        "officeId": "a832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حلبان"
+                    },
+                    {
+                        "officeId": "2033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الفقارة"
+                    },
+                    {
+                        "officeId": "5633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات السر"
+                    },
+                    {
+                        "officeId": "5c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الرويضة"
+                    },
+                    {
+                        "officeId": "6033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الرفايع"
+                    },
+                    {
+                        "officeId": "6633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدوادمي"
+                    },
+                    {
+                        "officeId": "7433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخف"
+                    },
+                    {
+                        "officeId": "a633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البجادية"
+                    }
+                ]
+            },
+            {
+                "cityID": "46325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة المحطات – مدينة الرياض",
+                "offices": []
+            },
+            {
+                "cityID": "48325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الخطوط – مدينة الرياض",
+                "offices": []
+            },
+            {
+                "cityID": "4a325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الرياض",
+                "offices": []
+            },
+            {
+                "cityID": "4c325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – حائل",
+                "offices": []
+            },
+            {
+                "cityID": "4e325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – القصيم",
+                "offices": []
+            }
+        ]
+    },
+    {
+        "regionName": "القطاع الجنوبي",
+        "regionId": "fb913e32-54ea-ed11-badd-00155d00725a",
+        "cities": [
+            {
+                "cityID": "256799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء عسير",
+                "offices": [
+                    {
+                        "officeId": "6232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ظهران الجنوب"
+                    },
+                    {
+                        "officeId": "6832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات طريب"
+                    },
+                    {
+                        "officeId": "7232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات صمخ"
+                    },
+                    {
+                        "officeId": "8432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات سراة عبيدة"
+                    },
+                    {
+                        "officeId": "8832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات سبت العليا"
+                    },
+                    {
+                        "officeId": "9632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رجال المع"
+                    },
+                    {
+                        "officeId": "a032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات خميس مشيط"
+                    },
+                    {
+                        "officeId": "c432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تهامه"
+                    },
+                    {
+                        "officeId": "ca32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تثليث"
+                    },
+                    {
+                        "officeId": "ce32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بيشه"
+                    },
+                    {
+                        "officeId": "d432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بللسمر"
+                    },
+                    {
+                        "officeId": "e032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بارق"
+                    },
+                    {
+                        "officeId": "ee32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات النماص"
+                    },
+                    {
+                        "officeId": "0833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المجارده"
+                    },
+                    {
+                        "officeId": "9e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البشاير"
+                    },
+                    {
+                        "officeId": "b433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات أحد رفيدة"
+                    },
+                    {
+                        "officeId": "b833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات أبها"
+                    },
+                    {
+                        "officeId": "ba33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات"
+                    }
+                ]
+            },
+            {
+                "cityID": "276799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الباحة",
+                "offices": [
+                    {
+                        "officeId": "4832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات قلوة"
+                    },
+                    {
+                        "officeId": "8a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات سبت الجارة"
+                    },
+                    {
+                        "officeId": "d632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بلجرشي"
+                    },
+                    {
+                        "officeId": "f832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المندق"
+                    },
+                    {
+                        "officeId": "0433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المخواة"
+                    },
+                    {
+                        "officeId": "1633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القنفذة"
+                    },
+                    {
+                        "officeId": "1c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات القرى"
+                    },
+                    {
+                        "officeId": "3433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العقيق"
+                    },
+                    {
+                        "officeId": "3a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العرضيتين"
+                    },
+                    {
+                        "officeId": "a033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات البرك"
+                    },
+                    {
+                        "officeId": "a833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الباحة"
+                    }
+                ]
+            },
+            {
+                "cityID": "296799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء جيزان",
+                "offices": [
+                    {
+                        "officeId": "4e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات فيفا"
+                    },
+                    {
+                        "officeId": "5032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات فرسان"
+                    },
+                    {
+                        "officeId": "7632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات صبيا"
+                    },
+                    {
+                        "officeId": "7832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات صامطة"
+                    },
+                    {
+                        "officeId": "b432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات جيزان"
+                    },
+                    {
+                        "officeId": "d032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بيش"
+                    },
+                    {
+                        "officeId": "d232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بني مالك"
+                    },
+                    {
+                        "officeId": "7033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الدرب"
+                    },
+                    {
+                        "officeId": "7633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخشل"
+                    },
+                    {
+                        "officeId": "8833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الحقو"
+                    },
+                    {
+                        "officeId": "b633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات أبو عريش"
+                    },
+                    {
+                        "officeId": "be33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "قلوة قديم"
+                    },
+                    {
+                        "officeId": "c033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "المخواه قديم"
+                    },
+                    {
+                        "officeId": "c233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "المجاردة قديم"
+                    },
+                    {
+                        "officeId": "c433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "القنفذة قديم"
+                    },
+                    {
+                        "officeId": "c633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "البرك قديم"
+                    }
+                ]
+            },
+            {
+                "cityID": "2b6799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء نجران",
+                "offices": [
+                    {
+                        "officeId": "3432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات يدمة"
+                    },
+                    {
+                        "officeId": "3c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات نجران"
+                    },
+                    {
+                        "officeId": "8032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات شرورة"
+                    },
+                    {
+                        "officeId": "b032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حبونا"
+                    },
+                    {
+                        "officeId": "4433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الصفاح"
+                    },
+                    {
+                        "officeId": "7c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخرخير"
+                    },
+                    {
+                        "officeId": "bc33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات"
+                    }
+                ]
+            },
+            {
+                "cityID": "66325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – عسير، نجران ووادي الدواسر",
+                "offices": []
+            },
+            {
+                "cityID": "68325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – جازان والباحة",
+                "offices": []
+            }
+        ]
+    },
+    {
+        "regionName": "القطاع الغربي",
+        "regionId": "e3929e3a-54ea-ed11-badd-00155d00725a",
+        "cities": [
+            {
+                "cityID": "116799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء جدة",
+                "offices": [
+                    {
+                        "officeId": "4232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات مستورة"
+                    },
+                    {
+                        "officeId": "7432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات صعبر"
+                    },
+                    {
+                        "officeId": "7c32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات شمال جدة"
+                    },
+                    {
+                        "officeId": "9832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رابغ"
+                    },
+                    {
+                        "officeId": "b832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات جنوب جدة"
+                    },
+                    {
+                        "officeId": "ba32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات جدة"
+                    },
+                    {
+                        "officeId": "bc32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ثول"
+                    }
+                ]
+            },
+            {
+                "cityID": "136799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء مكة المكرمة",
+                "offices": [
+                    {
+                        "officeId": "7a32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات شمال مكة المكرمة"
+                    },
+                    {
+                        "officeId": "a232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات خليص"
+                    },
+                    {
+                        "officeId": "b632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات جنوب مكة المكرمة"
+                    },
+                    {
+                        "officeId": "de32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بحرة"
+                    },
+                    {
+                        "officeId": "0a33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الليث"
+                    },
+                    {
+                        "officeId": "0e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الكامل"
+                    },
+                    {
+                        "officeId": "9033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الجموم"
+                    }
+                ]
+            },
+            {
+                "cityID": "156799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء المدينة المنورة",
+                "offices": [
+                    {
+                        "officeId": "3032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ينبع النخل"
+                    },
+                    {
+                        "officeId": "3232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ينبع"
+                    },
+                    {
+                        "officeId": "4032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات مهد الذهب"
+                    },
+                    {
+                        "officeId": "9e32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات خيبر"
+                    },
+                    {
+                        "officeId": "dc32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات بدر"
+                    },
+                    {
+                        "officeId": "e432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ام ذيان"
+                    },
+                    {
+                        "officeId": "e832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الواسطة"
+                    },
+                    {
+                        "officeId": "fa32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المليليح"
+                    },
+                    {
+                        "officeId": "fc32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المسيجيد"
+                    },
+                    {
+                        "officeId": "0233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات المدينة المنورة"
+                    },
+                    {
+                        "officeId": "2233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الفريش"
+                    },
+                    {
+                        "officeId": "2633c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الفارعة"
+                    },
+                    {
+                        "officeId": "2e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العيص"
+                    },
+                    {
+                        "officeId": "3233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العلا"
+                    },
+                    {
+                        "officeId": "3833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العشاش"
+                    },
+                    {
+                        "officeId": "3c33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات العالية"
+                    },
+                    {
+                        "officeId": "4033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الصويدرة"
+                    },
+                    {
+                        "officeId": "4233c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الصلصة"
+                    },
+                    {
+                        "officeId": "8433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الحناكية"
+                    },
+                    {
+                        "officeId": "9433c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الجديد"
+                    },
+                    {
+                        "officeId": "9833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الثمد"
+                    },
+                    {
+                        "officeId": "b033c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ابيار الماشي"
+                    }
+                ]
+            },
+            {
+                "cityID": "176799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء الطائف",
+                "offices": [
+                    {
+                        "officeId": "6432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ظلم"
+                    },
+                    {
+                        "officeId": "9032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات رنية"
+                    },
+                    {
+                        "officeId": "be32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ثقيف"
+                    },
+                    {
+                        "officeId": "c832c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تربة"
+                    },
+                    {
+                        "officeId": "f432c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الموية"
+                    },
+                    {
+                        "officeId": "3e33c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الطائف"
+                    },
+                    {
+                        "officeId": "7833c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الخرمة"
+                    }
+                ]
+            },
+            {
+                "cityID": "196799cd-2461-ee11-baf2-0205857feb80",
+                "cityName": "كهرباء تبوك",
+                "offices": [
+                    {
+                        "officeId": "7032c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات ضباء"
+                    },
+                    {
+                        "officeId": "aa32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات حقل"
+                    },
+                    {
+                        "officeId": "c232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تيماء"
+                    },
+                    {
+                        "officeId": "cc32c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات تبوك"
+                    },
+                    {
+                        "officeId": "e232c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات املج"
+                    },
+                    {
+                        "officeId": "e632c25b-7a6e-ee11-baf4-00155d007258",
+                        "officeName": "مكتب خدمات الوجة"
+                    }
+                ]
+            },
+            {
+                "cityID": "5a325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة المحطات – جدة",
+                "offices": []
+            },
+            {
+                "cityID": "5c325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الخطوط – جدة",
+                "offices": []
+            },
+            {
+                "cityID": "5e325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – مكة المكرمة",
+                "offices": []
+            },
+            {
+                "cityID": "60325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الطائف",
+                "offices": []
+            },
+            {
+                "cityID": "62325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – المدينة المنورة",
+                "offices": []
+            },
+            {
+                "cityID": "64325f86-390b-f111-b823-c72fc3f75055",
+                "cityName": "إدارة صيانة الأصول – الشمال الغربي ",
+                "offices": []
+            }
+        ]
+    },
+    {
+        "regionName": "شركة مرافق السعودية",
+        "regionId": "962d623d-0a35-ee11-baea-0205857feb80",
+        "cities": []
+    }
+]
