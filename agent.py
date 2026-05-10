@@ -14,7 +14,7 @@ from livekit.agents import (
     MetricsCollectedEvent,
     ToolError,
 )
-from livekit.plugins import noise_cancellation, silero, openai, groq
+from livekit.plugins import noise_cancellation, silero, openai, groq, google, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins import ai_coustics
 
@@ -59,10 +59,18 @@ async def my_agent(ctx: agents.JobContext):
         #     api_key="dummy",
         #     language="ar",
         # ),
-        stt=groq.STT(
-            api_key=os.getenv("GROQ_API_KEY"),
-            language="ar",
-            model="whisper-large-v3",
+        # stt=groq.STT(
+        #     api_key=os.getenv("GROQ_API_KEY"),
+        #     language="ar",
+        #     model="whisper-large-v3",
+        # ),
+        # stt=google.STT(
+        #     languages="ar",
+        #     model="chirp_3",
+        # ),
+        stt=openai.STT(
+            model="gpt-4o-transcribe",
+            api_key=os.getenv("OPENAI_API_KEY"),
         ),
         # stt=STTWithTemperature(
         #     base_url="http://8.213.50.155:8002/v1",
@@ -104,7 +112,7 @@ async def my_agent(ctx: agents.JobContext):
         # Audio Processing
         # =============================
         vad=silero.VAD.load(),
-        turn_detection=MultilingualModel(unlikely_threshold=0.9),
+        turn_detection=MultilingualModel(unlikely_threshold=0.55),
     )
 
     last_eou_metrics = None
