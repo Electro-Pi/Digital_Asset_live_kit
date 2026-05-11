@@ -62,7 +62,7 @@ def najdi_omnivoice_speech_extra_body() -> dict[str, Any]:
     body: dict[str, Any] = {
         "language": _env_str("OMNIVOICE_LANGUAGE", "ars"),
         # decoding — more steps than default 32 for cleaner masked diffusion
-        "num_step": _env_int("OMNIVOICE_NUM_STEP", 36),
+        "num_step": _env_int("OMNIVOICE_NUM_STEP", 20),
         "guidance_scale": _env_float("OMNIVOICE_GUIDANCE_SCALE", 2.25),
         "denoise": _env_bool("OMNIVOICE_DENOISE", True),
         "t_shift": _env_float("OMNIVOICE_T_SHIFT", 0.1),

@@ -49,9 +49,12 @@ class Assistant(Agent):
             if not crm_intent:
                 logger.info(f"Classified as Knowledge Query: '{message}'. Checking Cache...")
                 cached_answer = sera_cache.get_cached_response(message)
+                # In sera_chat, on cache hit:
                 if cached_answer:
                     logger.info("Cache Hit! Serving cached response.")
-                    return cached_answer
+                    await context.session.say(cached_answer, allow_interruptions=True)
+                    return "[تم تقديم الإجابة للمستخدم مباشرة. لا تعد قراءة المحتوى. فقط اسأل إذا يحتاج مساعدة أخرى.]"
+
                 logger.info("Cache Miss. Proceeding to backend.")
             else:
                 logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
