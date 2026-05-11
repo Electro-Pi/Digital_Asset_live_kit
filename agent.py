@@ -7,6 +7,8 @@ import time
 from loguru import logger
 import json
 
+load_dotenv(".env.local")
+
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
@@ -29,9 +31,6 @@ from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
 
-
-load_dotenv(".env.local")
-
 class Assistant(Agent):
     def __init__(self, mcp_client: Client, session_id: str) -> None:
         super().__init__(
@@ -43,7 +42,7 @@ class Assistant(Agent):
     @function_tool()
     async def sera_chat(self, context: RunContext, message: str) -> str:
         try:
-            # 1. USE THE NEW DETECTOR FUNCTION
+            # 1. USE THE DETECTOR FUNCTION
             crm_intent = is_crm_action(message)
 
             # 2. CHECK CACHE (Only if it's a Knowledge Query)
@@ -52,21 +51,18 @@ class Assistant(Agent):
                 cached_answer = sera_cache.get_cached_response(message)
                 if cached_answer:
                     logger.info("Cache Hit! Serving cached response.")
-                    await context.session.say(
-                        "ثواني بس، هذي المعلومة جاهزة عندي...",
-                        allow_interruptions=False,
-                    )
                     return cached_answer
                 logger.info("Cache Miss. Proceeding to backend.")
             else:
                 logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
 
-            # 3. CACHE MISS / CRM ACTION: Proceed to normal backend call
             text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها."
             await context.session.say(
                 text_to_say,
                 allow_interruptions=False,
             )
+            
+            start_time = time.time()
             
             result = await self.mcp_client.call_tool(
                 name="sera_chat",
@@ -75,6 +71,9 @@ class Assistant(Agent):
                     "session_id": self.session_id 
                 }
             )
+            
+            mcp_duration = time.time() - start_time
+            logger.info(f"FastMCP Call took {mcp_duration:.2f} seconds")
             
             # FastMCP response handling
             tool_response = ""
@@ -130,16 +129,16 @@ async def my_agent(ctx: agents.JobContext):
                 model="gemma4",
                 api_key="needed",
             ),
-            # tts=OpenAITTSWithSpeechExtraBody(
-            #     speech_extra_body=najdi_omnivoice_speech_extra_body(),
-            #     model="tts-1",
-            #     voice="clone:voice_ronn",
-            #     base_url="http://127.0.0.1:2222/v1",
-            #     api_key="no-key-needed",
-            #     response_format="pcm",
-            #     speed=1.3,
-            # ),
-            tts = cartesia.TTS(),
+            tts=OpenAITTSWithSpeechExtraBody(
+                speech_extra_body=najdi_omnivoice_speech_extra_body(),
+                model="tts-1",
+                voice="clone:voice_ronn",
+                base_url="http://211.21.50.85:57027/v1",
+                api_key="no-key-needed",
+                response_format="pcm",
+                speed=1.3,
+            ),
+            # tts = cartesia.TTS(),
 
             vad=silero.VAD.load(),
             turn_detection=MultilingualModel(),
