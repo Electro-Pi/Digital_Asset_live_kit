@@ -6,6 +6,7 @@ import uuid
 import time
 from loguru import logger
 import json
+import re
 
 load_dotenv(".env.local")
 
@@ -31,8 +32,19 @@ from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
 
+def clean_backend_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r'[*#_`~>|]', '', text)
+    text = re.sub(r'[-•]', '،', text)
+    text = re.sub(r'[\[\]\(\){}<>]', '', text)
+    text = re.sub(r'\n+', ' ، ', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'(،\s*)+', '، ', text)
+    return text.strip(' ،')
+
 class Assistant(Agent):
-    def __init__(self, mcp_client: Client, session_id: str) -> None:
+    def __init__(self, mcp_client, session_id: str) -> None:
         super().__init__(
             instructions=system_prompt,
         )
@@ -45,15 +57,20 @@ class Assistant(Agent):
             # 1. USE THE DETECTOR FUNCTION
             crm_intent = is_crm_action(message)
 
-            # 2. CHECK CACHE (Only if it's a Knowledge Query)
+            # 2. CHECK CACHE
             if not crm_intent:
                 logger.info(f"Classified as Knowledge Query: '{message}'. Checking Cache...")
                 cached_answer = sera_cache.get_cached_response(message)
-                # In sera_chat, on cache hit:
+                
                 if cached_answer:
-                    logger.info("Cache Hit! Serving cached response.")
-                    await context.session.say(cached_answer, allow_interruptions=True)
-                    return "[تم تقديم الإجابة للمستخدم مباشرة. لا تعد قراءة المحتوى. فقط اسأل إذا يحتاج مساعدة أخرى.]"
+                    logger.info("Cache Hit! Sending to LLM to enforce speaking rules.")
+                    # بدلاً من التحدث مباشرة، نُرجع النص للموديل مع تذكير صارم بالقواعد
+                    enforcement_prompt = (
+                        f"{cached_answer}\n\n"
+                        "[SYSTEM COMMAND: صُغ هذه الإجابة للمستخدم بلهجة نجدية طبيعية. "
+                        "حوّل جميع الأرقام إلى كلمات (مثال: 'ثلاثة'). لا تستخدم أي رموز أو Markdown.]"
+                    )
+                    return enforcement_prompt
 
                 logger.info("Cache Miss. Proceeding to backend.")
             else:
@@ -86,17 +103,27 @@ class Assistant(Agent):
                 try:
                     data = json.loads(tool_response)
                     tool_response = data.get("answer", tool_response)
-                    tool_response = tool_response[:300] + "..." if len(tool_response) > 300 else tool_response
+                    # زيادة الحد قليلاً لعدم قطع الكلمات
+                    tool_response = tool_response[:400] + "..." if len(tool_response) > 400 else tool_response
                 except:
                     pass
             
-            logger.info(f"SERA Backend Response: {tool_response}")
+            clean_response = clean_backend_text(tool_response)
+            logger.info(f"SERA Backend Response (Cleaned): {clean_response}")
 
-            # 4. SAVE TO CACHE (Only save Knowledge Queries)
-            if not crm_intent and tool_response and "Error" not in tool_response:
-                sera_cache.add_to_cache(query=message, response=tool_response)
+            # 4. SAVE TO CACHE (احفظ النسخة النظيفة في الكاش)
+            if not crm_intent and clean_response and "Error" not in clean_response:
+                sera_cache.add_to_cache(query=message, response=clean_response)
 
-            return tool_response
+            # 5. إجبار الموديل على تطبيق القواعد
+            # إلحاق هذا الأمر السري بنهاية النص يُجبر الموديل على عدم الهلوسة بالتنسيقات
+            final_prompt = (
+                f"{clean_response}\n\n"
+                "[SYSTEM COMMAND: Summarize the above naturally. Speak exclusively in Saudi Najdi. "
+                "Write ALL numbers as full Arabic words (e.g., 'مائة'). "
+                "DO NOT use markdown, bullet points, asterisks, or any symbols. Use only commas and periods.]"
+            )
+            return final_prompt
                 
         except Exception as e:
             error_msg = f"Error connecting to SERA backend: {str(e)}"
