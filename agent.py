@@ -108,7 +108,7 @@ class Assistant(Agent):
         }
 
 
-server = AgentServer()
+server = AgentServer(port=2952)
 
 
 @server.rtc_session()
