@@ -16,3 +16,4 @@ echo "⏳ Restarting service..."
 /usr/bin/systemctl restart digital-asset-agent.service
 
 echo "✅ Deployment complete"
+#test
