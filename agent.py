@@ -23,7 +23,7 @@ from livekit.agents import (
 )
 from src.plugins.semantic_cache import sera_cache
 from src.plugins.crm_detector import is_crm_action
-from livekit.plugins import noise_cancellation, silero, openai, cartesia
+from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
@@ -59,7 +59,7 @@ class Assistant(Agent):
             else:
                 logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
 
-            text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها."
+            text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها. لحظات بس"
             await context.session.say(
                 text_to_say,
                 allow_interruptions=False,
@@ -134,12 +134,10 @@ async def my_agent(ctx: agents.JobContext):
             ),
             tts=OpenAITTSWithSpeechExtraBody(
                 speech_extra_body=najdi_omnivoice_speech_extra_body(),
-                model="tts-1",
-                voice="clone:voice_ronn",
-                base_url="http://211.21.50.85:57027/v1",
+                base_url="http://211.21.50.85:57028/v1",
                 api_key="no-key-needed",
                 response_format="pcm",
-                speed=1.3,
+                speed=1.1,
             ),
             # tts = cartesia.TTS(),
 
