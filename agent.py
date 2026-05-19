@@ -7,8 +7,11 @@ import time
 from loguru import logger
 import json
 import re
-
+import asyncio
 load_dotenv(".env.local")
+
+from pathlib import Path
+import sys
 
 from livekit import agents, rtc
 from livekit.agents import (
@@ -21,6 +24,9 @@ from livekit.agents import (
     AgentStateChangedEvent,
     MetricsCollectedEvent,
     ToolError,
+    BackgroundAudioPlayer,
+    AudioConfig,
+    BuiltinAudioClip,
 )
 from src.plugins.semantic_cache import sera_cache
 from src.plugins.crm_detector import is_crm_action
@@ -31,6 +37,7 @@ from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
 from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
+
 
 def clean_backend_text(text: str) -> str:
     if not text:
@@ -44,12 +51,22 @@ def clean_backend_text(text: str) -> str:
     return text.strip(' ،')
 
 class Assistant(Agent):
-    def __init__(self, mcp_client, session_id: str) -> None:
+
+    def __init__(
+        self,
+        mcp_client,
+        session_id: str,
+        background_audio: BackgroundAudioPlayer,
+    ) -> None:
+
         super().__init__(
             instructions=system_prompt,
         )
+
         self.mcp_client = mcp_client
         self.session_id = session_id
+        self.background_audio = background_audio
+        
 
     @function_tool()
     async def sera_chat(self, context: RunContext, message: str) -> str:
@@ -73,14 +90,32 @@ class Assistant(Agent):
                     return enforcement_prompt
 
                 logger.info("Cache Miss. Proceeding to backend.")
-            else:
-                logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
+                
+                
+            
+            logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
 
-            text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها. لحظات بس"
-            await context.session.say(
-                text_to_say,
-                allow_interruptions=False,
-            )
+            # text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها. لحظات بس"
+            # await context.session.say(
+            #     text_to_say,
+            #     allow_interruptions=False,
+            # )
+            
+            typing_handle = self.background_audio.play(
+                                [
+                                    AudioConfig(
+                                        BuiltinAudioClip.KEYBOARD_TYPING,
+                                        volume=0.15,
+                                        probability=0.7,
+                                    ),
+                                    AudioConfig(
+                                        BuiltinAudioClip.KEYBOARD_TYPING2,
+                                        volume=0.12,
+                                        probability=0.3,
+                                    ),
+                                ],
+                                loop=True,
+                            )
             
             start_time = time.time()
             
@@ -91,6 +126,8 @@ class Assistant(Agent):
                     "session_id": self.session_id 
                 }
             )
+            
+            typing_handle.stop()
             
             mcp_duration = time.time() - start_time
             logger.info(f"FastMCP Call took {mcp_duration:.2f} seconds")
@@ -159,6 +196,12 @@ async def my_agent(ctx: agents.JobContext):
                 model="gemma4",
                 api_key="needed",
             ),
+            # tts = openai.TTS(
+            #     base_url="http://211.21.50.85:57027/v1",
+            #     model="omnivoice-najdi-1.0",
+            #     api_key="no-key-needed",
+            # ),
+                
             tts=OpenAITTSWithSpeechExtraBody(
                 speech_extra_body=najdi_omnivoice_speech_extra_body(),
                 base_url="http://211.21.50.85:57028/v1",
@@ -170,6 +213,17 @@ async def my_agent(ctx: agents.JobContext):
 
             vad=silero.VAD.load(),
             turn_detection=MultilingualModel(),
+        )
+        
+        office_noise_path = Path("data") / "office_low.wav"
+        
+        background_audio = BackgroundAudioPlayer(
+            
+            ambient_sound= str(office_noise_path)
+            # ambient_sound=AudioConfig(
+            #     BuiltinAudioClip.OFFICE_AMBIENCE,
+            #     volume=0.8,
+            # ),
         )
 
         last_eou_metrics = None
@@ -203,12 +257,18 @@ async def my_agent(ctx: agents.JobContext):
 
         # Generate a completely unique, pure Python string for this phone call
         call_session_id = str(uuid.uuid4())
+        
+        
 
         # 3. PASS THE CLIENT AND SESSION ID TO THE ASSISTANT 
         await session.start(
             room=ctx.room,
             # Pass the freshly generated string here:
-            agent=Assistant(mcp_client=mcp_client, session_id=call_session_id), 
+            agent=Assistant(
+                    mcp_client=mcp_client,
+                    session_id=call_session_id,
+                    background_audio=background_audio,
+                ), 
             room_options=room_io.RoomOptions(
                 audio_input=room_io.AudioInputOptions(
                     noise_cancellation=lambda params:
@@ -219,6 +279,12 @@ async def my_agent(ctx: agents.JobContext):
                 ),
             ),
         )
+        
+        
+        await background_audio.start(
+            room=ctx.room,
+            agent_session=session,
+        )
 
         await session.generate_reply(
             instructions=(
@@ -226,9 +292,11 @@ async def my_agent(ctx: agents.JobContext):
                 "واسأله بشكل طبيعي: كيف يمكنني مساعدتك اليوم؟"
             )
         )
-
+        
+        
     except Exception as e:
         logger.error(f"Failed to start agent session: {e}")
+        await background_audio.aclose()
         await exit_stack.aclose()
 
 
