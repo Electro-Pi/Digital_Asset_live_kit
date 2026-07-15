@@ -1,0 +1,20 @@
+[Unit]
+Description=Digital Asset frontend server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai2
+Group=ai2
+WorkingDirectory=/home/ai2/Digital_Asset_live_kit/frontend
+Environment=NODE_ENV=production
+EnvironmentFile=-/home/ai2/Digital_Asset_live_kit/.env.local
+ExecStart=/usr/bin/node /home/ai2/Digital_Asset_live_kit/frontend/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+SyslogIdentifier=digital-asset-frontend
+
+[Install]
+WantedBy=multi-user.target

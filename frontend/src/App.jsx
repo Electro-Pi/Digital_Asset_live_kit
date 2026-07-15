@@ -11,6 +11,14 @@ import {
 } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
 
+const MICROPHONE_OPTIONS = {
+  autoGainControl: false,
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  voiceIsolation: true,
+};
+
 export default function App() {
   const [conn, setConn] = useState(null); // { token, serverUrl, room }
   const [connecting, setConnecting] = useState(false);
@@ -44,13 +52,15 @@ export default function App() {
       {!conn ? (
         <div className="card landing">
           <p className="lede">
-            Talk to the agent in Arabic. Click below and allow microphone access.
+            Talk to the agent naturally in Arabic.
           </p>
           <button className="primary" onClick={startCall} disabled={connecting}>
             {connecting ? "Connecting…" : "Start talking"}
           </button>
           {error && <p className="error">⚠ {error}</p>}
-          <p className="hint">Best in Chrome. Use headphones to avoid echo.</p>
+          <p className="hint">
+            Best in Chrome. Use headphones to improve echo cancellation.
+          </p>
         </div>
       ) : (
         <LiveKitRoom
@@ -58,8 +68,9 @@ export default function App() {
           token={conn.token}
           serverUrl={conn.serverUrl}
           connect={true}
-          audio={true}
+          audio={MICROPHONE_OPTIONS}
           video={false}
+          options={{ audioCaptureDefaults: MICROPHONE_OPTIONS }}
           onDisconnected={endCall}
           onError={(e) => setError(e.message)}
         >

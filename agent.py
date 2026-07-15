@@ -8,6 +8,7 @@ from loguru import logger
 import httpx
 
 from livekit import agents, rtc
+from livekit.agents import stt as livekit_stt
 from livekit.agents import (
     Agent,
     AgentServer,
@@ -44,10 +45,9 @@ load_dotenv(".env.local")
 MOSS_TTS_SERVER_URL = os.getenv("MOSS_TTS_SERVER_URL", "http://localhost:8088")
 MOSS_TTS_MODEL = os.getenv("MOSS_TTS_MODEL", "Rabe3/saudi-tts-4")
 MOSS_TTS_VOICE = os.getenv("MOSS_TTS_VOICE", "hoda")
-MOSS_TTS_REF_AUDIO = os.getenv(
-    "MOSS_TTS_REF_AUDIO",
-    "/workspace/Moss-TTS-finetuning/data/ref/hoda.wav",
-)
+# Prefer the TTS server's uploaded ``hoda`` voice. A reference path is only
+# valid when that exact file exists inside the TTS server's filesystem.
+MOSS_TTS_REF_AUDIO = os.getenv("MOSS_TTS_REF_AUDIO", "").strip() or None
 MOSS_TTS_SEED = int(os.getenv("MOSS_TTS_SEED", "1234"))
 MOSS_TTS_TEXT_TEMPERATURE = float(os.getenv("MOSS_TTS_TEXT_TEMPERATURE", "1.0"))
 MOSS_TTS_TEXT_TOP_P = float(os.getenv("MOSS_TTS_TEXT_TOP_P", "1.0"))
@@ -56,6 +56,33 @@ MOSS_TTS_AUDIO_TEMPERATURE = float(os.getenv("MOSS_TTS_AUDIO_TEMPERATURE", "0.8"
 MOSS_TTS_AUDIO_TOP_P = float(os.getenv("MOSS_TTS_AUDIO_TOP_P", "0.95"))
 MOSS_TTS_AUDIO_TOP_K = int(os.getenv("MOSS_TTS_AUDIO_TOP_K", "50"))
 MOSS_TTS_SENTENCE_MIN_LEN = int(os.getenv("MOSS_TTS_SENTENCE_MIN_LEN", "300"))
+
+# Use the speech classifier, rather than audio volume alone, to decide which
+# microphone segments are sent to ASR.  The slightly conservative defaults keep
+# steady room noise and short incidental sounds from opening the STT gate while
+# still allowing short Arabic replies.
+STT_VAD_ACTIVATION_THRESHOLD = float(
+    os.getenv("STT_VAD_ACTIVATION_THRESHOLD", "0.65")
+)
+STT_VAD_DEACTIVATION_THRESHOLD = float(
+    os.getenv("STT_VAD_DEACTIVATION_THRESHOLD", "0.45")
+)
+STT_VAD_MIN_SPEECH_DURATION = float(
+    os.getenv("STT_VAD_MIN_SPEECH_DURATION", "0.20")
+)
+STT_VAD_MIN_SILENCE_DURATION = float(
+    os.getenv("STT_VAD_MIN_SILENCE_DURATION", "0.60")
+)
+STT_VAD_PREFIX_PADDING_DURATION = float(
+    os.getenv("STT_VAD_PREFIX_PADDING_DURATION", "0.30")
+)
+STT_FOREGROUND_MIN_RMS = float(os.getenv("STT_FOREGROUND_MIN_RMS", "0.015"))
+STT_FOREGROUND_MIN_SNR_DB = float(
+    os.getenv("STT_FOREGROUND_MIN_SNR_DB", "8.0")
+)
+STT_FOREGROUND_MIN_DURATION = float(
+    os.getenv("STT_FOREGROUND_MIN_DURATION", "0.20")
+)
 
 
 def _preview(value: Any, limit: int = 220) -> str:
@@ -177,6 +204,20 @@ async def my_agent(ctx: agents.JobContext):
         MOSS_TTS_SENTENCE_MIN_LEN,
     )
 
+    logger.info(
+        "STT VAD configured activation_threshold={} deactivation_threshold={} "
+        "min_speech_duration={} min_silence_duration={} prefix_padding_duration={} "
+        "foreground_min_rms={} foreground_min_snr_db={} foreground_min_duration={}",
+        STT_VAD_ACTIVATION_THRESHOLD,
+        STT_VAD_DEACTIVATION_THRESHOLD,
+        STT_VAD_MIN_SPEECH_DURATION,
+        STT_VAD_MIN_SILENCE_DURATION,
+        STT_VAD_PREFIX_PADDING_DURATION,
+        STT_FOREGROUND_MIN_RMS,
+        STT_FOREGROUND_MIN_SNR_DB,
+        STT_FOREGROUND_MIN_DURATION,
+    )
+
     if MOSS_TTS_VOICE.lower() != "hoda":
         logger.error(
             "Configured MOSS_TTS_VOICE is not hoda: {}. This can directly cause voice changes.",
@@ -200,6 +241,14 @@ async def my_agent(ctx: agents.JobContext):
         audio_temperature=MOSS_TTS_AUDIO_TEMPERATURE,
         audio_top_p=MOSS_TTS_AUDIO_TOP_P,
         audio_top_k=MOSS_TTS_AUDIO_TOP_K,
+    )
+
+    voice_vad = silero.VAD.load(
+        activation_threshold=STT_VAD_ACTIVATION_THRESHOLD,
+        deactivation_threshold=STT_VAD_DEACTIVATION_THRESHOLD,
+        min_speech_duration=STT_VAD_MIN_SPEECH_DURATION,
+        min_silence_duration=STT_VAD_MIN_SILENCE_DURATION,
+        prefix_padding_duration=STT_VAD_PREFIX_PADDING_DURATION,
     )
 
     def _noise_cancellation_for(params: Any) -> Any:
@@ -226,14 +275,23 @@ async def my_agent(ctx: agents.JobContext):
         #     api_key="no-key-needed",
         #     language="ar",
         # ),
-        # Cohere Arabic ASR (vLLM, /v1/audio/transcriptions with stream=true).
-        # Arabic-only model; language is fixed inside the plugin.
-        stt=CohereASRStreamingSTT(
-            base_url="http://localhost:8000",
+        # Gate the Arabic-only Cohere ASR with neural voice detection so only
+        # confirmed speech segments reach the transcription model.
+        stt=livekit_stt.StreamAdapter(
+            stt=CohereASRStreamingSTT(
+                base_url="http://localhost:8000",
+                min_foreground_rms=STT_FOREGROUND_MIN_RMS,
+                min_foreground_snr_db=STT_FOREGROUND_MIN_SNR_DB,
+                min_foreground_duration=STT_FOREGROUND_MIN_DURATION,
+            ),
+            vad=voice_vad,
         ),
-        # stt=QwenASRStreamingSTT(
-        #     base_url="http://localhost:8001",
-        #     language="ar",
+        # stt=livekit_stt.StreamAdapter(
+        #     stt=QwenASRStreamingSTT(
+        #         base_url="http://localhost:8001",
+        #         language="ar",
+        #     ),
+        #     vad=voice_vad,
         # ),
         # llm=groq.LLM(model="openai/gpt-oss-20b"),
         llm=openai.LLM(
@@ -270,7 +328,7 @@ async def my_agent(ctx: agents.JobContext):
         #     reference_text="جصتي تبدا من ايام ما كنا نزور بيت خوالي",
         #     sample_rate=24000,
         # ),
-        vad=silero.VAD.load(),
+        vad=voice_vad,
         turn_detection=MultilingualModel(),
         # preemptive_generation=True
     )
@@ -431,8 +489,8 @@ async def my_agent(ctx: agents.JobContext):
     logger.info("LiveKit initial generate_reply beginning")
     await session.generate_reply(
         instructions=(
-            "Greet the user, and you must use the tool "
-            "to tell the user the weather in Egypt"
+            "ابدئي بتحية سعودية قصيرة ودافئة، وعرّفي نفسك باسم نوف كمرشدة "
+            "ثقافية سعودية، ثم اسألي المستخدم وش يحب يعرف عن السعودية."
         )
     )
     logger.info("LiveKit initial generate_reply completed")

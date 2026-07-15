@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import uuid
 import wave
@@ -36,7 +37,10 @@ from livekit.agents.types import (
 )
 from livekit.agents.utils import AudioBuffer, is_given
 
+from src.plugins.foreground_speech_gate import analyze_foreground_speech
+
 SERVER_SAMPLE_RATE = 16000
+logger = logging.getLogger(__name__)
 
 # This model transcribes Arabic only; the language is fixed regardless of what
 # the AgentSession passes in.
@@ -64,6 +68,9 @@ class CohereASRStreamingSTT(stt.STT):
         chunk_ms: int = 250,
         end_silence_ms: int = 500,
         silence_rms: float = 0.008,
+        min_foreground_rms: float = 0.015,
+        min_foreground_snr_db: float = 8.0,
+        min_foreground_duration: float = 0.20,
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
@@ -75,6 +82,10 @@ class CohereASRStreamingSTT(stt.STT):
             silence_rms: RMS threshold (on [-1, 1] samples) below which a chunk
                 counts as silence; chunks are gated so the model doesn't
                 hallucinate text from background noise.
+            min_foreground_rms: minimum foreground level required after VAD.
+            min_foreground_snr_db: foreground-to-noise ratio required after VAD.
+            min_foreground_duration: seconds of sustained foreground audio
+                required before a segment is sent to ASR.
         """
         super().__init__(
             capabilities=stt.STTCapabilities(streaming=True, interim_results=True)
@@ -84,6 +95,9 @@ class CohereASRStreamingSTT(stt.STT):
         self._chunk_ms = chunk_ms
         self._end_silence_ms = end_silence_ms
         self._silence_rms = silence_rms
+        self._min_foreground_rms = min_foreground_rms
+        self._min_foreground_snr_db = min_foreground_snr_db
+        self._min_foreground_duration = min_foreground_duration
         self._session = http_session
 
     @property
@@ -118,6 +132,39 @@ class CohereASRStreamingSTT(stt.STT):
         conn_options: APIConnectOptions,
     ) -> stt.SpeechEvent:
         frame = rtc.combine_audio_frames(buffer)
+        foreground = analyze_foreground_speech(
+            frame,
+            min_foreground_rms=self._min_foreground_rms,
+            min_snr_db=self._min_foreground_snr_db,
+            min_foreground_duration=self._min_foreground_duration,
+        )
+        if not foreground.accepted:
+            logger.info(
+                "Cohere ASR rejected non-foreground segment reason=%s "
+                "duration=%.3f foreground_duration=%.3f noise_rms=%.5f "
+                "foreground_rms=%.5f snr_db=%.2f",
+                foreground.reason,
+                foreground.duration,
+                foreground.foreground_duration,
+                foreground.noise_rms,
+                foreground.foreground_rms,
+                foreground.snr_db,
+            )
+            return stt.SpeechEvent(
+                type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                alternatives=[stt.SpeechData(language=LANGUAGE, text="")],
+            )
+
+        logger.debug(
+            "Cohere ASR accepted foreground segment duration=%.3f "
+            "foreground_duration=%.3f noise_rms=%.5f foreground_rms=%.5f "
+            "snr_db=%.2f",
+            foreground.duration,
+            foreground.foreground_duration,
+            foreground.noise_rms,
+            foreground.foreground_rms,
+            foreground.snr_db,
+        )
         form = self._transcription_form(frame.to_wav_bytes(), stream=False)
 
         try:
