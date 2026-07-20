@@ -6,38 +6,39 @@ from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding
 from loguru import logger
 
+from src.utils.speech_format import is_complete_voice_response
+
 # Single source of truth — never let Qdrant infer the name
 VECTOR_NAME = "query_vector"
 
+
 class SemanticCache:
-    def __init__(self, collection_name: str = "sera_semantic_cache", threshold: float = 0.88):
+    def __init__(self, threshold: float = 0.88):
         self.threshold = threshold
-        self.collection_name = collection_name
+        self.collection_name = os.getenv("QDRANT_COLLECTION", "sera_semantic_cache")
 
         logger.info("Loading embedding model...")
         self.embedder = TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
         qdrant_url = os.getenv("QDRANT_URL")
         qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        qdrant_host = os.getenv("QDRANT_HOST")
+        qdrant_port = os.getenv("QDRANT_PORT")
 
         if qdrant_url and qdrant_api_key:
             self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
             logger.info("Connected to Qdrant Cloud successfully.")
+        elif qdrant_host and qdrant_port:
+            self.client = QdrantClient(host=qdrant_host, port=int(qdrant_port))
+            logger.info(f"Connected to local Qdrant at {qdrant_host}:{qdrant_port}.")
         else:
             logger.warning("No Qdrant credentials found! Falling back to In-Memory DB.")
             self.client = QdrantClient(":memory:")
 
-        # Compute vector size once from a real embed call
         self.vector_size = len(next(self.embedder.embed(["test"])).tolist())
-
         self._ensure_collection()
 
     def _ensure_collection(self):
-        """
-        Guarantee the collection exists with the exact vector config we expect.
-        If it exists but was created by an old version (wrong name / wrong size),
-        drop it and recreate — the cache is warm-up data, not mission-critical state.
-        """
         needs_recreate = False
 
         if self.client.collection_exists(self.collection_name):
@@ -46,7 +47,6 @@ class SemanticCache:
                 vectors_cfg = info.config.params.vectors
 
                 if isinstance(vectors_cfg, dict):
-                    # Named-vector collection
                     existing = vectors_cfg.get(VECTOR_NAME)
                     if existing is None or existing.size != self.vector_size:
                         logger.warning(
@@ -55,7 +55,6 @@ class SemanticCache:
                         )
                         needs_recreate = True
                 else:
-                    # Unnamed-vector collection (old style) — always recreate
                     logger.warning(
                         f"Collection '{self.collection_name}' uses unnamed vectors. Recreating..."
                     )
@@ -89,7 +88,28 @@ class SemanticCache:
         return next(self.embedder.embed([text])).tolist()
 
     def clean_query(self, query: str) -> str:
-        return re.sub(r'\s+', ' ', query).strip()
+        return re.sub(r"\s+", " ", query).strip()
+
+    def is_usable_response(self, response: str | None) -> bool:
+        """Reject fallback, truncated, or incomplete answers."""
+        if not response or not response.strip():
+            return False
+
+        if not is_complete_voice_response(response):
+            return False
+
+        lowered = response.strip().lower()
+        blocked_phrases = (
+            "ما فهمت وش تقصد",
+            "ممكن توضح سؤالك",
+            "ما لقيت هالمعلومة",
+            "عذراً، ما لقيت",
+            "error",
+            "failed",
+            "cannot find",
+            "not found",
+        )
+        return not any(phrase in lowered for phrase in blocked_phrases)
 
     def get_cached_response(self, query: str) -> str | None:
         try:
@@ -98,17 +118,24 @@ class SemanticCache:
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=vector,
-                using=VECTOR_NAME,          # ← explicit: never rely on Qdrant defaults
+                using=VECTOR_NAME,
                 limit=1,
             )
 
             if results.points:
                 best = results.points[0]
                 if best.score >= self.threshold:
-                    logger.info(
-                        f"Cache HIT  | score={best.score:.3f} | query='{query[:60]}'"
+                    response = best.payload.get("response")
+                    if self.is_usable_response(response):
+                        logger.info(
+                            f"Cache HIT  | score={best.score:.3f} | "
+                            f"len={len(response)} | query='{query[:60]}'"
+                        )
+                        return response
+                    logger.warning(
+                        f"Cache HIT rejected (incomplete/blocked) | score={best.score:.3f} | "
+                        f"len={len(response or '')} | query='{query[:60]}'"
                     )
-                    return best.payload.get("response")
 
             logger.info(f"Cache MISS | query='{query[:60]}'")
             return None
@@ -118,17 +145,24 @@ class SemanticCache:
             return None
 
     def add_to_cache(self, query: str, response: str):
+        if not self.is_usable_response(response):
+            logger.info(
+                f"Skipping cache write for incomplete/blocked response | "
+                f"len={len(response or '')} | query='{query[:60]}'"
+            )
+            return
+
         try:
             cleaned = self.clean_query(query)
             vector = self._embed(cleaned)
             point_id = str(uuid.uuid4())
 
-            self.client.upsert(                 # ← no deprecated .add()
+            self.client.upsert(
                 collection_name=self.collection_name,
                 points=[
                     models.PointStruct(
                         id=point_id,
-                        vector={VECTOR_NAME: vector},   # ← explicit named vector
+                        vector={VECTOR_NAME: vector},
                         payload={
                             "original_query": cleaned,
                             "response": response,
@@ -138,7 +172,9 @@ class SemanticCache:
                     )
                 ],
             )
-            logger.info(f"Cache saved (ID: {point_id}) | query='{cleaned[:60]}'")
+            logger.info(
+                f"Cache saved (ID: {point_id}) | len={len(response)} | query='{cleaned[:60]}'"
+            )
 
         except Exception as e:
             logger.error(f"Qdrant write error: {e}")

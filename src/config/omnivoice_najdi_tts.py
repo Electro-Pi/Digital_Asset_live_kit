@@ -24,9 +24,7 @@ import os
 from typing import Any
 
 _DEFAULT_INSTRUCTIONS = (
-    "Speak in natural Najdi Arabic: Saudi Gulf colloquial, clear consonants, "
-    "warm professional restaurant tone, moderate pace; avoid switching to "
-    "Modern Standard Arabic unless the text is already formal."
+    "Speak natural Najdi Arabic at a moderate pace. Read the text exactly as written."
 )
 
 
@@ -71,10 +69,10 @@ def najdi_omnivoice_speech_extra_body() -> dict[str, Any]:
         "class_temperature": _env_float("OMNIVOICE_CLASS_TEMPERATURE", 0.0),
         "layer_penalty_factor": _env_float("OMNIVOICE_LAYER_PENALTY_FACTOR", 5.0),
         # long-form chunking — slightly tighter chunks for more stable prosody per segment
-        "audio_chunk_duration": _env_float("OMNIVOICE_AUDIO_CHUNK_DURATION", 12.0),
-        "audio_chunk_threshold": _env_float("OMNIVOICE_AUDIO_CHUNK_THRESHOLD", 28.0),
-        "preprocess_prompt": _env_bool("OMNIVOICE_PREPROCESS_PROMPT", True),
-        "postprocess_output": _env_bool("OMNIVOICE_POSTPROCESS_OUTPUT", True),
+        "audio_chunk_duration": _env_float("OMNIVOICE_AUDIO_CHUNK_DURATION", 20.0),
+        "audio_chunk_threshold": _env_float("OMNIVOICE_AUDIO_CHUNK_THRESHOLD", 60.0),
+        "preprocess_prompt": _env_bool("OMNIVOICE_PREPROCESS_PROMPT", False),
+        "postprocess_output": _env_bool("OMNIVOICE_POSTPROCESS_OUTPUT", False),
     }
 
     instr = _env_str("OMNIVOICE_INSTRUCTIONS", _DEFAULT_INSTRUCTIONS).strip()

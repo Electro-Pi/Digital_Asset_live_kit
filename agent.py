@@ -1,7 +1,7 @@
 from contextlib import AsyncExitStack
 from fastmcp import Client
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, AsyncIterable
 import uuid
 import time
 from loguru import logger
@@ -10,45 +10,43 @@ import re
 import asyncio
 load_dotenv(".env.local")
 
-from pathlib import Path
-import sys
-
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
+    ModelSettings,
     RunContext,
+    StopResponse,
     function_tool,
     room_io,
     AgentStateChangedEvent,
+    ConversationItemAddedEvent,
     MetricsCollectedEvent,
     ToolError,
     BackgroundAudioPlayer,
     AudioConfig,
     BuiltinAudioClip,
 )
+from livekit.agents.llm import ChatMessage
+from livekit.agents.voice.turn import TurnHandlingOptions
 from src.plugins.semantic_cache import sera_cache
-from src.plugins.crm_detector import is_crm_action
-from livekit.plugins import noise_cancellation, silero, openai
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from src.plugins.crm_detector import is_crm_action, is_knowledge_query
+from livekit.plugins import noise_cancellation, silero, openai, groq, cartesia
 
+from livekit.agents.tts import StreamAdapter
 from src.config.omnivoice_najdi_tts import najdi_omnivoice_speech_extra_body
 from src.plugins.openai_stt_with_temperature import STTWithTemperature
 from src.plugins.openai_tts_with_extra_body import OpenAITTSWithSpeechExtraBody
 from src.prompts.agent_prompt import system_prompt
-
-
-def clean_backend_text(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r'[*#_`~>|]', '', text)
-    text = re.sub(r'[-•]', '،', text)
-    text = re.sub(r'[\[\]\(\){}<>]', '', text)
-    text = re.sub(r'\n+', ' ، ', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'(،\s*)+', '، ', text)
-    return text.strip(' ،')
+from src.plugins.higgs_tts import HiggsTTS
+from src.utils.user_text import extract_user_message
+from src.utils.speech_format import (
+    format_stream_for_speech,
+    is_complete_voice_response,
+    is_detail_followup,
+    prepare_voice_reply,
+)
 
 class Assistant(Agent):
 
@@ -66,113 +64,215 @@ class Assistant(Agent):
         self.mcp_client = mcp_client
         self.session_id = session_id
         self.background_audio = background_audio
+        self._last_user_message = ""
+
+    def _remember_user_message(self, message: str) -> str:
+        cleaned = extract_user_message(message)
+        if cleaned:
+            self._last_user_message = cleaned
+        return cleaned
+
+    def _latest_user_message(self, session: AgentSession) -> str:
+        if self._last_user_message:
+            return self._last_user_message
+
+        history = getattr(session, "history", None)
+        if history is None:
+            return ""
+
+        for item in reversed(history.items):
+            if isinstance(item, ChatMessage) and item.role == "user":
+                cleaned = extract_user_message(item.text_content or "")
+                if cleaned:
+                    return cleaned
+        return ""
+
+    def _unwrap_tts(self):
+        activity = self._get_activity_or_raise()
+        wrapped = activity.tts
+        while isinstance(wrapped, StreamAdapter):
+            wrapped = wrapped._wrapped_tts
+        return wrapped
+
+    async def _resolve_knowledge_message(self, message: str) -> str:
+        """Fetch answer from cache or SERA backend; return full cleaned text."""
+        message = extract_user_message(message)
+        if not message:
+            return ""
+
+        if not is_detail_followup(message):
+            cached_answer = sera_cache.get_cached_response(message)
+            if cached_answer:
+                cleaned = prepare_voice_reply(cached_answer)
+                if is_complete_voice_response(cleaned):
+                    logger.info(f"Cache hit: returning {len(cleaned)} chars")
+                    return cleaned
+                logger.warning(
+                    f"Incomplete cache payload ({len(cleaned)} chars) — re-fetching backend."
+                )
+
+        typing_handle = self.background_audio.play(
+            [
+                AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.15, probability=0.7),
+                AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.12, probability=0.3),
+            ],
+            loop=True,
+        )
+        start_time = time.time()
+        try:
+            result = await self.mcp_client.call_tool(
+                name="sera_chat",
+                arguments={"message": message, "session_id": self.session_id},
+            )
+        finally:
+            typing_handle.stop()
+
+        logger.info(f"FastMCP Call took {time.time() - start_time:.2f} seconds")
+
+        tool_response = ""
+        if hasattr(result, "content"):
+            tool_response = "\n".join(
+                block.text for block in result.content if getattr(block, "type", "") == "text"
+            )
+            try:
+                data = json.loads(tool_response)
+                tool_response = data.get("answer", tool_response)
+            except Exception:
+                pass
+
+        clean_response = prepare_voice_reply(tool_response)
+        logger.info(
+            f"SERA Backend Response (Cleaned, {len(clean_response)} chars): "
+            f"{clean_response[:120]}...{clean_response[-80:] if len(clean_response) > 200 else ''}"
+        )
+
+        if clean_response and "Error" not in clean_response and is_complete_voice_response(clean_response):
+            sera_cache.add_to_cache(query=message, response=clean_response)
+        elif clean_response:
+            logger.warning("Backend response incomplete — not caching.")
+
+        return clean_response
         
+    def trim_history(self, session: AgentSession, max_turns: int = 5):
+        logger.info(f"Current Chat Context Length: {len(session.chat_ctx.messages)} messages")
+        messages = session.chat_ctx.messages
+        if len(messages) > (max_turns * 2):
+            # Keep the system prompt (index 0) and the last max_turns*2 messages
+            session.chat_ctx.messages = [messages[0]] + messages[-(max_turns * 2):]
+
+    async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
+        """Route knowledge queries to backend/cache — skip LLM hallucinations."""
+        message = self._remember_user_message(new_message.text_content)
+        if not message or is_crm_action(message):
+            return
+
+        if not is_knowledge_query(message):
+            return
+
+        spoken = await self._resolve_knowledge_message(message)
+        if not spoken:
+            return
+
+        logger.info(
+            f"Knowledge fast-path for '{message[:60]}' — speaking {len(spoken)} chars, skipping LLM."
+        )
+        await self.session.interrupt()
+        self.session.say(spoken, allow_interruptions=True)
+        raise StopResponse()
+    
+    async def tts_node(
+        self,
+        text: AsyncIterable[str],
+        model_settings: ModelSettings,
+    ) -> AsyncIterable[rtc.AudioFrame]:
+        """One TTS call for the full cleaned text — no sentence splitting."""
+        activity = self._get_activity_or_raise()
+        base_tts = self._unwrap_tts()
+        conn_options = activity.session.conn_options.tts_conn_options
+
+        buffer = ""
+        async for chunk in format_stream_for_speech(text):
+            buffer += chunk
+
+        if not buffer:
+            return
+
+        async with base_tts.synthesize(buffer, conn_options=conn_options) as tts_stream:
+            async for audio in tts_stream:
+                yield audio.frame
 
     @function_tool()
     async def sera_chat(self, context: RunContext, message: str) -> str:
         try:
-            # 1. USE THE DETECTOR FUNCTION
+            latest_user = self._latest_user_message(context.session)
+            if latest_user:
+                message = latest_user
+            else:
+                message = extract_user_message(message)
+
             crm_intent = is_crm_action(message)
+            logger.info(f"sera_chat query (user turn): '{message}'")
 
-            # 2. CHECK CACHE
             if not crm_intent:
-                logger.info(f"Classified as Knowledge Query: '{message}'. Checking Cache...")
-                cached_answer = sera_cache.get_cached_response(message)
-                
-                if cached_answer:
-                    logger.info("Cache Hit! Sending to LLM to enforce speaking rules.")
-                    # بدلاً من التحدث مباشرة، نُرجع النص للموديل مع تذكير صارم بالقواعد
-                    enforcement_prompt = (
-                        f"{cached_answer}\n\n"
-                        "[SYSTEM COMMAND: صُغ هذه الإجابة للمستخدم بلهجة نجدية طبيعية. "
-                        "حوّل جميع الأرقام إلى كلمات (مثال: 'ثلاثة'). لا تستخدم أي رموز أو Markdown.]"
-                    )
-                    return enforcement_prompt
+                logger.info(f"Classified as Knowledge Query: '{message}'.")
+                clean_response = await self._resolve_knowledge_message(message)
+                if clean_response:
+                    logger.info(f"Speaking backend answer directly ({len(clean_response)} chars).")
+                    context.session.say(clean_response, allow_interruptions=True)
+                raise StopResponse()
 
-                logger.info("Cache Miss. Proceeding to backend.")
-                
-                
-            
             logger.info(f"Classified as CRM Action: '{message}'. Bypassing Cache.")
-
-            # text_to_say = f"أبشر، خلني أشوف لك {message} اللي تحتاجها. لحظات بس"
-            # await context.session.say(
-            #     text_to_say,
-            #     allow_interruptions=False,
-            # )
-            
             typing_handle = self.background_audio.play(
-                                [
-                                    AudioConfig(
-                                        BuiltinAudioClip.KEYBOARD_TYPING,
-                                        volume=0.15,
-                                        probability=0.7,
-                                    ),
-                                    AudioConfig(
-                                        BuiltinAudioClip.KEYBOARD_TYPING2,
-                                        volume=0.12,
-                                        probability=0.3,
-                                    ),
-                                ],
-                                loop=True,
-                            )
-            
-            start_time = time.time()
-            
-            result = await self.mcp_client.call_tool(
-                name="sera_chat",
-                arguments={
-                    "message": message,
-                    "session_id": self.session_id 
-                }
+                [
+                    AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.15, probability=0.7),
+                    AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.12, probability=0.3),
+                ],
+                loop=True,
             )
-            
-            typing_handle.stop()
-            
-            mcp_duration = time.time() - start_time
-            logger.info(f"FastMCP Call took {mcp_duration:.2f} seconds")
-            
-            # FastMCP response handling
+            start_time = time.time()
+            try:
+                result = await self.mcp_client.call_tool(
+                    name="sera_chat",
+                    arguments={"message": message, "session_id": self.session_id},
+                )
+            finally:
+                typing_handle.stop()
+
+            logger.info(f"FastMCP Call took {time.time() - start_time:.2f} seconds")
+
             tool_response = ""
-            if hasattr(result, 'content'):
-                tool_response = "\n".join(block.text for block in result.content if getattr(block, 'type', '') == "text")
-                
+            if hasattr(result, "content"):
+                tool_response = "\n".join(
+                    block.text for block in result.content if getattr(block, "type", "") == "text"
+                )
                 try:
                     data = json.loads(tool_response)
                     tool_response = data.get("answer", tool_response)
-                    # زيادة الحد قليلاً لعدم قطع الكلمات
-                    tool_response = tool_response[:400] + "..." if len(tool_response) > 400 else tool_response
-                except:
+                except Exception:
                     pass
-            
-            clean_response = clean_backend_text(tool_response)
-            logger.info(f"SERA Backend Response (Cleaned): {clean_response}")
 
-            # 4. SAVE TO CACHE (احفظ النسخة النظيفة في الكاش)
-            if not crm_intent and clean_response and "Error" not in clean_response:
-                sera_cache.add_to_cache(query=message, response=clean_response)
+            clean_response = prepare_voice_reply(tool_response)
+            logger.info(f"SERA CRM Response (Cleaned): {clean_response[:200]}...")
+            return clean_response or "عذراً، ما لقيت هالمعلومة في النظام حالياً."
 
-            # 5. إجبار الموديل على تطبيق القواعد
-            # إلحاق هذا الأمر السري بنهاية النص يُجبر الموديل على عدم الهلوسة بالتنسيقات
-            final_prompt = (
-                f"{clean_response}\n\n"
-                "[SYSTEM COMMAND: Summarize the above naturally. Speak exclusively in Saudi Najdi. "
-                "Write ALL numbers as full Arabic words (e.g., 'مائة'). "
-                "DO NOT use markdown, bullet points, asterisks, or any symbols. Use only commas and periods.]"
-            )
-            return final_prompt
-                
+        except StopResponse:
+            raise
         except Exception as e:
             error_msg = f"Error connecting to SERA backend: {str(e)}"
             logger.error(error_msg)
             return error_msg
 
-server = AgentServer()
+server = AgentServer(
+    num_idle_processes=1,
+    initialize_process_timeout=120.0,
+    job_memory_warn_mb=3000,
+)
 
 
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     exit_stack = AsyncExitStack()
+    background_audio = None
 
     try:
         # 1. INITIALIZE REMOTE FASTMCP CONNECTION
@@ -186,44 +286,55 @@ async def my_agent(ctx: agents.JobContext):
         session = AgentSession(
             stt=STTWithTemperature(
                 base_url="http://8.213.50.155:8002/v1",
-                model="/home/ai/vllm-sera/models/cohere-transcribe",
+                model="qwen3-asr",
                 api_key="no-key-needed",
                 language="ar",
                 temperature=0.0,
             ),
             llm=openai.LLM(
-                base_url="http://8.213.50.155:8001/v1",
-                model="gemma4",
+                base_url="http://176.124.69.198:8000/v1",
+                model="ibm-granite/granite-4.1-8b-fp8",
                 api_key="needed",
+                temperature=0.1,
+                max_completion_tokens=512,
             ),
+
             # tts = openai.TTS(
             #     base_url="http://211.21.50.85:57027/v1",
             #     model="omnivoice-najdi-1.0",
             #     api_key="no-key-needed",
             # ),
-                
+            # tts = HiggsTTS(
+            #     base_url="http://38.108.83.78:60010/v1",
+            #     model="bosonai/higgs-audio-v3-tts-4b",
+            #     reference_audio_path="data/sera_reference.wav",
+            #     reference_text="هلا والله، أنا سيرا، مساعدتك الذكية من الهيئة السعودية لتنظيم الكهرباء.",
+            # ),
+
             tts=OpenAITTSWithSpeechExtraBody(
+                base_url="http://176.124.69.198:8100",
+                model="omnivoice",
+                voice="najdi",
                 speech_extra_body=najdi_omnivoice_speech_extra_body(),
-                base_url="http://211.21.50.85:57028/v1",
-                api_key="no-key-needed",
-                response_format="pcm",
-                speed=1.1,
+                response_format="wav",
             ),
-            # tts = cartesia.TTS(),
+
+
+
+
 
             vad=silero.VAD.load(),
-            turn_detection=MultilingualModel(),
+            turn_handling=TurnHandlingOptions(
+                turn_detection="vad",
+                endpointing={"min_delay": 0.35, "max_delay": 2.0},
+                preemptive_generation={"enabled": False},
+            ),
+            tts_text_transforms=["filter_markdown", "filter_emoji"],
         )
-        
-        office_noise_path = Path("data") / "office_low.wav"
-        
+
         background_audio = BackgroundAudioPlayer(
-            
-            ambient_sound= str(office_noise_path)
-            # ambient_sound=AudioConfig(
-            #     BuiltinAudioClip.OFFICE_AMBIENCE,
-            #     volume=0.8,
-            # ),
+            ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.25),
+            stream_timeout_ms=1000,
         )
 
         last_eou_metrics = None
@@ -260,15 +371,21 @@ async def my_agent(ctx: agents.JobContext):
         
         
 
-        # 3. PASS THE CLIENT AND SESSION ID TO THE ASSISTANT 
+        # 3. PASS THE CLIENT AND SESSION ID TO THE ASSISTANT
+        assistant = Assistant(
+            mcp_client=mcp_client,
+            session_id=call_session_id,
+            background_audio=background_audio,
+        )
+
+        @session.on("conversation_item_added")
+        def _on_conversation_item(event: ConversationItemAddedEvent):
+            if isinstance(event.item, ChatMessage) and event.item.role == "user":
+                assistant._remember_user_message(event.item.text_content or "")
+
         await session.start(
             room=ctx.room,
-            # Pass the freshly generated string here:
-            agent=Assistant(
-                    mcp_client=mcp_client,
-                    session_id=call_session_id,
-                    background_audio=background_audio,
-                ), 
+            agent=assistant,
             room_options=room_io.RoomOptions(
                 audio_input=room_io.AudioInputOptions(
                     noise_cancellation=lambda params:
@@ -288,15 +405,17 @@ async def my_agent(ctx: agents.JobContext):
 
         await session.generate_reply(
             instructions=(
-                "ابدأ بالترحيب بالعميل كمساعد ذكي من سيرا، "
-                "واسأله بشكل طبيعي: كيف يمكنني مساعدتك اليوم؟"
-            )
+                "رحّب بجملة واحدة قصيرة بلهجة نجدية، واسأل كيف تقدر تساعده. "
+                "لا تستخدم أي رموز أو قوائم أو أرقام لاتينية."
+            ),
+            tool_choice="none",
         )
         
         
     except Exception as e:
         logger.error(f"Failed to start agent session: {e}")
-        await background_audio.aclose()
+        if background_audio:
+            await background_audio.aclose()
         await exit_stack.aclose()
 
 
