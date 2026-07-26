@@ -18,8 +18,10 @@ returns mono — treating it as stereo halves the sample count and plays back
 Voice stability: sglang-omni's default audio sampling temperature is 1.7,
 which makes the cloned speaker drift badly (random pitch/gender per request).
 We pass temperature/top_p/top_k matching the values the finetune was validated
-with. The registered voice must also use a long (~20s) reference clip with its
-transcript — short references produce unstable clones.
+with. The registered voice must also use a long (~20s) reference clip — short
+references produce unstable clones. A transcript (``ref_text``) is optional on
+the upload endpoint; ``coda-2`` is registered without one and stays in the
+193-198Hz female band.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+import unicodedata
 
 import aiohttp
 try:
@@ -41,16 +44,73 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
 SERVER_SAMPLE_RATE = 48000  # raw pcm output rate of the server
 SERVER_CHANNELS = 1  # streamed pcm is mono s16 (the wav endpoint is stereo)
-HODA_MIN_F0 = 150.0
-HODA_MAX_F0 = 280.0
+# Expected pitch band for the production `coda-2` voice — logged, not gated.
+#
+# The point of this check is catching a drift to the male speaker: this server's
+# `default` voice measures ~123Hz, versus ~177-198Hz for `coda`/`coda-2`.
+#
+# Both bounds are loose because F0 is estimated from only the first
+# F0_ANALYSIS_SECONDS of the stream, and that onset window is a poor proxy for
+# the utterance: measured onsets of 317Hz and 145Hz on turns whose full-utterance
+# medians were 180Hz and 177Hz (reference clip: 192Hz). Tighter bounds fire on
+# ordinary turns and train you to ignore the log.
+VOICE_MIN_F0 = 135.0
+VOICE_MAX_F0 = 340.0
 F0_ANALYSIS_SECONDS = 1.5
 
-# Arabic diacritics (tashkeel) + tatweel. Diacritized input destabilizes the
-# cloned speaker (measured male-voice outliers in ~40% of requests), so we
-# strip them before synthesis.
-_ARABIC_DIACRITICS = re.compile(
-    "[\\u0610-\\u061a\\u064b-\\u065f\\u0670\\u0640\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+# Speaking rate.
+#
+# The server's own `speed` knob is a resampler: it rescales the sample clock, so
+# 0.9x stretches the waveform *and* drags pitch and every formant down 10%. The
+# cloned speaker becomes a different, deeper one and drifts out of the F0 band
+# checked above — exactly the failure this plugin already spends effort avoiding.
+#
+# So the rate change happens here instead, with WSOLA (see _WSOLAStretcher):
+# duration changes by repeating or dropping whole pitch periods, and F0 and the
+# formants stay bit-for-bit where the model put them. Cost is one frame
+# (STRETCH_FRAME_MS) of extra latency and a few percent of a core.
+MIN_SPEED = 0.5
+MAX_SPEED = 2.0
+STRETCH_FRAME_MS = 30.0
+# Half a pitch period is the minimum useful search range; at the ~190Hz of
+# coda-2 that is 2.6ms, and 6ms covers voices down to ~85Hz.
+STRETCH_SEARCH_MS = 6.0
+
+# Text normalization before synthesis.
+#
+# This used to delete ALL tashkeel, on the theory that diacritized input
+# destabilized the cloned speaker (~40% male-voice outliers). That instability
+# was really sglang-omni's default audio_temperature of 1.7; with the tuned
+# sampling values below it is gone. Re-measured over 30 requests spanning
+# diacritized and undiacritized input: F0 stayed in the 142-247 Hz female band
+# in every single one, with no male outliers in either condition.
+#
+# So stripping tashkeel no longer buys stability — it only throws away the
+# vowel information the model needs, leaving it to guess case endings and
+# gemination from a bare consonant skeleton. Diacritics now pass through.
+#
+# What is still removed is only text that carries NO pronunciation:
+#   * U+0640 tatweel — a typographic stretch, never phonetic
+#   * U+0610-U+061A  — honorific annotations (e.g. "sallallahu alayhi wasallam")
+#   * U+06D6-U+06ED  — Quranic recitation/annotation marks
+# Standard tashkeel (U+064B-U+0652) and the dagger alef (U+0670, a real long
+# /aː/ in words like هٰذا) are kept.
+_NON_PHONETIC_MARKS = re.compile(
+    "[\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
 )
+
+
+def normalize_arabic(text: str) -> str:
+    """Drop non-phonetic marks, preserving vowels and letter identity.
+
+    The NFC pass is load-bearing. Hamza and maddah also exist as COMBINING
+    marks (U+0653-U+0655), so decomposed text spells أ as ا+U+0654. The old
+    rule deleted that range, which silently rewrote letters — رئيس became
+    رييس, مؤسسة became موسسة, القرآن became القران — and those really are
+    pronounced wrong. Composing first turns those sequences back into single
+    letters that no rule here can touch.
+    """
+    return _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
 
 
 def _text_hash(text: str) -> str:
@@ -122,13 +182,149 @@ def _median_f0(audio_bytes: bytes) -> tuple[float | None, float | None, int | No
     return float(np.median(f0s)), rms, peak
 
 
+class _WSOLAStretcher:
+    """Streaming, pitch-preserving time-stretch for mono s16 PCM.
+
+    ``speed`` is a playback-rate multiplier: 0.9 makes the utterance 1/0.9 longer
+    (slower) while leaving pitch and timbre untouched.
+
+    Each output frame is cut from the input near a nominal analysis position,
+    then nudged within a small search window to whichever offset best continues
+    the previous frame, and overlap-added at a fixed synthesis hop. That search
+    is the whole point: a plain overlap-add at the same hops splices waveforms
+    mid-pitch-period and produces the classic warble on sustained Arabic vowels.
+
+    The nominal positions are a fixed grid (frame m at ``m * hop_out * speed``)
+    and the search only perturbs around it. Advancing the grid from the chosen
+    offset instead looks equivalent but silently disables the stretch: the
+    previous frame's exact continuation is a perfect correlation match and sits
+    only ``hop_out * |1 - speed|`` samples inside the search window, so every
+    frame snaps to it and the output comes back at 1.0x. Against a fixed grid
+    that offset can only win for a few frames before it falls outside the
+    window, which is what makes the algorithm insert or drop a whole pitch
+    period at a time — the behavior that keeps it artifact-free.
+
+    Fed chunk by chunk; ``push`` returns whatever output is complete so far and
+    keeps the rest buffered, so it does not delay the stream beyond one frame.
+    Input must be a whole number of samples (even byte count).
+    """
+
+    def __init__(
+        self,
+        *,
+        sample_rate: int,
+        speed: float,
+        frame_ms: float = STRETCH_FRAME_MS,
+        search_ms: float = STRETCH_SEARCH_MS,
+    ) -> None:
+        self._frame = max(4, int(sample_rate * frame_ms / 1000.0) // 2 * 2)
+        self._hop_out = self._frame // 2
+        self._hop_in = self._hop_out * speed  # kept fractional: it is a grid step
+        self._search = max(1, int(sample_rate * search_ms / 1000.0))
+        # A periodic Hann sums to exactly 1.0 at 50% overlap, so overlap-add is
+        # gain-flat and needs no normalization pass.
+        self._window = np.hanning(self._frame + 1)[: self._frame].astype(np.float32)
+        self._reset()
+
+    def _reset(self) -> None:
+        self._buf = np.zeros(0, dtype=np.float32)
+        self._base = 0  # absolute sample index of self._buf[0]
+        self._tail = np.zeros(self._hop_out, dtype=np.float32)
+        self._prev: int | None = None  # absolute start of the last frame taken
+        self._frames = 0  # frames emitted, i.e. the index into the nominal grid
+
+    def push(self, pcm: bytes) -> bytes:
+        if pcm:
+            self._buf = np.concatenate(
+                (self._buf, np.frombuffer(pcm, dtype="<i2").astype(np.float32))
+            )
+        return self._pack(self._advance())
+
+    def flush(self) -> bytes:
+        parts = self._advance()
+        if self._prev is None:
+            # Never accumulated a full frame; pass the scrap through unstretched.
+            parts.append(self._buf.copy())
+        else:
+            # self._tail is the fading-out second half of the last frame. Its
+            # natural continuation in the source starts at prev + hop_out, and
+            # the periodic Hann guarantees window[:hop_out] is its exact
+            # complement — so this fades cleanly into the untouched remainder.
+            rest = self._slice(self._prev + self._hop_out, self._end())
+            merged = self._tail.copy()
+            overlap = min(len(merged), len(rest))
+            merged[:overlap] += rest[:overlap] * self._window[:overlap]
+            parts.append(merged)
+            if len(rest) > len(merged):
+                parts.append(rest[len(merged) :])
+        self._reset()
+        return self._pack(parts)
+
+    def _end(self) -> int:
+        return self._base + len(self._buf)
+
+    def _slice(self, start: int, stop: int) -> "np.ndarray":
+        return self._buf[start - self._base : stop - self._base]
+
+    def _advance(self) -> list["np.ndarray"]:
+        parts: list[np.ndarray] = []
+        while True:
+            if self._prev is None:
+                if self._end() < self._frame:
+                    break
+                offset = 0
+            else:
+                nominal = int(round(self._frames * self._hop_in))
+                lo = max(self._prev + 1, nominal - self._search)
+                hi = max(lo, nominal + self._search)
+                if self._end() < hi + self._frame:
+                    break
+                offset = self._best_offset(lo, hi)
+            frame = self._slice(offset, offset + self._frame) * self._window
+            parts.append(self._tail + frame[: self._hop_out])
+            self._tail = frame[self._hop_out :].copy()
+            self._prev = offset
+            self._frames += 1
+            # The next frame reads no earlier than the current one, and its
+            # template starts at offset + hop_out.
+            self._trim(offset)
+        return parts
+
+    def _best_offset(self, lo: int, hi: int) -> int:
+        # Similarity against the previous frame's natural continuation, i.e.
+        # what the source would have played had we not resynchronized.
+        template = self._slice(self._prev + self._hop_out, self._prev + self._frame)
+        window = self._slice(lo, hi + self._hop_out)
+        corr = np.correlate(window, template, mode="valid")
+        # Normalizing by candidate energy stops the search from always snapping
+        # to the loudest offset rather than the best-aligned one.
+        energy = np.convolve(
+            window * window, np.ones(len(template), dtype=np.float32), mode="valid"
+        )
+        return lo + int(np.argmax(corr / np.sqrt(energy + 1e-9)))
+
+    def _trim(self, keep_from: int) -> None:
+        drop = keep_from - self._base
+        if drop > 0:
+            self._buf = self._buf[drop:]
+            self._base = keep_from
+
+    @staticmethod
+    def _pack(parts: list["np.ndarray"]) -> bytes:
+        parts = [p for p in parts if len(p)]
+        if not parts:
+            return b""
+        data = parts[0] if len(parts) == 1 else np.concatenate(parts)
+        return np.clip(np.rint(data), -32768, 32767).astype("<i2").tobytes()
+
+
 class MOSSTTSPlugin(tts.TTS):
     def __init__(
         self,
         *,
         server_url: str = "http://localhost:8088",
         model: str = "Rabe3/saudi-tts-4",
-        voice: str = "hoda",
+        voice: str = "coda-2",
         ref_audio: str | None = None,
         seed: int | None = None,
         text_temperature: float = 1.0,
@@ -137,6 +333,8 @@ class MOSSTTSPlugin(tts.TTS):
         audio_temperature: float = 0.8,
         audio_top_p: float = 0.95,
         audio_top_k: int = 50,
+        speed: float = 1.0,
+        expected_voice: str = "coda-2",
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
@@ -144,6 +342,11 @@ class MOSSTTSPlugin(tts.TTS):
             server_url: MOSS/sglang-omni server base URL.
             model: model id served (see GET /v1/models).
             voice: uploaded reference voice name (see GET /v1/audio/voices).
+                Servers with no uploaded voices only accept "default", which on
+                a finetuned checkpoint is the finetuned speaker.
+            expected_voice: the voice this deployment is supposed to use. Any
+                other value is logged as a warning, since a silently swapped
+                voice is the most common cause of "the agent sounds wrong".
             ref_audio: optional server-side reference audio path. When set, the
                 request uses voice=default plus this ref_audio so SGLang does
                 not go through its uploaded-voice alias path.
@@ -154,6 +357,10 @@ class MOSSTTSPlugin(tts.TTS):
             audio_temperature: sampling temperature for the RVQ audio channels.
             audio_top_p: nucleus sampling for the RVQ audio channels.
             audio_top_k: top-k sampling for the RVQ audio channels.
+            speed: playback-rate multiplier applied locally, below 1.0 for a
+                slower delivery. Pitch-preserving (see _WSOLAStretcher); this is
+                deliberately not the server's `speed`, which resamples and so
+                changes the speaker. 1.0 disables the stretch entirely.
         """
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),
@@ -171,11 +378,29 @@ class MOSSTTSPlugin(tts.TTS):
         self._audio_temperature = audio_temperature
         self._audio_top_p = audio_top_p
         self._audio_top_k = audio_top_k
+        self._speed = min(MAX_SPEED, max(MIN_SPEED, float(speed)))
+        if self._speed != float(speed):
+            logger.warning(
+                "MOSS TTS speed {} is outside the supported {}-{} range and was clamped to {}",
+                speed,
+                MIN_SPEED,
+                MAX_SPEED,
+                self._speed,
+            )
+        if self._speed != 1.0 and np is None:
+            logger.error(
+                "MOSS TTS speed={} requires numpy for the pitch-preserving stretch, "
+                "but numpy is unavailable; audio will play at the server's rate",
+                self._speed,
+            )
+            self._speed = 1.0
+        self._expected_voice = expected_voice
         self._session = http_session
         logger.info(
             "MOSS TTS plugin initialized server_url={} model={} voice={} ref_audio={} "
             "seed={} text_temperature={} text_top_p={} text_top_k={} "
-            "audio_temperature={} audio_top_p={} audio_top_k={} sample_rate={} channels={}",
+            "audio_temperature={} audio_top_p={} audio_top_k={} speed={} "
+            "sample_rate={} channels={}",
             self._server_url,
             self._model,
             self._voice,
@@ -187,6 +412,7 @@ class MOSSTTSPlugin(tts.TTS):
             self._audio_temperature,
             self._audio_top_p,
             self._audio_top_k,
+            self._speed,
             SERVER_SAMPLE_RATE,
             SERVER_CHANNELS,
         )
@@ -240,7 +466,7 @@ class MOSSChunkedStream(tts.ChunkedStream):
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = f"moss-{utils.shortuuid()}"
         raw_input = self.input_text
-        sanitized_input = _ARABIC_DIACRITICS.sub("", raw_input)
+        sanitized_input = normalize_arabic(raw_input)
         payload = {
             "model": self._tts._model,
             "input": sanitized_input,
@@ -268,16 +494,30 @@ class MOSSChunkedStream(tts.ChunkedStream):
         started_at = time.perf_counter()
         first_audio_at: float | None = None
         chunks = 0
+        bytes_received = 0
         bytes_pushed = 0
         max_chunk_bytes = 0
         odd_boundary_events = 0
         endpoint = f"{self._tts._server_url}/v1/audio/speech"
 
-        if self._tts._voice.lower() != "hoda" and not self._tts._ref_audio:
+        speed = self._tts._speed
+        stretcher = (
+            _WSOLAStretcher(sample_rate=SERVER_SAMPLE_RATE, speed=speed)
+            if speed != 1.0
+            else None
+        )
+
+        expected_voice = self._tts._expected_voice
+        if (
+            expected_voice
+            and self._tts._voice.lower() != expected_voice.lower()
+            and not self._tts._ref_audio
+        ):
             logger.warning(
-                "MOSS TTS request {} is using non-Hoda voice: {}",
+                "MOSS TTS request {} is using voice {} but this deployment expects {}",
                 request_id,
                 self._tts._voice,
+                expected_voice,
             )
         if self._tts._server_url.endswith(":8088"):
             logger.info(
@@ -292,7 +532,7 @@ class MOSSChunkedStream(tts.ChunkedStream):
             "preview={!r} stream={} response_format={} stream_format={} "
             "language={} ref_audio={} seed={} text_temperature={} text_top_p={} "
             "text_top_k={} audio_temperature={} audio_top_p={} audio_top_k={} "
-            "diagnostic_f0_min={} diagnostic_f0_max={} timeout={}",
+            "speed={} diagnostic_f0_min={} diagnostic_f0_max={} timeout={}",
             request_id,
             endpoint,
             payload["model"],
@@ -314,8 +554,9 @@ class MOSSChunkedStream(tts.ChunkedStream):
             payload["audio_temperature"],
             payload["audio_top_p"],
             payload["audio_top_k"],
-            HODA_MIN_F0,
-            HODA_MAX_F0,
+            speed,
+            VOICE_MIN_F0,
+            VOICE_MAX_F0,
             self._conn_options.timeout,
         )
 
@@ -382,8 +623,12 @@ class MOSSChunkedStream(tts.ChunkedStream):
                         continue
                     aligned_chunk = chunk[:frame_bytes]
                     chunks += 1
-                    bytes_pushed += frame_bytes
+                    bytes_received += frame_bytes
                     max_chunk_bytes = max(max_chunk_bytes, frame_bytes)
+                    # F0 is measured on the server's audio, before the stretch.
+                    # WSOLA leaves pitch untouched, so the two agree, and keeping
+                    # the pre-stretch signal makes the numbers comparable with
+                    # every log line recorded before this knob existed.
                     if len(analysis_audio) < analysis_limit:
                         needed = analysis_limit - len(analysis_audio)
                         analysis_audio.extend(aligned_chunk[:needed])
@@ -393,28 +638,45 @@ class MOSSChunkedStream(tts.ChunkedStream):
                             "audio_seconds={:.3f} elapsed={:.3f}s remainder_bytes={}",
                             request_id,
                             chunks,
-                            bytes_pushed,
-                            bytes_pushed / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
+                            bytes_received,
+                            bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
                             time.perf_counter() - started_at,
                             len(remainder),
                         )
-                    output_emitter.push(aligned_chunk)
+                    emitted = (
+                        stretcher.push(aligned_chunk)
+                        if stretcher is not None
+                        else aligned_chunk
+                    )
+                    if emitted:
+                        bytes_pushed += len(emitted)
+                        output_emitter.push(emitted)
+
+            if stretcher is not None:
+                emitted = stretcher.flush()
+                if emitted:
+                    bytes_pushed += len(emitted)
+                    output_emitter.push(emitted)
 
             output_emitter.flush()
             elapsed = time.perf_counter() - started_at
             f0, rms, peak = _median_f0(bytes(analysis_audio))
-            audio_seconds = bytes_pushed / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2)
+            audio_seconds = bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2)
             logger.info(
                 "MOSS TTS request complete request_id={} seed={} chunks={} bytes={} "
-                "audio_seconds={:.3f} elapsed={:.3f}s first_audio_latency={} "
+                "audio_seconds={:.3f} speed={} emitted_bytes={} emitted_seconds={:.3f} "
+                "elapsed={:.3f}s first_audio_latency={} "
                 "max_chunk_bytes={} odd_boundary_events={} final_remainder_bytes={} "
                 "analysis_seconds={:.3f} median_f0_hz={} rms={} peak={} "
                 "gateway_bypass=true retry_count=0 gate_action=none",
                 request_id,
                 payload.get("seed"),
                 chunks,
-                bytes_pushed,
+                bytes_received,
                 audio_seconds,
+                speed,
+                bytes_pushed,
+                bytes_pushed / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
                 elapsed,
                 f"{first_audio_at - started_at:.3f}s" if first_audio_at else "none",
                 max_chunk_bytes,
@@ -431,7 +693,7 @@ class MOSSChunkedStream(tts.ChunkedStream):
                     "audio was already emitted because fixed-seed direct mode has no gate",
                     request_id,
                 )
-            elif not (HODA_MIN_F0 <= f0 <= HODA_MAX_F0):
+            elif not (VOICE_MIN_F0 <= f0 <= VOICE_MAX_F0):
                 logger.error(
                     "MOSS TTS diagnostic out-of-range request_id={} seed={} median_f0_hz={:.1f} "
                     "expected_range={:.0f}-{:.0f}; audio was emitted because fixed-seed direct "
@@ -439,8 +701,8 @@ class MOSSChunkedStream(tts.ChunkedStream):
                     request_id,
                     payload.get("seed"),
                     f0,
-                    HODA_MIN_F0,
-                    HODA_MAX_F0,
+                    VOICE_MIN_F0,
+                    VOICE_MAX_F0,
                 )
         except aiohttp.ClientError as e:
             logger.exception(

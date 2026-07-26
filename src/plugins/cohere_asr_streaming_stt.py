@@ -71,11 +71,14 @@ class CohereASRStreamingSTT(stt.STT):
         min_foreground_rms: float = 0.015,
         min_foreground_snr_db: float = 8.0,
         min_foreground_duration: float = 0.20,
+        api_key: str | None = None,
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
         Args:
-            base_url: vLLM server URL, e.g. "http://localhost:8000".
+            base_url: vLLM server URL, e.g. "http://localhost:8000". A trailing
+                "/v1" is accepted and stripped — the endpoint path is appended
+                by this plugin.
             model: served model id.
             chunk_ms: local audio chunk size used for silence detection.
             end_silence_ms: trailing silence after which the segment is finalized.
@@ -86,12 +89,17 @@ class CohereASRStreamingSTT(stt.STT):
             min_foreground_snr_db: foreground-to-noise ratio required after VAD.
             min_foreground_duration: seconds of sustained foreground audio
                 required before a segment is sent to ASR.
+            api_key: bearer token, required when the vLLM server was started
+                with ``--api-key``. Omit for an unauthenticated local server.
         """
         super().__init__(
             capabilities=stt.STTCapabilities(streaming=True, interim_results=True)
         )
-        self._base_url = base_url.rstrip("/")
+        # Accept both "http://host:port" and "http://host:port/v1" — the /v1
+        # prefix is part of the path this plugin appends.
+        self._base_url = base_url.rstrip("/").removesuffix("/v1")
         self._model = model
+        self._api_key = (api_key or "").strip() or None
         self._chunk_ms = chunk_ms
         self._end_silence_ms = end_silence_ms
         self._silence_rms = silence_rms
@@ -112,6 +120,9 @@ class CohereASRStreamingSTT(stt.STT):
         if self._session is None:
             self._session = utils.http_context.http_session()
         return self._session
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
 
     def _transcription_form(self, wav_bytes: bytes, *, stream: bool) -> aiohttp.FormData:
         form = aiohttp.FormData()
@@ -171,6 +182,7 @@ class CohereASRStreamingSTT(stt.STT):
             async with self._ensure_session().post(
                 f"{self._base_url}/v1/audio/transcriptions",
                 data=form,
+                headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=conn_options.timeout),
             ) as resp:
                 if resp.status != 200:
@@ -228,6 +240,7 @@ class CohereASRSpeechStream(stt.SpeechStream):
             async with self._cohere_stt._ensure_session().post(
                 f"{self._cohere_stt._base_url}/v1/audio/transcriptions",
                 data=form,
+                headers=self._cohere_stt._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=self._conn_options.timeout),
             ) as resp:
                 if resp.status != 200:

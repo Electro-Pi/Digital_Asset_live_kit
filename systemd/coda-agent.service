@@ -1,0 +1,24 @@
+[Unit]
+Description=CODA LiveKit voice agent (Coda-digital-asset checkout)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/Coda-digital-asset/Digital_Asset_live_kit
+Environment=PYTHONUNBUFFERED=1
+# Loads LIVEKIT_* (new project creds) and AGENT_PORT (free health port).
+EnvironmentFile=/home/Coda-digital-asset/Digital_Asset_live_kit/.env.local
+ExecStart=/root/.local/bin/uv run agent.py start
+Restart=always
+RestartSec=5
+TimeoutStopSec=90
+KillMode=control-group
+SendSIGKILL=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=coda-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, Optional
 
+import asyncio
 import os
 import time
 from loguru import logger
@@ -38,14 +39,19 @@ from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.moss_tts_plugin import MOSSTTSPlugin
 from src.prompts.agent_prompt import system_prompt
+from src.billing import billing_from_env, parse_participant_budget
 
 
 load_dotenv(".env.local")
 
 MOSS_TTS_SERVER_URL = os.getenv("MOSS_TTS_SERVER_URL", "http://localhost:8088")
 MOSS_TTS_MODEL = os.getenv("MOSS_TTS_MODEL", "Rabe3/saudi-tts-4")
-MOSS_TTS_VOICE = os.getenv("MOSS_TTS_VOICE", "hoda")
-# Prefer the TTS server's uploaded ``hoda`` voice. A reference path is only
+MOSS_TTS_VOICE = os.getenv("MOSS_TTS_VOICE", "coda-2")
+# The voice this deployment is supposed to be speaking with. Hosted servers that
+# have no uploaded voices only accept "default" (the finetuned speaker), while
+# the production server has "coda-2" uploaded — so this is config, not a constant.
+MOSS_TTS_EXPECTED_VOICE = os.getenv("MOSS_TTS_EXPECTED_VOICE", MOSS_TTS_VOICE)
+# Prefer the TTS server's uploaded ``coda-2`` voice. A reference path is only
 # valid when that exact file exists inside the TTS server's filesystem.
 MOSS_TTS_REF_AUDIO = os.getenv("MOSS_TTS_REF_AUDIO", "").strip() or None
 MOSS_TTS_SEED = int(os.getenv("MOSS_TTS_SEED", "1234"))
@@ -55,7 +61,23 @@ MOSS_TTS_TEXT_TOP_K = int(os.getenv("MOSS_TTS_TEXT_TOP_K", "50"))
 MOSS_TTS_AUDIO_TEMPERATURE = float(os.getenv("MOSS_TTS_AUDIO_TEMPERATURE", "0.8"))
 MOSS_TTS_AUDIO_TOP_P = float(os.getenv("MOSS_TTS_AUDIO_TOP_P", "0.95"))
 MOSS_TTS_AUDIO_TOP_K = int(os.getenv("MOSS_TTS_AUDIO_TOP_K", "50"))
+# Delivery pace, applied client-side and pitch-preserving. Below 1.0 is slower.
+# Not the server's `speed`, which is a resampler and would change the speaker.
+MOSS_TTS_SPEED = float(os.getenv("MOSS_TTS_SPEED", "0.92"))
 MOSS_TTS_SENTENCE_MIN_LEN = int(os.getenv("MOSS_TTS_SENTENCE_MIN_LEN", "300"))
+
+# ─── LLM / STT backends ──────────────────────────────────────────────────────
+# Both are OpenAI-compatible vLLM servers. When vLLM is started with --api-key
+# every /v1/* route 401s without a matching bearer token, so the key is required
+# for the hosted endpoints and ignorable for an unauthenticated local server.
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://8.213.50.155:8001/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma4")
+# openai.LLM rejects an empty api_key, so fall back to a placeholder.
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or "no-key-needed"
+
+STT_BASE_URL = os.getenv("STT_BASE_URL", "http://localhost:8000")
+STT_MODEL = os.getenv("STT_MODEL", "CohereLabs/cohere-transcribe-arabic-07-2026")
+STT_API_KEY = os.getenv("STT_API_KEY", "").strip() or None
 
 # Use the speech classifier, rather than audio volume alone, to decide which
 # microphone segments are sent to ASR.  The slightly conservative defaults keep
@@ -174,7 +196,17 @@ class Assistant(Agent):
 # num_idle_processes defaults to 128 in prod (one warm job process per CPU core,
 # assuming a dedicated box). This is a shared server, so cap it — a few warm
 # processes keep session start-up instant without spawning 128 procs on boot.
-server = AgentServer(port=2952, num_idle_processes=3)
+#
+# AGENT_PORT is the worker's local health/debug HTTP port. It must be unique per
+# running agent, so a second agent on the same host (e.g. this checkout running
+# alongside another deployment) needs a free port set in .env.local.
+AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
+server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
+
+# Authoritative per-user live-minutes meter. Talks to Supabase with the
+# service-role key (server-only). No-op if Supabase env is unset — in that case
+# only the LiveKit token TTL caps the session.
+billing = billing_from_env()
 
 
 @server.rtc_session()
@@ -185,7 +217,8 @@ async def my_agent(ctx: agents.JobContext):
         "LiveKit agent job starting room_name={} room_sid={} job_id={} participant={} "
         "tts_server_url={} tts_model={} tts_voice={} tts_ref_audio={} "
         "tts_seed={} tts_text_temperature={} tts_text_top_p={} tts_text_top_k={} "
-        "tts_audio_temperature={} tts_audio_top_p={} tts_audio_top_k={} sentence_min_len={}",
+        "tts_audio_temperature={} tts_audio_top_p={} tts_audio_top_k={} tts_speed={} "
+        "sentence_min_len={}",
         getattr(ctx.room, "name", None),
         getattr(ctx.room, "sid", None),
         getattr(job, "id", None),
@@ -201,6 +234,7 @@ async def my_agent(ctx: agents.JobContext):
         MOSS_TTS_AUDIO_TEMPERATURE,
         MOSS_TTS_AUDIO_TOP_P,
         MOSS_TTS_AUDIO_TOP_K,
+        MOSS_TTS_SPEED,
         MOSS_TTS_SENTENCE_MIN_LEN,
     )
 
@@ -218,10 +252,23 @@ async def my_agent(ctx: agents.JobContext):
         STT_FOREGROUND_MIN_DURATION,
     )
 
-    if MOSS_TTS_VOICE.lower() != "hoda":
+    logger.info(
+        "Model backends llm_base_url={} llm_model={} llm_api_key_set={} "
+        "stt_base_url={} stt_model={} stt_api_key_set={}",
+        LLM_BASE_URL,
+        LLM_MODEL,
+        LLM_API_KEY != "no-key-needed",
+        STT_BASE_URL,
+        STT_MODEL,
+        bool(STT_API_KEY),
+    )
+
+    if MOSS_TTS_VOICE.lower() != MOSS_TTS_EXPECTED_VOICE.lower():
         logger.error(
-            "Configured MOSS_TTS_VOICE is not hoda: {}. This can directly cause voice changes.",
+            "Configured MOSS_TTS_VOICE is {} but MOSS_TTS_EXPECTED_VOICE is {}. "
+            "This can directly cause voice changes.",
             MOSS_TTS_VOICE,
+            MOSS_TTS_EXPECTED_VOICE,
         )
     if MOSS_TTS_SERVER_URL.endswith(":8088"):
         logger.info(
@@ -241,6 +288,8 @@ async def my_agent(ctx: agents.JobContext):
         audio_temperature=MOSS_TTS_AUDIO_TEMPERATURE,
         audio_top_p=MOSS_TTS_AUDIO_TOP_P,
         audio_top_k=MOSS_TTS_AUDIO_TOP_K,
+        speed=MOSS_TTS_SPEED,
+        expected_voice=MOSS_TTS_EXPECTED_VOICE,
     )
 
     voice_vad = silero.VAD.load(
@@ -279,7 +328,9 @@ async def my_agent(ctx: agents.JobContext):
         # confirmed speech segments reach the transcription model.
         stt=livekit_stt.StreamAdapter(
             stt=CohereASRStreamingSTT(
-                base_url="http://localhost:8000",
+                base_url=STT_BASE_URL,
+                model=STT_MODEL,
+                api_key=STT_API_KEY,
                 min_foreground_rms=STT_FOREGROUND_MIN_RMS,
                 min_foreground_snr_db=STT_FOREGROUND_MIN_SNR_DB,
                 min_foreground_duration=STT_FOREGROUND_MIN_DURATION,
@@ -295,9 +346,9 @@ async def my_agent(ctx: agents.JobContext):
         # ),
         # llm=groq.LLM(model="openai/gpt-oss-20b"),
         llm=openai.LLM(
-            base_url="http://8.213.50.155:8001/v1",
-            model="gemma4",
-            api_key="needed",
+            base_url=LLM_BASE_URL,
+            model=LLM_MODEL,
+            api_key=LLM_API_KEY,
         ),
         # tts=openai.TTS(
         #     base_url="http://211.21.50.85:57010/v1",
@@ -485,6 +536,131 @@ async def my_agent(ctx: agents.JobContext):
         ),
     )
     logger.info("LiveKit session.start completed room_name={}", getattr(ctx.room, "name", None))
+
+    # ─── Per-user live-minutes budget (authoritative meter) ──────────────────
+    # The /api/connection-details token route stamped the Supabase user id +
+    # remaining seconds into the participant identity/metadata. We read it here,
+    # hard-stop the session when the budget is spent (with a spoken notice), and
+    # bill the actual consumed seconds back to Supabase. A periodic checkpoint
+    # means a crash mid-session still records most of the usage. The token TTL is
+    # an independent hard ceiling layered on top of this.
+    # JobContext exposes no `participant` attribute, and room.remote_participants
+    # is still empty this early in the job — so both of those lookups always
+    # resolved to None, which silently disabled live billing AND the hard stop
+    # (leaving only the token TTL). Wait for the caller to actually appear.
+    _part = None
+    try:
+        _part = await asyncio.wait_for(ctx.wait_for_participant(), timeout=15)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "No remote participant appeared within 15s; live billing is disabled "
+            "for this session and only the token TTL caps it"
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not resolve the calling participant for billing: {}", e)
+
+    billing_user_id, billing_remaining = parse_participant_budget(
+        getattr(_part, "identity", None), getattr(_part, "metadata", None)
+    )
+    logger.info(
+        "Live budget resolved user={} remaining={}s billing_enabled={}",
+        billing_user_id,
+        billing_remaining,
+        billing.enabled,
+    )
+
+    # The remaining-seconds hint in the token is a SNAPSHOT taken when the token
+    # was minted, so it cannot see budget spent by a session that started after
+    # it — two tabs opened together would each believe they own the whole budget.
+    # Re-read the authoritative number from Supabase and take the tighter of the
+    # two, then let every checkpoint below correct it against the live server
+    # value.
+    if billing_user_id and billing.enabled:
+        _authoritative = await billing.live_remaining(billing_user_id)
+        if _authoritative is not None:
+            if billing_remaining is None or _authoritative < billing_remaining:
+                logger.info(
+                    "Live budget tightened from token hint {}s to server value {}s user={}",
+                    billing_remaining,
+                    _authoritative,
+                    billing_user_id,
+                )
+                billing_remaining = _authoritative
+
+    _meter_start = time.monotonic()
+    _billed_seconds = 0
+    # Checkpoint often enough that the overrun past a spent budget is a couple of
+    # seconds rather than a whole billing chunk. A user with 5s left used to get
+    # a full 15s of conversation for free, every single time.
+    _METER_TICK = 5
+
+    async def _end_for_quota() -> None:
+        logger.info(
+            "Live budget exhausted user={} budget={}s — ending session",
+            billing_user_id,
+            billing_remaining,
+        )
+        try:
+            await session.say(
+                "انتهت دقائقك المجانية لهذا الشهر. تقدر ترقّي اشتراكك عشان نكمل.",
+                allow_interruptions=False,
+            )
+            await asyncio.sleep(2)
+        except Exception as say_err:  # noqa: BLE001
+            logger.warning("Budget goodbye message failed: {}", say_err)
+        # Ending the job only removes the AGENT: the browser stays in the room
+        # and its on-screen timer keeps running, which looks like the session is
+        # still live. Delete the room so the client is actually disconnected.
+        try:
+            await ctx.delete_room()
+        except Exception as del_err:  # noqa: BLE001
+            logger.warning("Could not delete room after budget exhaustion: {}", del_err)
+        ctx.shutdown(reason="live_quota_exhausted")
+
+    async def _bill_delta(target_elapsed: int) -> Optional[int]:
+        """Charge everything not yet billed. Returns server-reported remaining."""
+        nonlocal _billed_seconds
+        delta = target_elapsed - _billed_seconds
+        if not (billing_user_id and delta > 0):
+            return None
+        remaining = await billing.consume_live_seconds(billing_user_id, delta)
+        _billed_seconds += delta
+        return remaining
+
+    async def _meter_loop() -> None:
+        try:
+            while True:
+                await asyncio.sleep(_METER_TICK)
+                elapsed = int(time.monotonic() - _meter_start)
+                remaining = await _bill_delta(elapsed)
+                # Prefer the value the server just returned: it accounts for
+                # every other session this user has running concurrently. Only
+                # fall back to the local budget when the RPC failed.
+                if remaining is not None:
+                    if remaining <= 0:
+                        await _end_for_quota()
+                        return
+                elif billing_remaining is not None and elapsed >= billing_remaining:
+                    await _end_for_quota()
+                    return
+        except asyncio.CancelledError:
+            pass
+
+    _meter_task = None
+    if billing_user_id:
+        if billing_remaining is not None and billing_remaining <= 0:
+            # Nothing left before a word was spoken — don't hand out a free turn.
+            await _end_for_quota()
+            return
+        _meter_task = asyncio.create_task(_meter_loop())
+
+    async def _final_bill() -> None:
+        if _meter_task:
+            _meter_task.cancel()
+        elapsed = int(time.monotonic() - _meter_start)
+        await _bill_delta(elapsed)
+
+    ctx.add_shutdown_callback(_final_bill)
 
     logger.info("LiveKit initial generate_reply beginning")
     await session.generate_reply(
