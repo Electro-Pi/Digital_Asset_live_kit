@@ -206,3 +206,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ─── Medical guideline corpus ────────────────────────────────────────────────
+# Cached publisher HTML/PDF (15MB+) and the derived chunks are build artifacts:
+# `uv run python -m src.ingestion.cli fetch` regenerates them. The manifest and
+# reports ARE committed — they are the provenance record for clinical review.
+knowledge/raw/
+knowledge/chunks/
+knowledge/medical/

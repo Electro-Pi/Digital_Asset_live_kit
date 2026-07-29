@@ -1,0 +1,25 @@
+[Unit]
+Description=Qdrant vector store for the medical guideline corpus
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/Medical-Coda/Digital_Asset_live_kit
+ExecStart=/usr/bin/docker compose up -d --wait
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
+
+# The agent unit for this checkout is medical-coda-back.service, which is
+# already installed and does NOT declare a dependency on this one. The agent's
+# corpus check fails closed, so on a cold boot it can start before Qdrant is
+# accepting and exit; Restart=always recovers it within seconds. To remove the
+# race entirely:
+#   systemctl edit medical-coda-back.service
+#   [Unit]
+#   Requires=medical-coda-qdrant.service
+#   After=medical-coda-qdrant.service

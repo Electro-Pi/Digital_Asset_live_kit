@@ -6,16 +6,14 @@ import os
 import time
 from loguru import logger
 
-import httpx
-
 from livekit import agents, rtc
+from livekit.agents import llm as livekit_llm
 from livekit.agents import stt as livekit_stt
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
-    RunContext,
-    function_tool,
+    JobProcess,
     room_io,
     AgentStateChangedEvent,
     ConversationItemAddedEvent,
@@ -24,25 +22,25 @@ from livekit.agents import (
     MetricsCollectedEvent,
     SessionUsageUpdatedEvent,
     SpeechCreatedEvent,
-    ToolError,
     UserInputTranscribedEvent,
     UserStateChangedEvent,
-    metrics,
     tokenize,
 )
 from livekit.agents.tts import StreamAdapter
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
-from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.moss_tts_plugin import MOSSTTSPlugin
-from src.prompts.agent_prompt import system_prompt
+from src.prompts.medical_prompt import greeting_instructions, system_prompt
 from src.billing import billing_from_env, parse_participant_budget
+from src.rag import MedicalRetriever, QueryRoute, TurnDecision, settings_from_env
+from src.rag.store import verify_corpus_sync
 
 
 load_dotenv(".env.local")
+
+RAG_SETTINGS = settings_from_env()
 
 MOSS_TTS_SERVER_URL = os.getenv("MOSS_TTS_SERVER_URL", "http://localhost:8088")
 MOSS_TTS_MODEL = os.getenv("MOSS_TTS_MODEL", "Rabe3/saudi-tts-4")
@@ -108,89 +106,97 @@ STT_FOREGROUND_MIN_DURATION = float(
 
 
 def _preview(value: Any, limit: int = 220) -> str:
+    """Render a value for logs without leaking what the patient said.
+
+    Everything a patient says in this session is health information. Logs on a
+    deployed box are not a place for it, so previews collapse to a length by
+    default; LOG_SENSITIVE_CONTENT re-enables the real text for local debugging
+    only.
+    """
     text = " ".join(str(value).split())
+    if not RAG_SETTINGS.log_sensitive_content:
+        return f"[redacted; chars={len(text)}]"
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."
 
 
-class Assistant(Agent):
-    def __init__(self) -> None:
-        super().__init__(
-            instructions=system_prompt,
+def _error_summary(error: Any) -> str:
+    """Describe a provider error without echoing the request body back.
+
+    Provider exceptions frequently embed the prompt — which here contains the
+    patient's own words — in their string form.
+    """
+    if RAG_SETTINGS.log_sensitive_content:
+        return str(error)
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    return f"{type(error).__name__}(status={status}; details redacted)"
+
+
+# Per-turn cap on the conversational context handed to the router. Enough to
+# carry the clinical topic of the preceding exchange, short enough that it does
+# not swamp the patient's actual words in the retrieval query.
+_HISTORY_TURN_CHARS = 200
+
+
+class MedicalAssistant(Agent):
+    """The patient-facing agent: screen, retrieve, then answer from evidence."""
+
+    def __init__(self, retriever: MedicalRetriever) -> None:
+        super().__init__(instructions=system_prompt)
+        self._retriever = retriever
+
+    @staticmethod
+    def _recent_history(turn_ctx: livekit_llm.ChatContext) -> Optional[str]:
+        """The tail of the conversation, used to make follow-ups interpretable.
+
+        "وكم مرة؟" retrieves nothing on its own; paired with what it follows, it
+        retrieves the right screening interval.
+
+        Both roles are included, because a follow-up is usually the answer to
+        the clarifying question Nouf just asked, and it is her
+        question — not the patient's previous complaint — that gives it meaning.
+        Reading only the patient's side, "ايه فيه احمرار" looks like small talk
+        and gets routed DIRECT, which is how a red, hot joint reached the model
+        with no guideline evidence behind it.
+        """
+        parts: list[str] = []
+        for item in reversed(turn_ctx.items):
+            if getattr(item, "role", None) not in ("user", "assistant"):
+                continue
+            text = (getattr(item, "text_content", None) or "").strip()
+            if not text:
+                continue
+            parts.append(text[:_HISTORY_TURN_CHARS])
+            if len(parts) == 2:
+                break
+        return " ".join(reversed(parts)) if parts else None
+
+    async def on_user_turn_completed(
+        self,
+        turn_ctx: livekit_llm.ChatContext,
+        new_message: livekit_llm.ChatMessage,
+    ) -> None:
+        utterance = (new_message.text_content or "").strip()
+        if not utterance:
+            return
+
+        decision: TurnDecision = await self._retriever.decide(
+            utterance, history=self._recent_history(turn_ctx)
         )
 
+        if decision.evidence:
+            # Injected into this turn's context only — LiveKit does not persist
+            # changes made here, so the evidence never accumulates across turns.
+            turn_ctx.add_message(role="system", content=decision.evidence)
 
-
-    @function_tool()
-    async def lookup_weather(
-        self,
-        context: RunContext,
-        location: str,
-    ) -> dict[str, Any]:
-        """
-        Look up weather information for a given location.
-
-        Args:
-            location: The location to look up weather information for.
-        """
-        
-        # await context.session.say("هشفهولك حالا.")
-
-        async with httpx.AsyncClient(timeout=4.0) as client:
-
-            # ---------------------------
-            # 1. Geocoding
-            # ---------------------------
-            geo_response = await client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={
-                    "name": location,
-                    "count": 1,
-                    "language": "en",
-                },
-            )
-
-            if geo_response.status_code != 200:
-                raise ToolError(f"Geocoding API failed for: {location}")
-
-            geo_data = geo_response.json()
-
-            results = geo_data.get("results")
-            if not results:
-                raise ToolError(f"Could not find location: {location}")
-
-            lat = results[0]["latitude"]
-            lon = results[0]["longitude"]
-            place_name = results[0]["name"]
-
-            # ---------------------------
-            # 2. Weather API
-            # ---------------------------
-            weather_response = await client.get(
-                "https://api.open-meteo.com/v1/forecast",
-                params={
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": ["temperature_2m", "weathercode"],
-                    "temperature_unit": "celsius",
-                },
-            )
-
-            if weather_response.status_code != 200:
-                raise ToolError(f"Weather API failed for: {location}")
-
-            weather_data = weather_response.json()
-
-            current = weather_data.get("current", {})
-
-            if not current:
-                raise ToolError("No current weather data returned")
-
-        return {
-            "location": place_name,
-            "summary": f"{current.get('temperature_2m')}°C",
-        }
+        logger.info(
+            "Turn prepared route={} evidence_count={} degraded={} latency_ms={:.0f}",
+            decision.route.value,
+            len(decision.hits),
+            decision.degraded,
+            decision.latency_ms,
+        )
 
 
 # num_idle_processes defaults to 128 in prod (one warm job process per CPU core,
@@ -201,7 +207,52 @@ class Assistant(Agent):
 # running agent, so a second agent on the same host (e.g. this checkout running
 # alongside another deployment) needs a free port set in .env.local.
 AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
-server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
+
+# Explicit-dispatch worker name. This LiveKit project is shared with sibling
+# checkouts, and the frontend mints every room with a RoomConfiguration naming
+# this agent. Registering unnamed puts the worker in the automatic pool instead,
+# which has two failure modes that both matter here: rooms asking for
+# "medical-coda" get no agent at all, and this medical agent can be dispatched
+# into another checkout's rooms. Must match LIVEKIT_AGENT_NAME in the frontend.
+AGENT_NAME = os.getenv("AGENT_NAME", "").strip()
+
+
+def _verify_medical_corpus(proc: JobProcess) -> None:
+    """Refuse to bring up a worker that cannot reach its guideline corpus.
+
+    Runs once per job process. An agent with an unreachable or empty index
+    would answer every clinical question ungrounded, which the PoC's
+    knowledge-base constraint rules out — so this failing is the correct
+    outcome, not something to degrade past.
+    """
+    total = verify_corpus_sync(RAG_SETTINGS)
+    logger.info(
+        "Medical corpus verified collection={} chunks={} qdrant={}",
+        RAG_SETTINGS.collection_alias,
+        total,
+        RAG_SETTINGS.qdrant_url,
+    )
+
+
+server = AgentServer(
+    port=AGENT_PORT,
+    num_idle_processes=3,
+    setup_fnc=_verify_medical_corpus,
+)
+
+# One retriever per job process, shared across the sessions that process
+# handles. Building it opens a Qdrant connection and a Gemini client, neither of
+# which is worth redoing per call.
+_retriever: Optional[MedicalRetriever] = None
+_retriever_lock = asyncio.Lock()
+
+
+async def _get_retriever() -> MedicalRetriever:
+    global _retriever
+    async with _retriever_lock:
+        if _retriever is None:
+            _retriever = await MedicalRetriever.create(RAG_SETTINGS)
+        return _retriever
 
 # Authoritative per-user live-minutes meter. Talks to Supabase with the
 # service-role key (server-only). No-op if Supabase env is unset — in that case
@@ -209,7 +260,7 @@ server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
 billing = billing_from_env()
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=AGENT_NAME)
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
     participant = getattr(ctx, "participant", None)
@@ -337,13 +388,6 @@ async def my_agent(ctx: agents.JobContext):
             ),
             vad=voice_vad,
         ),
-        # stt=livekit_stt.StreamAdapter(
-        #     stt=QwenASRStreamingSTT(
-        #         base_url="http://localhost:8001",
-        #         language="ar",
-        #     ),
-        #     vad=voice_vad,
-        # ),
         # llm=groq.LLM(model="openai/gpt-oss-20b"),
         llm=openai.LLM(
             base_url=LLM_BASE_URL,
@@ -355,10 +399,6 @@ async def my_agent(ctx: agents.JobContext):
         #     model="orpheus",
         #     voice="tara",
         #     api_key="no-key-needed",
-        # ),
-        # tts=F5FastAPIPlugin(
-        #     server_url="http://211.21.50.85:57023",  # Change to your FastAPI server URL
-        #     sample_rate=24000,
         # ),
         # MOSS re-rolls the speaker slightly on every request, so synthesizing
         # sentence-by-sentence makes the voice audibly shift mid-reply. The
@@ -474,13 +514,35 @@ async def my_agent(ctx: agents.JobContext):
     def _on_session_usage_updated(event: SessionUsageUpdatedEvent):
         logger.info("LiveKit session usage updated: {}", event.usage)
 
+    outage_notice_sent = False
+
     @session.on("error")
     def _on_error(event: ErrorEvent):
+        nonlocal outage_notice_sent
         logger.error(
             "LiveKit session error source={} error={}",
             type(event.source).__name__,
-            event.error,
+            _error_summary(event.error),
         )
+        # Once per session, at most. LiveKit raises this for recoverable faults
+        # too — a run of TTS retries produced thirteen of these in two minutes,
+        # and every one of them spoke over the patient.
+        if outage_notice_sent:
+            return
+        outage_notice_sent = True
+        asyncio.create_task(_deliver_outage_fallback())
+
+    async def _deliver_outage_fallback() -> None:
+        # Carries no referral of any kind: the assistant no longer sends
+        # patients anywhere, and a synthesis or transport failure says nothing
+        # about how sick they are anyway.
+        message = (
+            "أعتذر، صار عندي خلل تقني بسيط. ممكن تعيد آخر شي قلته؟"
+        )
+        try:
+            await session.say(message, allow_interruptions=True)
+        except Exception as say_err:  # noqa: BLE001
+            logger.warning("Outage fallback message failed: {}", _error_summary(say_err))
 
     @session.on("metrics_collected")
     def _on_metrics_collected(event: MetricsCollectedEvent):
@@ -525,10 +587,22 @@ async def my_agent(ctx: agents.JobContext):
             except Exception as e:
                 logger.warning(f"Could not calculate EOU latency: {e}")
 
+    retriever = await _get_retriever()
+    assistant = MedicalAssistant(retriever)
+
+    # Keep the embedding connection alive across the greeting, so the patient's
+    # first question does not pay reconnection out of its retrieval budget.
+    _keepalive_task = asyncio.create_task(retriever.run_keepalive())
+
+    async def _stop_keepalive() -> None:
+        _keepalive_task.cancel()
+
+    ctx.add_shutdown_callback(_stop_keepalive)
+
     logger.info("LiveKit session.start beginning room_name={}", getattr(ctx.room, "name", None))
     await session.start(
         room=ctx.room,
-        agent=Assistant(),
+        agent=assistant,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=_noise_cancellation_for
@@ -663,12 +737,7 @@ async def my_agent(ctx: agents.JobContext):
     ctx.add_shutdown_callback(_final_bill)
 
     logger.info("LiveKit initial generate_reply beginning")
-    await session.generate_reply(
-        instructions=(
-            "ابدئي بتحية سعودية قصيرة ودافئة، وعرّفي نفسك باسم نوف كمرشدة "
-            "ثقافية سعودية، ثم اسألي المستخدم وش يحب يعرف عن السعودية."
-        )
-    )
+    await session.generate_reply(instructions=greeting_instructions)
     logger.info("LiveKit initial generate_reply completed")
 
 

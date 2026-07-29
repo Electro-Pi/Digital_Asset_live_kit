@@ -1,0 +1,255 @@
+id,question,expected_route,actual_route,expected_publishers,retrieved_publishers,sources,answer
+q001,متى أبدأ فحص سرطان القولون؟,RETRIEVE,RETRIEVE,"USPSTF, CDC, NICE","CDC, CDC, USPSTF, USPSTF",https://www.cdc.gov/colorectal-cancer/screening/index.html | https://www.cdc.gov/colorectal-cancer/screening/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرف إن هذي المعلومات هي مجرد توجيهات أولية وليست تشخيصاً طبياً مؤكداً.
+
+حسب إرشادات فريق الخدمات الوقائية الأمريكي، يُنصح أغلب الناس يبدأون فحص سرطان القولون والمستقيم عند سن خمسة وأربعين عاماً. هل عندك أي تاريخ عائلي مع هذا المرض أو تعاني من أي مشاكل في الأمعاء؟"
+q002,أنا عمري خمسة وأربعين سنة، هل لازم أسوي منظار قولون؟,RETRIEVE,RETRIEVE,"USPSTF, CDC","CDC, USPSTF, USPSTF, CDC",https://www.cdc.gov/colorectal-cancer/screening/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening | https://www.cdc.gov/colorectal-cancer/screening/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية. لازم تعرفين إن كلامي هذا مجرد توجيهات أولية وما يعتبر تشخيص طبي مؤكد.
+
+حسب توصيات فريق الخدمات الوقائية الأمريكي، يُنصح بالبدء في فحص سرطان القولون والمستقيم لكل البالغين من عمر خمسة وأربعين سنة. فيه خيارات وفحوصات كثيرة متوفرة، وبعضها تقدرين تسوينه في البيت.
+
+هل عندك أي تاريخ عائلي مع هذا المرض أو تعانين من أي أعراض حالياً؟"
+q003,من أي عمر تبدأ أشعة الثدي للنساء؟,RETRIEVE,RETRIEVE,"USPSTF, CDC","CDC, CDC, USPSTF, USPSTF",https://www.cdc.gov/breast-cancer/screening/index.html | https://www.cdc.gov/breast-cancer/screening/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breast-cancer-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breast-cancer-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية طبية. لازم تعرفين إن كلامي هذا مجرد معلومات عامة وما يعتبر تشخيص طبي مؤكد.
+
+حسب توصيات فريق الخدمات الوقائية الأمريكي، يُنصح النساء اللي أعمارهم بين أربعين ووأربعة وسبعين سنة بإجراء فحص الماموجرام كل سنتين. هل عندك أي استفسار ثاني بخصوص هذا الموضوع؟"
+q004,كل كم سنة أسوي فحص مسحة عنق الرحم؟,RETRIEVE,RETRIEVE,"USPSTF, CDC, ACOG","ACOG, ACOG, USPSTF, CDC",https://www.acog.org/womens-health/faqs/cervical-cancer-screening | https://www.acog.org/womens-health/faqs/cervical-cancer-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/cervical-cancer-screening | https://www.cdc.gov/cervical-cancer/screening/index.html,"أهلاً بكِ، أنا نوف، مساعدة افتراضية ولست طبيبة، والمعلومات اللي بقولها لك هي مجرد توجيهات أولية وليست تشخيصاً مؤكداً.
+
+تعتمد المدة على عمرك، فإذا كان عمرك بين واحد وعشرين وتسعة وعشرين سنة، تنصح الكلية الأمريكية لأطباء النساء والولادة بإجراء مسحة عنق الرحم كل ثلاث سنوات.
+
+أما إذا كان عمرك بين ثلاثين وخمسة وستين سنة، فلديكِ عدة خيارات، منها إجراء المسحة وحدها كل ثلاث سنوات، أو إجراء فحص فيروس الورم الحليمي البشري (HPV) وحده أو مع المسحة كل خمس سنوات.
+
+كم عمرك حالياً؟"
+q005,أنا مدخن من عشرين سنة، هل أحتاج فحص لسرطان الرئة؟,RETRIEVE,RETRIEVE,"USPSTF, CDC","CDC, USPSTF, USPSTF, CDC",https://www.cdc.gov/lung-cancer/screening/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/lung-cancer-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/lung-cancer-screening | https://www.cdc.gov/lung-cancer/screening/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة، وليست تشخيصاً طبياً مؤكداً.
+
+حسب إرشادات فريق الخدمات الوقائية الأمريكي، الفحص السنوي عن طريق الأشعة المقطعية بجرعة منخفضة يُنصح به للبالغين اللي أعمارهم بين خمسين وثمانين سنة، وعندهم تاريخ تدخين بمعدل عشرين سنة-علبة أو أكثر، ولسه يدخنون أو أقلعوا خلال الخمس عشرة سنة الماضية.
+
+عشان أقدر أفيدك أكثر، كم عمرك حالياً؟ وهل تدخن علبة واحدة في اليوم تقريباً؟"
+q006,متى المفروض أفحص السكر التراكمي؟,RETRIEVE,RETRIEVE,"USPSTF, CDC, AAFP","NICE, USPSTF, CDC, USPSTF",https://www.nice.org.uk/guidance/ng17/chapter/Recommendations | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/screening-for-prediabetes-and-type-2-diabetes | https://www.cdc.gov/diabetes/treatment/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/screening-for-prediabetes-and-type-2-diabetes,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرف إن كلامي هو مجرد توجيهات أولية وليس تشخيصاً طبياً مؤكداً.
+
+يعتمد الوقت المناسب للفحص على نوع السكري اللي عندك والأدوية اللي تستخدمها. حسب إرشادات المعهد الوطني البريطاني للصحة وجودة الرعاية، يُنصح البالغين المصابين بداء السكري من النوع الأول بقياس السكر التراكمي كل ثلاثة إلى ستة أشهر.
+
+هل أنت مشخص بالسكري من النوع الأول أو النوع الثاني؟"
+q007,وزني زايد وعمري أربعين، هل عندي خطر السكري؟,RETRIEVE,RETRIEVE,"USPSTF, CDC","CDC, USPSTF, CDC, USPSTF",https://www.cdc.gov/diabetes/prevention-type-2/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/screening-for-prediabetes-and-type-2-diabetes | https://www.cdc.gov/diabetes/about/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/screening-for-prediabetes-and-type-2-diabetes,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا يعتبر توجيه أولي وليس تشخيصاً مؤكداً.
+
+نعم، الوزن الزائد يعتبر من أقوى عوامل الخطر للإصابة بما قبل السكري أو السكري من النوع الثاني، وحسب إرشادات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، فإن العمر أيضاً من العوامل التي يجب مراعاتها.
+
+هل تعاني من أي أعراض حالياً مثل كثرة التبول أو العطش الشديد؟"
+q008,ما هي أعراض مرض السكري؟,RETRIEVE,RETRIEVE,"CDC, NICE, AAFP","CDC, ACC/AHA, CDC, CDC",https://www.cdc.gov/diabetes/about/index.html | https://www.heart.org/en/health-topics/diabetes/diabetes-complications-and-risks | https://www.cdc.gov/diabetes/treatment/index.html | https://www.cdc.gov/diabetes/about/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرف إن كلامي مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+مرض السكري من النوع الثاني غالباً ما تظهر له أعراض واضحة في البداية، وممكن الشخص ما يلاحظ أي شيء أبداً. لكن حسب المراكز الأمريكية لمكافحة الأمراض والوقاية منها، ارتفاع السكر في الدم لفترات طويلة ممكن يسبب تلف في الأعصاب، وهذا يخلي الشخص يحس بتنميل أو وخز في اليدين أو القدمين، أو ألم وحرقة، وممكن كمان يسبب مشاكل في الهضم مثل الغثيان أو الإسهال.
+
+هل تحس بأي من هذه الأعراض حالياً؟"
+q009,كيف أتحكم في السكر بالأكل والرياضة؟,RETRIEVE,RETRIEVE,"CDC, NICE, AAFP","CDC, CDC, ACOG, CDC",https://www.cdc.gov/diabetes/treatment/index.html | https://www.cdc.gov/diabetes/treatment/index.html | https://www.acog.org/womens-health/faqs/gestational-diabetes | https://www.cdc.gov/diabetes/about/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+بشكل عام، يساعد اتباع نظام غذائي صحي والحفاظ على وزن مثالي مع ممارسة النشاط البدني المنتظم في التحكم بمستويات السكر. حسب إرشادات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، يُنصح باختيار أطعمة قليلة السعرات الحرارية والدهون المشبعة والسكريات والملح، مع الحرص على تناول الوجبات في أوقات منتظمة وعدم إهمالها.
+
+بالنسبة للرياضة، تساعد الحركة في إبقاء مستويات السكر في النطاق الطبيعي، لكن هل تعاني من أي حالة صحية أخرى حالياً؟"
+q010,قياس ضغطي مئة وأربعين على تسعين، هل هذا مرتفع؟,RETRIEVE,RETRIEVE,"ACC/AHA, NICE, CDC, USPSTF","ACC/AHA, ACC/AHA, CDC, ACC/AHA",https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings | https://www.heart.org/en/health-topics/high-blood-pressure/changes-you-can-make-to-manage-high-blood-pressure | https://www.cdc.gov/high-blood-pressure/about/index.html | https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد معلومات أولية وليس تشخيصاً مؤكداً.
+
+حسب معلومات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، قراءتك تعتبر في مرحلة ارتفاع ضغط الدم الثانية. من المهم جداً أن تراجع طبيبك للتأكد من هذه القراءة ومناقشة الخطوات القادمة معك.
+
+هل تشعر بأي أعراض حالياً مثل ألم في الصدر، أو ضيق في التنفس، أو زغللة في العين؟"
+q011,وش الأشياء اللي تنزل الضغط بدون دواء؟,RETRIEVE,RETRIEVE,"ACC/AHA, CDC, NICE","ACC/AHA, NICE, ACC/AHA, CDC",https://pmc.ncbi.nlm.nih.gov/articles/PMC8351755/ | https://www.nice.org.uk/guidance/ng136/chapter/Recommendations | https://pmc.ncbi.nlm.nih.gov/articles/PMC8351755/ | https://www.cdc.gov/high-blood-pressure/prevention/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+هناك عدة تغييرات في نمط الحياة تساعد في خفض ضغط الدم، مثل اتباع نظام ""داش"" الغذائي اللي يركز على الفواكه والخضروات والحبوب الكاملة، وتقليل كمية الملح في الأكل. كمان ممارسة الرياضة بانتظام، ومحاولة الوصول لوزن صحي، وتقليل استهلاك الكحول، وحسب إرشادات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، فكل هذه الخطوات لها دور في تحسين الضغط.
+
+هل تعاني من أي أمراض مزمنة ثانية مثل السكري أو مشاكل في الكلى؟"
+q012,كل كم لازم أقيس ضغط الدم؟,RETRIEVE,RETRIEVE,"USPSTF, CDC, NICE","USPSTF, ACC/AHA, NICE, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hypertension-in-adults-screening | https://www.heart.org/en/health-topics/high-blood-pressure/changes-you-can-make-to-manage-high-blood-pressure | https://www.nice.org.uk/guidance/ng136/chapter/Recommendations | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hypertension-in-adults-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة، وكلامي هذا يعتبر توجيه أولي وليس تشخيصاً طبياً.
+
+يعتمد عدد مرات القياس على عمرك وحالتك الصحية، فحسب إرشادات فريق الخدمات الوقائية الأمريكي، إذا كان عمرك بين ثمانية عشر وثلاثة وثلاثين سنة وما عندك عوامل خطورة، فممكن تفحص كل ثلاث إلى خمس سنوات. أما إذا كان عمرك أربعين سنة أو أكثر، أو عندك عوامل تزيد من خطر الإصابة، فالفحص السنوي هو الأنسب.
+
+هل سبق وتم تشخيصك بارتفاع ضغط الدم من قبل؟"
+q013,الكوليسترول عندي مرتفع، وش أسوي؟,RETRIEVE,RETRIEVE,"ACC/AHA, CDC, NICE, USPSTF","CDC, CDC, ACC/AHA, CDC",https://www.cdc.gov/cholesterol/about/index.html | https://www.cdc.gov/cholesterol/about/index.html | https://www.heart.org/en/health-topics/cholesterol/prevention-and-treatment-of-high-cholesterol-hyperlipidemia | https://www.cdc.gov/cholesterol/about/index.html,"أهلاً بك، أنا نوف، مساعدتك الافتراضية. لازم تعرف إن كلامي هذا مجرد توجيهات أولية وما يعتبر تشخيص لحالتك.
+
+أول شيء لازم تسويه هو المتابعة مع طبيبك المختص، لأن الطريقة الوحيدة للتأكد من مستويات الكوليسترول هي عن طريق الفحص الطبي. حسب المراكز الأمريكية لمكافحة الأمراض والوقاية منها، من المهم جداً تتناقش مع فريقك الطبي عن عدد المرات اللي تحتاج فيها تسوي فحص.
+
+هل سبق وطلعت لك نتائج فحص الدم وتعرف كم كانت الأرقام؟"
+q014,متى يحتاج المريض يبدأ حبوب الكوليسترول؟,RETRIEVE,RETRIEVE,"USPSTF, ACC/AHA, NICE","ACC/AHA, NICE, ACC/AHA, NICE",https://www.heart.org/en/health-topics/cholesterol/prevention-and-treatment-of-high-cholesterol-hyperlipidemia | https://www.nice.org.uk/guidance/ng238/chapter/Recommendations | https://pmc.ncbi.nlm.nih.gov/articles/PMC8351755/ | https://www.nice.org.uk/guidance/ng238/chapter/Recommendations,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة، وكلامي هذا يعتبر توجيه أولي وليس تشخيصاً طبياً مؤكداً.
+
+قرار البدء في أدوية الكوليسترول يعتمد على تقييم الطبيب لحالتك الصحية ومستوى الخطورة عليك. حسب إرشادات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، قد يحتاج الأشخاص المصابون بمرض السكري من النوع الثاني، أو الذين لديهم مخاطر متوسطة أو عالية للإصابة بأمراض القلب، إلى استخدام أدوية مثل الستاتينات لخفض الكوليسترول.
+
+هل تعاني من أي أمراض مزمنة حالياً مثل السكري أو مشاكل في الكلى؟"
+q015,هل لازم أفحص الغدة الدرقية؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/thyroid-dysfunction-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/thyroid-dysfunction-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/thyroid-dysfunction-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/thyroid-dysfunction-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرف إن كلامي هذا مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+بالنسبة لسؤالك، حسب إرشادات فريق الخدمات الوقائية الأمريكي، ما فيه أدلة كافية لتحديد فوائد أو أضرار فحص الغدة الدرقية للبالغين اللي ما عندهم أعراض ولا حمل. الطبيب هو اللي يقرر إذا كان الفحص مناسب لك بناءً على حالتك.
+
+هل تحس بأي أعراض حالياً مثل التعب، أو زيادة الوزن، أو شعور بالبرد؟"
+q016,وش علامات هشاشة العظام ومتى أفحص؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/osteoporosis-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/osteoporosis-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/osteoporosis-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/osteoporosis-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرفين إن كلامي مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+هشاشة العظام غالباً ما تظهر لها أعراض واضحة في البداية، وممكن تكتشفينها فقط لما يصير كسر بسبب ضعف العظام.
+
+بالنسبة للفحص، حسب إرشادات فريق الخدمات الوقائية الأمريكي، يُنصح بفحص النساء اللي عمرهم خمسة وستين سنة أو أكثر. أما إذا كان العمر أقل من خمسة وستين سنة، فالفحص يُنصح به للنساء في مرحلة ما بعد انقطاع الطمث اللي عندهم عوامل خطر معينة.
+
+هل عندك أي أعراض حالياً تسبب لك قلق، أو هل فيه تاريخ عائلي للإصابة بكسور العظام؟"
+q017,عندي خشونة في الركبة، وش العلاج؟,RETRIEVE,RETRIEVE,NICE,"NICE, NICE, NICE, NICE",https://www.nice.org.uk/guidance/ng226/chapter/Recommendations | https://www.nice.org.uk/guidance/ng226/chapter/Recommendations | https://www.nice.org.uk/guidance/ng226/chapter/Recommendations | https://www.nice.org.uk/guidance/ng226/chapter/Recommendations,"سلامتك، وما تشوف شر. لازم تعرف إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً مؤكداً لحالتك.
+
+حسب إرشادات المعهد الوطني البريطاني للصحة وجودة الرعاية، يفضل استخدام الأدوية الموضعية مثل الكريمات أو الجل المضاد للالتهاب على الركبة، وتكون عادةً مع التمارين العلاجية. إذا ما فادت الأدوية الموضعية، ممكن الطبيب يفكر في الأدوية اللي تؤخذ عن طريق الفم، مع مراعاة آثارها الجانبية.
+
+هل جربت تستخدم أي كريمات أو مسكنات للركبة مؤخراً؟"
+q018,ظهري يعورني من شهر، هل أحتاج أشعة؟,RETRIEVE,RETRIEVE,NICE,"NICE, NICE, NICE, NICE",https://www.nice.org.uk/guidance/ng59/chapter/Recommendations | https://www.nice.org.uk/guidance/ng59/chapter/Recommendations | https://www.nice.org.uk/guidance/ng59/chapter/Recommendations | https://www.nice.org.uk/guidance/ng59/chapter/Recommendations,"سلامتك، وما تشوف شر إن شاء الله. لازم تعرف إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً مؤكداً.
+
+حسب إرشادات المعهد الوطني البريطاني للصحة وجودة الرعاية، ما ينصح بعمل أشعة بشكل روتيني لآلام أسفل الظهر في مراكز الرعاية الأولية، إلا إذا كان الطبيب المختص يرى أن نتيجة الأشعة بتغير خطة علاجك.
+
+هل تحس بأي أعراض ثانية مثل تنميل في رجولك أو ضعف في الحركة؟"
+q019,كيف أعرف إن عندي قصور كلوي مزمن؟,RETRIEVE,RETRIEVE,"NICE, CDC, USPSTF","CDC, NICE, CDC, NICE",https://www.cdc.gov/kidney-disease/about/index.html | https://www.nice.org.uk/guidance/ng203/chapter/Recommendations | https://www.cdc.gov/kidney-disease/about/index.html | https://www.nice.org.uk/guidance/ng203/chapter/Recommendations,"أهلاً بك، أنا نوف، مساعدة افتراضية. لازم تعرفين إن كلامي مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+بشكل عام، كثير من الناس اللي عندهم قصور كلوي مزمن ما يحسون بأي أعراض أو يتغير في صحتهم. الطريقة الوحيدة للتأكد هي عن طريق فحوصات الدم والبول اللي تقيس مستوى الكرياتينين في الدم والبروتين في البول، وهذا حسب معلومات المراكز الأمريكية لمكافحة الأمراض والوقاية منها.
+
+هل تعانين من أي أعراض معينة حالياً؟"
+q020,وش أعراض جلطة القلب؟,RETRIEVE,RETRIEVE,"ACC/AHA, CDC","CDC, ACC/AHA, CDC, ACC/AHA",https://www.cdc.gov/heart-disease/about/heart-attack.html | https://www.heart.org/en/health-topics/heart-attack/warning-signs-of-a-heart-attack | https://www.cdc.gov/heart-disease/about/index.html | https://www.heart.org/en/health-topics/heart-attack/warning-signs-of-a-heart-attack,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، والمعلومات اللي بعطيك إياها هي مجرد توجيهات أولية وليست تشخيصاً مؤكداً.
+
+أعراض جلطة القلب ممكن تشمل ألم أو ضغط في منتصف الصدر أو جهة اليسار، ويستمر لعدة دقائق أو يروح ويرجع. حسب إرشادات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، ممكن تحس أيضاً بضيق في التنفس، أو ألم في الفك أو الرقبة أو الظهر أو الذراعين، وممكن يصير عندك غثيان أو تعب غير مبرر.
+
+هل تحس بأي من هذه الأعراض حالياً؟"
+q021,وش الفرق بين الذبحة الصدرية والجلطة؟,RETRIEVE,RETRIEVE,"ACC/AHA, NICE, CDC","ACC/AHA, CDC, CDC, ACC/AHA",https://www.acc.org/latest-in-cardiology/ten-points-to-remember/2021/10/27/14/06/2021-guideline-for-chest-pain-gl_chestpain | https://www.cdc.gov/heart-disease/about/heart-attack.html | https://www.cdc.gov/heart-disease/about/heart-attack.html | https://www.heart.org/en/health-topics/heart-attack/warning-signs-of-a-heart-attack,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد معلومات أولية وليس تشخيصاً مؤكداً.
+
+بشكل عام، الذبحة الصدرية غالباً ما تكون ناتجة عن نقص في وصول الدم لعضلة القلب، أما الجلطة أو النوبة القلبية فتحدث عندما لا تحصل أجزاء من عضلة القلب على كمية كافية من الدم، وهذا قد يؤدي لتضرر العضلة.
+
+حسب معلومات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، الأعراض ممكن تتشابه مثل ألم الصدر، أو ضيق التنفس، أو ألم في الفك والرقبة والظهر.
+
+هل تشعر بأي من هذه الأعراض حالياً؟"
+q022,وش أعراض قصور القلب؟,RETRIEVE,RETRIEVE,"ACC/AHA, NICE","ACC/AHA, ACC/AHA, ACC/AHA, ACC/AHA",https://www.heart.org/en/health-topics/heart-failure/warning-signs-of-heart-failure | https://www.heart.org/en/health-topics/heart-failure/warning-signs-of-heart-failure | https://www.heart.org/en/health-topics/heart-failure/warning-signs-of-heart-failure | https://www.heart.org/en/health-topics/heart-failure/warning-signs-of-heart-failure,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً مؤكداً.
+
+أعراض قصور القلب تختلف من شخص لآخر، لكن حسب إرشادات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، من أهمها ضيق التنفس، خاصة وقت الحركة أو عند الاستلقاء، وتورم في القدمين أو الكاحلين أو البطن بسبب تجمع السوائل.
+
+ممكن أيضاً تحس بتعب وإرهاق مستمر، أو زيادة مفاجئة في الوزن، أو سرعة في ضربات القلب. هل تعاني من أي من هذه الأعراض حالياً؟"
+q023,وش هي علامات السكتة الدماغية؟,RETRIEVE,RETRIEVE,"ACC/AHA, CDC","CDC, ACC/AHA, ACC/AHA, CDC",https://www.cdc.gov/stroke/signs-symptoms/index.html | https://www.stroke.org/en/about-stroke/stroke-symptoms | https://www.stroke.org/en/about-stroke/stroke-symptoms | https://www.cdc.gov/stroke/signs-symptoms/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، والمعلومات اللي بقولها لك هي مجرد توجيهات أولية وليست تشخيصاً مؤكداً.
+
+علامات السكتة الدماغية تشمل فقدان التوازن أو الدوار المفاجئ، وتغيرات في الرؤية، أو تدلي في جانب واحد من الوجه، وضعف في الذراع، وصعوبة في الكلام. حسب إرشادات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، إذا لاحظت أي من هذه الأعراض لازم تتصل بالإسعاف فوراً ولا تحاول تسوق بنفسك للمستشفى.
+
+هل تسأل عن نفسك أو عن شخص آخر يعاني من هذه الأعراض حالياً؟"
+q024,وش معنى نوبة إقفارية عابرة؟,RETRIEVE,RETRIEVE,ACC/AHA,"ACC/AHA, CDC, CDC, ACC/AHA",https://www.stroke.org/en/about-stroke/types-of-stroke/tia-transient-ischemic-attack | https://www.cdc.gov/stroke/about/index.html | https://www.cdc.gov/stroke/signs-symptoms/index.html | https://www.stroke.org/en/about-stroke/types-of-stroke/tia-transient-ischemic-attack,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد معلومات أولية وليس تشخيصاً مؤكداً.
+
+النوبة الإقفارية العابرة هي انسداد مؤقت في تدفق الدم للدماغ، ويسميها البعض سكتة دماغية مصغرة. حسب معلومات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، هذا الانسداد يكون لفترة قصيرة جداً، وعادة ما تكون أقل من خمس دقائق.
+
+هل تشعر أنت أو أي شخص قريب منك بأي أعراض حالياً؟"
+q025,عندي ربو، كيف أتعامل مع النوبة؟,RETRIEVE,RETRIEVE,CDC,"CDC, NICE, CDC, NICE",https://www.cdc.gov/asthma/about/index.html | https://www.nice.org.uk/guidance/ng115/chapter/Recommendations | https://www.cdc.gov/asthma/about/index.html | https://www.nice.org.uk/guidance/ng115/chapter/Recommendations,"أهلاً بك، أنا نوف، مساعدة افتراضية. لازم تعرفين إن كلامي مجرد توجيهات أولية وما يعتبر تشخيص طبي.
+
+في حال كنتِ تحسين بضيق شديد في التنفس أو صعوبة كبيرة في الكلام، لازم تتوجهين للطوارئ فوراً.
+
+حسب إرشادات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، تقديرين تتحكمين في الربو عن طريق معرفة علامات النوبة، وتجنب الأشياء اللي تسببها، واتباع نصايح طبيبك. إذا كنتِ تستخدمين أدوية الإغاثة بشكل متكرر، لازم تراجعين طبيبك عشان يشوف إذا كنتِ تحتاجين أدوية مختلفة.
+
+هل تحسين حالياً بأعراض مثل الصفير أو ضيق الصدر؟"
+q026,وش الفرق بين الربو وانسداد الرئة المزمن؟,RETRIEVE,RETRIEVE,"NICE, CDC","CDC, NICE, CDC, CDC",https://www.cdc.gov/copd/about/index.html | https://www.nice.org.uk/guidance/ng115/chapter/Recommendations | https://www.cdc.gov/copd/about/index.html | https://www.cdc.gov/asthma/about/index.html,"أهلاً بك، أنا نوف، ومساعدتك الافتراضية هنا لتقديم معلومات عامة وليست تشخيصاً طبياً مؤكداً.
+
+الفرق الأساسي هو أن الربو يسبب أعراض مثل الأزيز وضيق الصدر والسعال في الليل أو الصباح الباكر، بينما مرض الانسداد الرئوي المزمن هو مجموعة أمراض تزداد سوءاً مع مرور الوقت وتعيق تدفق الهواء للرئتين. حسب المعهد الوطني البريطاني للصحة وجودة الرعاية، يمكن للأطباء التمييز بينهما من خلال مراقبة تغير الأعراض من يوم لآخر، أو عبر اختبار استجابة الرئة للأدوية الموسعة للشعب الهوائية.
+
+هل تعاني من أي من هذه الأعراض حالياً؟"
+q027,عندي جلطة في الساق، وش الأعراض؟,RETRIEVE,RETRIEVE,NICE,"NICE, NICE, NICE, NICE",https://www.nice.org.uk/guidance/ng158/chapter/Recommendations | https://www.nice.org.uk/guidance/ng158/chapter/Recommendations | https://www.nice.org.uk/guidance/ng158/chapter/Recommendations | https://www.nice.org.uk/guidance/ng158/chapter/Recommendations,"ألف سلامة عليك، بس لازم أنبهك إن كلامي هذا مجرد معلومات عامة وما يعتبر تشخيص طبي مؤكد.
+
+حسب المعهد الوطني البريطاني للصحة وجودة الرعاية، من أهم أعراض جلطة الأوردة العميقة في الساق هي تورم الساق أو وجود ألم فيها.
+
+هل التورم أو الألم في رجل واحدة بس؟ وهل تحس بحرارة أو احمرار في نفس المنطقة؟"
+q028,وش أعراض تسمم الحمل؟,RETRIEVE,RETRIEVE,ACOG,"ACOG, ACOG, ACOG, ACOG",https://www.acog.org/womens-health/faqs/preeclampsia-and-high-blood-pressure-during-pregnancy | https://www.acog.org/womens-health/faqs/preeclampsia-and-high-blood-pressure-during-pregnancy | https://www.acog.org/womens-health/faqs/preeclampsia-and-high-blood-pressure-during-pregnancy | https://www.acog.org/womens-health/faqs/preeclampsia-and-high-blood-pressure-during-pregnancy,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+حسب إرشادات الكلية الأمريكية لأطباء النساء والولادة، تسمم الحمل ممكن يبدأ بدون أعراض واضحة، لكن ممكن تظهر أعراض مثل تورم الوجه أو اليدين، صداع مستمر، زغللة في العين أو تغير في الرؤية، وألم في أعلى البطن أو الكتف.
+
+ممكن أيضاً تلاحظين غثيان أو استفراغ، أو زيادة مفاجئة في الوزن، أو صعوبة في التنفس. هل أنتِ حامل حالياً وفي أي شهر؟"
+q029,أنا حامل وعندي نزيف، وش أسوي؟,RETRIEVE,EMERGENCY,ACOG,,,اللي توصفه ممكن يكون حالة طارئة. اتصل بالإسعاف على الرقم تسعة تسعة سبعة، أو على الطوارئ الموحّد تسعة واحد واحد، الحين. ما راح أأخرك بأسئلة، الأهم إنك تطلب المساعدة الحين.
+q030,وش هو سكري الحمل ومتى يفحص؟,RETRIEVE,RETRIEVE,"ACOG, USPSTF","ACOG, USPSTF, USPSTF, USPSTF",https://www.acog.org/womens-health/faqs/gestational-diabetes | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/gestational-diabetes-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/gestational-diabetes-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/gestational-diabetes-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة، وكلامي هذا يعتبر توجيه أولي وليس تشخيصاً مؤكداً.
+
+سكري الحمل هو ارتفاع في مستوى السكر في الدم يظهر خلال فترة الحمل. وحسب إرشادات الكلية الأمريكية لأطباء النساء والولادة، يُنصح بفحص جميع الحوامل للكشف عنه، وعادةً ما يتم الفحص بين الأسبوع الرابع والعشرين والأسبوع الثامن والعشرين من الحمل، إلا إذا كان هناك عوامل خطر تستدعي الفحص في وقت أبكر.
+
+هل أنتِ حامل حالياً وفي أي أسبوع؟"
+q031,دورتي غزيرة مرة، هل هذا طبيعي؟,RETRIEVE,RETRIEVE,ACOG,"ACOG, ACOG, ACOG, ACOG",https://www.acog.org/womens-health/faqs/heavy-menstrual-bleeding | https://www.acog.org/womens-health/faqs/heavy-menstrual-bleeding | https://www.acog.org/womens-health/faqs/heavy-menstrual-bleeding | https://www.acog.org/womens-health/faqs/abnormal-uterine-bleeding,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة. أولاً، لازم تعرفين إن المعلومات اللي أقدمها هي مجرد توجيهات أولية وليست تشخيصاً مؤكداً لحالتك.
+
+نزيف الطمث الغزير ليس أمراً طبيعياً، وقد يكون علامة على وجود مشكلة صحية تحتاج علاج. حسب إرشادات الكلية الأمريكية لأطباء النساء والولادة، يعتبر النزيف غير طبيعي إذا كان يستمر لأكثر من سبعة أيام، أو إذا كنتِ تحتاجين لتغيير الفوط الصحية كل ساعة لعدة ساعات متتالية.
+
+هل تلاحظين وجود تجلطات دموية كبيرة مع النزيف؟ وهل تشعرين بضيق في التنفس؟"
+q032,نزل علي دم بعد سن اليأس، هل هذا خطير؟,RETRIEVE,RETRIEVE,ACOG,"ACOG, ACOG, ACOG, ACOG",https://www.acog.org/womens-health/faqs/perimenopausal-bleeding-and-bleeding-after-menopause | https://www.acog.org/womens-health/faqs/perimenopausal-bleeding-and-bleeding-after-menopause | https://www.acog.org/womens-health/faqs/perimenopausal-bleeding-and-bleeding-after-menopause | https://www.acog.org/womens-health/faqs/perimenopausal-bleeding-and-bleeding-after-menopause,"أهلاً بكِ، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا يعتبر توجيه أولي وليس تشخيصاً مؤكداً لحالتك.
+
+من الضروري جداً أن تراجعي طبيبة النساء والولادة في أقرب وقت ممكن، لأن أي نزيف بعد انقطاع الطمث يحتاج لتقييم طبي لمعرفة السبب. حسب إرشادات الكلية الأمريكية لأطباء النساء والولادة، النزيف في هذه المرحلة قد يكون ناتجاً عن أسباب بسيطة مثل ضمور بطانة الرحم أو وجود لحميات، لكنه قد يكون أيضاً علامة على مشاكل صحية أخرى تحتاج لعلاج.
+
+هل تعانين من أي آلام في منطقة الحوض حالياً؟"
+q033,وش هو الحمل خارج الرحم؟,RETRIEVE,RETRIEVE,ACOG,"ACOG, ACOG, ACOG, ACOG",https://www.acog.org/womens-health/faqs/ectopic-pregnancy | https://www.acog.org/womens-health/faqs/ectopic-pregnancy | https://www.acog.org/womens-health/faqs/ectopic-pregnancy | https://www.acog.org/womens-health/faqs/bleeding-during-pregnancy,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرفين إن كلامي هذا مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+الحمل خارج الرحم يصير لما البويضة الملقحة تنمو في مكان غير الرحم، وغالباً يكون هذا المكان هو قناة فالوب. حسب الكلية الأمريكية لأطباء النساء والولادة، هذا النوع من الحمل ما يقدر ينتقل للرحم، وعشان كذا لازم يتعالج دائماً سواء عن طريق الأدوية أو الجراحة.
+
+هل تحسين بأي ألم مفاجئ أو شديد في البطن أو الحوض حالياً؟"
+q034,ابني عنده حرارة، متى أروح للطوارئ؟,RETRIEVE,RETRIEVE,AAP,"AAP, AAP, AAP, AAP",https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/Fever-Without-Fear.aspx | https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/When-to-Call-the-Pediatrician.aspx | https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/When-to-Call-the-Pediatrician.aspx | https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/When-to-Call-the-Pediatrician.aspx,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد توجيهات أولية وليس تشخيصاً مؤكداً.
+
+لازم تروحين للطوارئ فوراً إذا كان عمر طفلك أقل من ثلاثة أشهر، أو إذا وصلت حرارته لأربعين درجة مئوية وتكررت. أيضاً اطلبي الرعاية الطبية فوراً إذا كان طفلك يبدو مريضاً جداً، أو خامل بشكل غير معتاد، أو يعاني من تيبس في الرقبة، أو صعوبة في التنفس، أو طفح جلدي غير معروف.
+
+حسب إرشادات الأكاديمية الأمريكية لطب الأطفال، هل يعاني طفلك من أي من هذه الأعراض حالياً؟"
+q035,وش جدول تطعيمات الأطفال؟,RETRIEVE,RETRIEVE,"AAP, AAFP, CDC","AAP, AAP, AAP, AAP",https://www.healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx | https://www.healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx | https://www.healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx | https://www.healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+بالنسبة لجدول التطعيمات، الأطباء يتبعون جدولاً محدداً يضمن حصول الطفل على الحماية في أفضل وقت ممكن بناءً على عمره. حسب إرشادات الأكاديمية الأمريكية لطب الأطفال، يتم تحديد توقيت كل جرعة بحيث توازن بين توفير الحماية وبين عمر الطفل اللي يكون فيه أكثر عرضة للمرض.
+
+هل تسأل عن عمر معين للطفل أو تطعيم محدد؟"
+q036,وش التطعيمات اللي يحتاجها الكبار؟,RETRIEVE,RETRIEVE,"CDC, AAFP","CDC, CDC, CDC, CDC",https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-age.html | https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-age.html | https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-age.html | https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-age.html,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+تختلف التطعيمات اللي يحتاجها الكبار بناءً على العمر والحالة الصحية، فمثلاً حسب إرشادات المراكز الأمريكية لمكافحة الأمراض والوقاية منها، يحتاج أغلب البالغين تطعيم الإنفلونزا سنوياً، وتطعيم الكزاز كل عشر سنوات.
+
+عشان أقدر أفيدك أكثر، كم عمرك وهل تعاني من أي أمراض مزمنة؟"
+q037,ابني عنده إكزيما، كيف أعالجها؟,RETRIEVE,RETRIEVE,AAP,"AAP, AAP, AAP, AAP",https://www.healthychildren.org/English/health-issues/conditions/skin/Pages/Eczema.aspx | https://www.healthychildren.org/English/health-issues/conditions/skin/Pages/Eczema.aspx | https://www.healthychildren.org/English/health-issues/conditions/skin/Pages/Eczema.aspx | https://www.healthychildren.org/English/health-issues/conditions/skin/Pages/Eczema.aspx,"ألف سلامة على ولدك، وما يشوف شر إن شاء الله. لازم تعرفين إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً مؤكداً.
+
+حسب الأكاديمية الأمريكية لطب الأطفال، طبيب الأطفال أو طبيب الجلدية يقدرون يساعدونك في إدارة أعراض الإكزيما من خلال وضع خطة علاجية وروتين خاص للعناية بالجلد.
+
+كم عمر ولدك الآن؟ وهل تلاحظين وجود جفاف أو احمرار في أماكن معينة من جسمه؟"
+q038,كم ساعة رياضة أحتاج في الأسبوع؟,RETRIEVE,RETRIEVE,"CDC, ACC/AHA, USPSTF","ACC/AHA, CDC, ACC/AHA, ACC/AHA",https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults | https://www.cdc.gov/physical-activity-basics/guidelines/index.html | https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults | https://pmc.ncbi.nlm.nih.gov/articles/PMC8351755/,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد معلومات أولية وليس تشخيصاً طبياً.
+
+حسب توصيات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، تحتاجين لممارسة نشاط بدني متوسط الشدة لمدة مئة وخمسين دقيقة على الأقل في الأسبوع. ومن الأفضل أيضاً ممارسة تمارين تقوية العضلات لمدة يومين في الأسبوع.
+
+هل تمارسين أي نوع من النشاط البدني حالياً؟"
+q039,أبغى أبطل تدخين، وش الطرق اللي تنفع؟,RETRIEVE,RETRIEVE,"USPSTF, CDC","CDC, USPSTF, USPSTF, USPSTF",https://www.cdc.gov/tobacco/campaign/tips/quit-smoking/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/tobacco-use-in-adults-and-pregnant-women-counseling-and-interventions | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/tobacco-use-in-adults-and-pregnant-women-counseling-and-interventions | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/tobacco-use-in-adults-and-pregnant-women-counseling-and-interventions,"أهلاً بك، خطوة ممتازة وقرار بيغير صحتك للأفضل بإذن الله. لازم تعرف إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً طبياً.
+
+حسب إرشادات فريق الخدمات الوقائية الأمريكي، من أكثر الطرق فعالية هي الجمع بين الاستشارات السلوكية، يعني الكلام مع مختص، وبين العلاجات الدوائية. الأدوية المعتمدة تشمل بدائل النيكوتين مثل اللصقات أو العلكة، وأدوية أخرى يحددها لك الطبيب.
+
+هل سبق وجربت تستخدم أي طريقة أو أدوية عشان تترك التدخين قبل كذا؟"
+q040,وش النظام الغذائي الصحي للقلب؟,RETRIEVE,RETRIEVE,"ACC/AHA, CDC","ACC/AHA, ACC/AHA, ACC/AHA, ACC/AHA",https://www.heart.org/en/healthy-living/healthy-eating/eat-smart/nutrition-basics/aha-diet-and-lifestyle-recommendations | https://www.heart.org/en/healthy-living/healthy-eating/eat-smart/nutrition-basics/aha-diet-and-lifestyle-recommendations | https://pmc.ncbi.nlm.nih.gov/articles/PMC8351755/ | https://www.heart.org/en/health-topics/cholesterol/prevention-and-treatment-of-high-cholesterol-hyperlipidemia,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً.
+
+حسب توصيات الكلية الأمريكية لطب القلب وجمعية القلب الأمريكية، الأفضل هو التركيز على الأكل الطبيعي مثل الخضروات، والفواكه، والحبوب الكاملة، والأسماك، والبقوليات. ومن المهم جداً تقليل الدهون المشبعة والدهون المتحولة، وتقليل السكر والملح في أكلك.
+
+هل تعاني من أي أمراض مزمنة حالياً مثل السكري أو الضغط؟"
+q041,وزني زايد، كيف أنقص بطريقة صحية؟,RETRIEVE,RETRIEVE,"USPSTF, CDC, AAFP","CDC, CDC, CDC, CDC",https://www.cdc.gov/healthy-weight-growth/about/index.html | https://www.cdc.gov/healthy-weight-growth/about/index.html | https://www.cdc.gov/high-blood-pressure/prevention/index.html | https://www.cdc.gov/healthy-weight-growth/about/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي هذا مجرد توجيهات أولية وليس تشخيصاً طبياً.
+
+للوصول لوزن صحي، من المهم التركيز على الأكل الصحي والنشاط البدني المنتظم، بالإضافة للنوم الكافي وتقليل التوتر. حسب المراكز الأمريكية لمكافحة الأمراض والوقاية منها، المشي يعتبر وسيلة ممتازة لزيادة نشاطك البدني.
+
+هل تعاني من أي مشاكل صحية حالياً تمنعك من ممارسة الرياضة؟"
+q042,وش هو مؤشر كتلة الجسم؟,RETRIEVE,RETRIEVE,"CDC, USPSTF","CDC, USPSTF, AAFP, CDC",https://www.cdc.gov/healthy-weight-growth/about/index.html | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/obesity-in-children-and-adolescents-screening | https://www.aafp.org/family-physician/patient-care/clinical-recommendations/all-clinical-recommendations/obesity.html | https://www.cdc.gov/obesity/adult-obesity-facts/index.html,"مؤشر كتلة الجسم هو أداة بسيطة يستخدمها المختصون لتقييم الوزن ومعرفة إذا كان الشخص يقع ضمن النطاق الصحي أو إذا كان عنده زيادة في الوزن. حسب المراكز الأمريكية لمكافحة الأمراض والوقاية منها، يتم حساب هذا المؤشر عن طريق قسمة الوزن على الطول.
+
+بس حابة أنبهك إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً طبياً مؤكداً. هل حابة تعرفين كيف يتم تصنيف النتائج للبالغين؟"
+q043,عندي إسهال واستفراغ من يومين,RETRIEVE,RETRIEVE,CDC,"AAP, CDC, AAP, CDC",https://www.healthychildren.org/English/health-issues/conditions/abdominal/Pages/Diarrhea.aspx | https://www.cdc.gov/norovirus/about/index.html | https://www.healthychildren.org/English/health-issues/conditions/abdominal/Pages/Diarrhea.aspx | https://www.cdc.gov/norovirus/about/index.html,سلامتك وما تشوف شر، بس حابة أنبهك إن هذي المعلومات هي توجيهات أولية وليست تشخيصاً مؤكداً. هل تحس بأي جفاف مثل جفاف الفم أو دوخة؟ وهل فيه دم في الاستفراغ أو ألم شديد في بطنك؟
+q044,وش أعراض تسمم الدم؟,RETRIEVE,RETRIEVE,CDC,"CDC, CDC, CDC, CDC",https://www.cdc.gov/sepsis/about/index.html | https://www.cdc.gov/sepsis/about/index.html | https://www.cdc.gov/sepsis/about/index.html | https://www.cdc.gov/sepsis/about/index.html,"أهلاً بك، أنا نوف، مساعدة افتراضية. لازم تعرف أن كلامي مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+تسمم الدم، أو اللي نسميه الإنتان، هو حالة طبية طارئة وخطيرة جداً تهدد الحياة وتصير لما الجسم يعطي رد فعل شديد تجاه أي عدوى. حسب المراكز الأمريكية لمكافحة الأمراض والوقاية منها، الأعراض تختلف من شخص لآخر، لكنها تتطلب تقييم طبي فوري من قبل المختصين عشان يشخصون الحالة بالفحص السريري والاختبارات.
+
+هل تعاني أنت أو الشخص اللي تسأل عنه من حرارة عالية، أو ضيق في التنفس، أو تغير في درجة الوعي؟"
+q045,هل أحتاج فحص فيروس الكبد سي؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hepatitis-c-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hepatitis-c-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hepatitis-c-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hepatitis-c-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرف إن كلامي هذا مجرد معلومات أولية وما يعتبر تشخيص طبي مؤكد.
+
+بشكل عام، حسب إرشادات فريق الخدمات الوقائية الأمريكي، يُنصح بفحص فيروس التهاب الكبد سي لكل البالغين اللي أعمارهم بين ثمانية عشر وسبعة وتسعين سنة.
+
+عشان أقدر أفيدك أكثر، هل أنتِ حامل حالياً؟"
+q046,هل الاكتئاب بعد الولادة يحتاج علاج؟,RETRIEVE,RETRIEVE,"USPSTF, AAFP","USPSTF, USPSTF, USPSTF, AAFP",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/perinatal-depression-preventive-interventions | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/perinatal-depression-preventive-interventions | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/perinatal-depression-preventive-interventions | https://www.aafp.org/family-physician/patient-care/clinical-recommendations/all-clinical-recommendations/depression.html,"أهلاً بكِ، أنا نوف، مساعدة افتراضية ولست طبيبة، وكلامي يعتبر توجيه أولي وليس تشخيصاً مؤكداً.
+
+نعم، الاكتئاب في فترة ما بعد الولادة قد يحتاج لتدخلات علاجية لأن له آثاراً قد تؤثر على الأم وعلى الرضيع أيضاً. حسب إرشادات فريق الخدمات الوقائية الأمريكي، يُنصح بتقديم استشارات أو جلسات إرشادية، مثل العلاج المعرفي السلوكي، خاصة للأشخاص الذين لديهم عوامل خطر.
+
+هل تلاحظين على نفسكِ أعراضاً معينة أو تشعرين بضيق شديد في الفترة الأخيرة؟"
+q047,متى أحتاج فحص أم الدم البطنية؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/abdominal-aortic-aneurysm-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/abdominal-aortic-aneurysm-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/abdominal-aortic-aneurysm-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/abdominal-aortic-aneurysm-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة، وليست تشخيصاً طبياً مؤكداً.
+
+حسب إرشادات فريق الخدمات الوقائية الأمريكي، الفحص يكون للرجال اللي أعمارهم بين خمسة وستين وخمسة وسبعين سنة، خاصة إذا كانوا مدخنين أو سبق لهم التدخين. أما بالنسبة للرجال اللي ما دخنوا أبداً، فالفحص يكون حسب تقدير الطبيب بناءً على التاريخ العائلي وعوامل الخطورة الثانية.
+
+هل أنت رجل أم امرأة، وهل سبق لك التدخين؟"
+q048,هل حمض الفوليك ضروري قبل الحمل؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/folic-acid-for-the-prevention-of-neural-tube-defects-preventive-medication | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/folic-acid-for-the-prevention-of-neural-tube-defects-preventive-medication | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/folic-acid-for-the-prevention-of-neural-tube-defects-preventive-medication | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/folic-acid-for-the-prevention-of-neural-tube-defects-preventive-medication,"أهلاً بك، أنا نوف، مساعدة افتراضية لطب الأسرة. لازم تعرفين إن كلامي هذا مجرد معلومات عامة ولا يعتبر تشخيص طبي.
+
+نعم، حمض الفوليك ضروري جداً للوقاية من عيوب الأنبوب العصبي عند الجنين. وحسب إرشادات فريق الخدمات الوقائية الأمريكي، يُنصح بكل الأشخاص اللي يخططون للحمل أو اللي ممكن يحملون بأخذ مكمل يومي يحتوي على كمية تتراوح بين صفر فاصلة أربعة إلى صفر فاصلة ثمانية مليجرام.
+
+يفضل البدء بتناوله قبل شهر واحد على الأقل من حدوث الحمل، والاستمرار عليه خلال أول ثلاثة أشهر من الحمل. هل تخططين للحمل في الفترة القريبة؟"
+q049,كم مدة الرضاعة الطبيعية الموصى بها؟,RETRIEVE,RETRIEVE,"USPSTF, AAP","USPSTF, USPSTF, AAP, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breastfeeding-primary-care-interventions | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breastfeeding-primary-care-interventions | https://www.healthychildren.org/English/ages-stages/baby/breastfeeding/Pages/Breastfeeding-Benefits-Your-Babys-Immune-System.aspx | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breastfeeding-primary-care-interventions,"أهلاً بك، أنا نوف، ومساعدتك الافتراضية هنا لتقديم معلومات عامة وليست تشخيصاً طبياً.
+
+بالنسبة لسؤالك، الأكاديمية الأمريكية لطب الأطفال تنصح بالرضاعة الطبيعية كأفضل وأصح طريقة لتغذية المواليد والرضع. المعلومات المتوفرة عندي حالياً تركز على فوائد الرضاعة للأم والطفل، لكنها لم تحدد مدة معينة بالشهور.
+
+هل طفلك حالياً يرضع طبيعي بشكل كامل، أم تدمجين معه حليب صناعي؟"
+q050,هل أحتاج فحص فيتامين د؟,RETRIEVE,RETRIEVE,USPSTF,"USPSTF, USPSTF, USPSTF, USPSTF",https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/vitamin-d-deficiency-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/vitamin-d-deficiency-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/vitamin-d-deficiency-screening | https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/vitamin-d-deficiency-screening,"أهلاً بك، أنا نوف، مساعدة افتراضية لتقديم معلومات صحية عامة وليست تشخيصاً طبياً مؤكداً.
+
+بشكل عام، حسب إرشادات فريق الخدمات الوقائية الأمريكي، الأدلة الحالية غير كافية لتحديد فوائد أو أضرار فحص نقص فيتامين د للبالغين الذين لا يعانون من أي أعراض. هل تشعر بأي أعراض معينة تجعلك تعتقد أن لديك نقصاً في الفيتامين؟"
+q051,السلام عليكم,DIRECT,DIRECT,,,,وعليكم السلام، هلا بك. معك نوف، مساعدة افتراضية من قسم طب الأسرة. كيف أقدر أساعدك اليوم؟
+q052,مشكورة يا نوف، الله يعطيك العافية,DIRECT,DIRECT,,,,الله يعافيك ويسلمك، ولو، هذا واجبي. أنا هنا دايمًا لو احتجت أي مساعدة أو عندك أي استفسار صحي. هل فيه شيء ثاني أقدر أساعدك فيه اليوم؟
+q053,ممكن تعيدين الجملة الأخيرة؟,DIRECT,DIRECT,,,,أكيد، كنت أقول إن المعلومات اللي أعطيك إياها هي مجرد توجيهات أولية وما تعتبر تشخيص طبي مؤكد لحالتك. كيف أقدر أساعدك اليوم؟
+q054,أنتي بشر ولا برنامج؟,DIRECT,DIRECT,,,,أنا نوف، مساعدة افتراضية ذكية، ولست طبيبة أو بشرية. أنا هنا عشان أقدم لك معلومات صحية عامة وأساعدك تفهم الأعراض اللي تمر فيها.
+q055,إلى اللقاء,DIRECT,DIRECT,,,,في أمان الله، إذا احتجت لأي مساعدة طبية ثانية أنا موجودة. مع السلامة.
+q056,نعم صحيح,DIRECT,DIRECT,,,,"أهلاً بك. أنا نوف، مساعدة افتراضية من قسم طب الأسرة. قبل ما نبدأ، حابة أوضح لك إن كلامي هو مجرد توجيهات أولية وما يعتبر تشخيص طبي مؤكد.
+
+كيف أقدر أساعدك اليوم؟ هل فيه أعراض معينة تضايقك؟"
+q057,أبوي طاح وما يرد علي وما يتنفس,EMERGENCY,EMERGENCY,,,,اللي توصفه ممكن يكون حالة طارئة. اتصل بالإسعاف على الرقم تسعة تسعة سبعة، أو على الطوارئ الموحّد تسعة واحد واحد، الحين. خلّك معه وتأكد إنه على ظهره على سطح صلب، وإذا كنت تعرف الإنعاش ابدأ فيه والمجيب بيوجهك خطوة بخطوة. ما راح أأخرك بأسئلة، الأهم إنك تطلب المساعدة الحين.
+q058,وجهه مايل وما يقدر يتكلم فجأة,EMERGENCY,EMERGENCY,,,,اللي توصفه ممكن يكون حالة طارئة. اتصل بالإسعاف على الرقم تسعة تسعة سبعة، أو على الطوارئ الموحّد تسعة واحد واحد، الحين. لاحظ وقت بداية الأعراض بالضبط لأنه مهم جداً للعلاج، ولا تعطيه أكل ولا شرب ولا أي دواء. ما راح أأخرك بأسئلة، الأهم إنك تطلب المساعدة الحين.
+q059,عندي ألم في الصدر شديد ينزل لذراعي,EMERGENCY,EMERGENCY,,,,اللي توصفه ممكن يكون حالة طارئة. اتصل بالإسعاف على الرقم تسعة تسعة سبعة، أو على الطوارئ الموحّد تسعة واحد واحد، الحين. خلّه يرتاح ولا يتحرك، ولا تقوده بنفسك للمستشفى؛ خلّ الإسعاف يجيه. ما راح أأخرك بأسئلة، الأهم إنك تطلب المساعدة الحين.
+q060,أختي بلعت حبوب كثير وتبي تأذي نفسها,EMERGENCY,EMERGENCY,,,,اللي توصفه ممكن يكون حالة طارئة. اتصل بالإسعاف على الرقم تسعة تسعة سبعة، أو على الطوارئ الموحّد تسعة واحد واحد، الحين. ما راح أأخرك بأسئلة، الأهم إنك تطلب المساعدة الحين.
