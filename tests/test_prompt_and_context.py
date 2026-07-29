@@ -45,6 +45,31 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("two to four short sentences", PROMPT)
         self.assertIn("no markdown", PROMPT)
 
+    def test_prompt_requires_light_internal_tashkeel_for_tts(self) -> None:
+        self.assertIn("light partial tashkeel for tts", PROMPT)
+        self.assertIn("first or an internal arabic letter", PROMPT)
+        self.assertIn("most words in a reply must remain completely unmarked", PROMPT)
+        self.assertIn("smallest number of marks", PROMPT)
+        self.assertIn("never add grammatical case endings", PROMPT)
+
+    def test_prompt_forbids_final_vowels_but_preserves_lexical_shadda(self) -> None:
+        self.assertIn(
+            "never put fatha, damma, kasra, sukun, or tanween on the final",
+            PROMPT,
+        )
+        self.assertIn("a final shadda is the sole exception", PROMPT)
+        for example in ("رُدّ", "حَقّ", "دُقّ"):
+            self.assertIn(example, system_prompt)
+
+    def test_prompt_contains_partial_tashkeel_examples(self) -> None:
+        for expected in (
+            "أَبِي أُغَيّر مَوْعدي",
+            "بُكْرة نِرْسِل لك الطَّلب",
+            "العَقْد جاهز لِلتَّوقيع",
+            "أنا نُوف، مُساعِدة صِحّية اِفتراضية",
+        ):
+            self.assertIn(expected, system_prompt)
+
     def test_urgency_triage_is_gone_entirely(self) -> None:
         """The escalation ladder was removed by product decision.
 
