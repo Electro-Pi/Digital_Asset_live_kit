@@ -1,0 +1,3 @@
+[submodule "frontend/coda-frontend"]
+	path = frontend/coda-frontend
+	url = https://github.com/Electro-Pi/coda-frontend.git
