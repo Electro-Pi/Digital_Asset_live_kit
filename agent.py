@@ -37,34 +37,37 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
 from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
-from src.plugins.moss_tts_plugin import MOSSTTSPlugin
-from src.prompts.agent_prompt import system_prompt
+from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
+from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
 from src.billing import billing_from_env, parse_participant_budget
+from src.voice_profile import parse_voice_from_metadata, voice_profile
 
 
 load_dotenv(".env.local")
 
-MOSS_TTS_SERVER_URL = os.getenv("MOSS_TTS_SERVER_URL", "http://localhost:8088")
-MOSS_TTS_MODEL = os.getenv("MOSS_TTS_MODEL", "Rabe3/saudi-tts-4")
-MOSS_TTS_VOICE = os.getenv("MOSS_TTS_VOICE", "coda-2")
-# The voice this deployment is supposed to be speaking with. Hosted servers that
-# have no uploaded voices only accept "default" (the finetuned speaker), while
-# the production server has "coda-2" uploaded — so this is config, not a constant.
-MOSS_TTS_EXPECTED_VOICE = os.getenv("MOSS_TTS_EXPECTED_VOICE", MOSS_TTS_VOICE)
-# Prefer the TTS server's uploaded ``coda-2`` voice. A reference path is only
+TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:16326")
+TTS_MODEL = os.getenv("TTS_MODEL", "VoxCPM2")
+TTS_VOICE = os.getenv("TTS_VOICE", "hoda")
+# The voice this deployment is supposed to be speaking with. The VoxCPM2 server
+# serves "hoda" (precomputed female) and "default" (male), so this is config,
+# not a constant — see GET /v1/audio/voices.
+TTS_EXPECTED_VOICE = os.getenv("TTS_EXPECTED_VOICE", TTS_VOICE)
+# Prefer the TTS server's precomputed ``hoda`` voice. A reference path is only
 # valid when that exact file exists inside the TTS server's filesystem.
-MOSS_TTS_REF_AUDIO = os.getenv("MOSS_TTS_REF_AUDIO", "").strip() or None
-MOSS_TTS_SEED = int(os.getenv("MOSS_TTS_SEED", "1234"))
-MOSS_TTS_TEXT_TEMPERATURE = float(os.getenv("MOSS_TTS_TEXT_TEMPERATURE", "1.0"))
-MOSS_TTS_TEXT_TOP_P = float(os.getenv("MOSS_TTS_TEXT_TOP_P", "1.0"))
-MOSS_TTS_TEXT_TOP_K = int(os.getenv("MOSS_TTS_TEXT_TOP_K", "50"))
-MOSS_TTS_AUDIO_TEMPERATURE = float(os.getenv("MOSS_TTS_AUDIO_TEMPERATURE", "0.8"))
-MOSS_TTS_AUDIO_TOP_P = float(os.getenv("MOSS_TTS_AUDIO_TOP_P", "0.95"))
-MOSS_TTS_AUDIO_TOP_K = int(os.getenv("MOSS_TTS_AUDIO_TOP_K", "50"))
+TTS_REF_AUDIO = os.getenv("TTS_REF_AUDIO", "").strip() or None
+TTS_SEED = int(os.getenv("TTS_SEED", "1234"))
 # Delivery pace, applied client-side and pitch-preserving. Below 1.0 is slower.
 # Not the server's `speed`, which is a resampler and would change the speaker.
-MOSS_TTS_SPEED = float(os.getenv("MOSS_TTS_SPEED", "0.92"))
-MOSS_TTS_SENTENCE_MIN_LEN = int(os.getenv("MOSS_TTS_SENTENCE_MIN_LEN", "300"))
+#
+# 1.0 bypasses the WSOLA stretch entirely, and that is deliberate. The stretch
+# inserts duration by repeating pitch periods, which duplicates speech
+# transients: measured +7.3% spurious onsets at 0.92, scaling ~1:1 with the
+# stretch amount (+2.4% at 0.97, +9.5% at 0.88). That is audible as a slight
+# stutter on consonants. The 0.92 was inherited from the MOSS deployment, but
+# VoxCPM2's `hoda` already speaks 21% slower than the human reference recording,
+# so the extra slow-down bought nothing and cost the artifact.
+TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))
+TTS_SENTENCE_MIN_LEN = int(os.getenv("TTS_SENTENCE_MIN_LEN", "300"))
 
 # ─── LLM / STT backends ──────────────────────────────────────────────────────
 # Both are OpenAI-compatible vLLM servers. When vLLM is started with --api-key
@@ -115,9 +118,9 @@ def _preview(value: Any, limit: int = 220) -> str:
 
 
 class Assistant(Agent):
-    def __init__(self) -> None:
+    def __init__(self, instructions: str) -> None:
         super().__init__(
-            instructions=system_prompt,
+            instructions=instructions,
         )
 
 
@@ -212,30 +215,19 @@ billing = billing_from_env()
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
-    participant = getattr(ctx, "participant", None)
     logger.info(
-        "LiveKit agent job starting room_name={} room_sid={} job_id={} participant={} "
-        "tts_server_url={} tts_model={} tts_voice={} tts_ref_audio={} "
-        "tts_seed={} tts_text_temperature={} tts_text_top_p={} tts_text_top_k={} "
-        "tts_audio_temperature={} tts_audio_top_p={} tts_audio_top_k={} tts_speed={} "
-        "sentence_min_len={}",
+        "LiveKit agent job starting room_name={} room_sid={} job_id={} "
+        "tts_server_url={} tts_model={} tts_voice_default={} "
+        "tts_seed={} tts_speed={} sentence_min_len={}",
         getattr(ctx.room, "name", None),
         getattr(ctx.room, "sid", None),
         getattr(job, "id", None),
-        getattr(participant, "identity", None),
-        MOSS_TTS_SERVER_URL,
-        MOSS_TTS_MODEL,
-        MOSS_TTS_VOICE,
-        MOSS_TTS_REF_AUDIO,
-        MOSS_TTS_SEED,
-        MOSS_TTS_TEXT_TEMPERATURE,
-        MOSS_TTS_TEXT_TOP_P,
-        MOSS_TTS_TEXT_TOP_K,
-        MOSS_TTS_AUDIO_TEMPERATURE,
-        MOSS_TTS_AUDIO_TOP_P,
-        MOSS_TTS_AUDIO_TOP_K,
-        MOSS_TTS_SPEED,
-        MOSS_TTS_SENTENCE_MIN_LEN,
+        TTS_SERVER_URL,
+        TTS_MODEL,
+        TTS_VOICE,
+        TTS_SEED,
+        TTS_SPEED,
+        TTS_SENTENCE_MIN_LEN,
     )
 
     logger.info(
@@ -263,33 +255,50 @@ async def my_agent(ctx: agents.JobContext):
         bool(STT_API_KEY),
     )
 
-    if MOSS_TTS_VOICE.lower() != MOSS_TTS_EXPECTED_VOICE.lower():
-        logger.error(
-            "Configured MOSS_TTS_VOICE is {} but MOSS_TTS_EXPECTED_VOICE is {}. "
-            "This can directly cause voice changes.",
-            MOSS_TTS_VOICE,
-            MOSS_TTS_EXPECTED_VOICE,
+    # Voice selection is stamped into participant metadata by /api/connection-details.
+    # Resolve the caller first so female (coda-2) vs male (ref-audio clone) is known
+    # before the TTS plugin and persona prompt are built.
+    _part = None
+    try:
+        _part = await asyncio.wait_for(ctx.wait_for_participant(), timeout=15)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "No remote participant appeared within 15s; defaulting to female voice "
+            "and disabling live billing (token TTL still caps the session)"
         )
-    if MOSS_TTS_SERVER_URL.endswith(":8088"):
-        logger.info(
-            "MOSS_TTS_SERVER_URL points to raw SGLang on 8088. This run uses one "
-            "fixed-seed request only; no gateway, no retry, no playback gate."
-        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not resolve the calling participant: {}", e)
 
-    moss_tts = MOSSTTSPlugin(
-        server_url=MOSS_TTS_SERVER_URL,
-        model=MOSS_TTS_MODEL,
-        voice=MOSS_TTS_VOICE,
-        ref_audio=MOSS_TTS_REF_AUDIO,
-        seed=MOSS_TTS_SEED,
-        text_temperature=MOSS_TTS_TEXT_TEMPERATURE,
-        text_top_p=MOSS_TTS_TEXT_TOP_P,
-        text_top_k=MOSS_TTS_TEXT_TOP_K,
-        audio_temperature=MOSS_TTS_AUDIO_TEMPERATURE,
-        audio_top_p=MOSS_TTS_AUDIO_TOP_P,
-        audio_top_k=MOSS_TTS_AUDIO_TOP_K,
-        speed=MOSS_TTS_SPEED,
-        expected_voice=MOSS_TTS_EXPECTED_VOICE,
+    selected_voice = parse_voice_from_metadata(
+        getattr(_part, "metadata", None) if _part else None
+    )
+    profile = voice_profile(selected_voice, female_tts_voice=TTS_VOICE)
+    logger.info(
+        "Voice profile selected key={} name_ar={} tts_voice={} has_ref_audio={} "
+        "ref_text_chars={} participant={}",
+        profile.key,
+        profile.display_name_ar,
+        profile.tts_voice,
+        bool(profile.ref_audio) or bool(TTS_REF_AUDIO and profile.key == "female"),
+        len(profile.ref_text or ""),
+        getattr(_part, "identity", None),
+    )
+
+    voice_tts = VoxCPMTTSPlugin(
+        server_url=TTS_SERVER_URL,
+        model=TTS_MODEL,
+        voice=profile.tts_voice,
+        ref_audio=(
+            TTS_REF_AUDIO
+            if profile.key == "female" and TTS_REF_AUDIO
+            else profile.ref_audio
+        ),
+        ref_text=profile.ref_text,
+        seed=TTS_SEED,
+        speed=TTS_SPEED,
+        expected_voice=profile.expected_voice,
+        voice_min_f0=profile.voice_min_f0,
+        voice_max_f0=profile.voice_max_f0,
     )
 
     voice_vad = silero.VAD.load(
@@ -314,18 +323,6 @@ async def my_agent(ctx: agents.JobContext):
         return noise_cancellation.BVCTelephony() if use_telephony else noise_cancellation.BVC()
 
     session = AgentSession(
-        # stt=groq.STT(
-        #     model="whisper-large-v3-turbo",
-        #     language="ar",
-        # ),
-        # stt=openai.STT(
-        #     base_url="http://8.213.50.155/v1",
-        #     model="qwen3-asr",
-        #     api_key="no-key-needed",
-        #     language="ar",
-        # ),
-        # Gate the Arabic-only Cohere ASR with neural voice detection so only
-        # confirmed speech segments reach the transcription model.
         stt=livekit_stt.StreamAdapter(
             stt=CohereASRStreamingSTT(
                 base_url=STT_BASE_URL,
@@ -337,51 +334,24 @@ async def my_agent(ctx: agents.JobContext):
             ),
             vad=voice_vad,
         ),
-        # stt=livekit_stt.StreamAdapter(
-        #     stt=QwenASRStreamingSTT(
-        #         base_url="http://localhost:8001",
-        #         language="ar",
-        #     ),
-        #     vad=voice_vad,
-        # ),
-        # llm=groq.LLM(model="openai/gpt-oss-20b"),
         llm=openai.LLM(
             base_url=LLM_BASE_URL,
             model=LLM_MODEL,
             api_key=LLM_API_KEY,
         ),
-        # tts=openai.TTS(
-        #     base_url="http://211.21.50.85:57010/v1",
-        #     model="orpheus",
-        #     voice="tara",
-        #     api_key="no-key-needed",
-        # ),
-        # tts=F5FastAPIPlugin(
-        #     server_url="http://211.21.50.85:57023",  # Change to your FastAPI server URL
-        #     sample_rate=24000,
-        # ),
-        # MOSS re-rolls the speaker slightly on every request, so synthesizing
+        # The TTS re-rolls the speaker slightly on every request, so synthesizing
         # sentence-by-sentence makes the voice audibly shift mid-reply. The
         # StreamAdapter below batches the reply into ~300+ char chunks so a
         # typical turn is one continuous generation (which holds the voice
         # steady), at the cost of TTS starting after the LLM finishes the turn.
         tts=StreamAdapter(
-            tts=moss_tts,
+            tts=voice_tts,
             sentence_tokenizer=tokenize.basic.SentenceTokenizer(
-                min_sentence_len=MOSS_TTS_SENTENCE_MIN_LEN
+                min_sentence_len=TTS_SENTENCE_MIN_LEN
             ),
         ),
-        # tts=groq.TTS(model="canopylabs/orpheus-arabic-saudi", voice="fahad"),
-        # tts=F5TTSPlugin(
-        #     server_url="http://45.81.32.2:11096/",
-        #     model_name="f5_tts",
-        #     reference_audio_path="speech.wav",
-        #     reference_text="جصتي تبدا من ايام ما كنا نزور بيت خوالي",
-        #     sample_rate=24000,
-        # ),
         vad=voice_vad,
         turn_detection=MultilingualModel(),
-        # preemptive_generation=True
     )
 
 
@@ -528,7 +498,7 @@ async def my_agent(ctx: agents.JobContext):
     logger.info("LiveKit session.start beginning room_name={}", getattr(ctx.room, "name", None))
     await session.start(
         room=ctx.room,
-        agent=Assistant(),
+        agent=Assistant(instructions=prompt_for_voice(profile.key)),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=_noise_cancellation_for
@@ -539,26 +509,8 @@ async def my_agent(ctx: agents.JobContext):
 
     # ─── Per-user live-minutes budget (authoritative meter) ──────────────────
     # The /api/connection-details token route stamped the Supabase user id +
-    # remaining seconds into the participant identity/metadata. We read it here,
-    # hard-stop the session when the budget is spent (with a spoken notice), and
-    # bill the actual consumed seconds back to Supabase. A periodic checkpoint
-    # means a crash mid-session still records most of the usage. The token TTL is
-    # an independent hard ceiling layered on top of this.
-    # JobContext exposes no `participant` attribute, and room.remote_participants
-    # is still empty this early in the job — so both of those lookups always
-    # resolved to None, which silently disabled live billing AND the hard stop
-    # (leaving only the token TTL). Wait for the caller to actually appear.
-    _part = None
-    try:
-        _part = await asyncio.wait_for(ctx.wait_for_participant(), timeout=15)
-    except asyncio.TimeoutError:
-        logger.warning(
-            "No remote participant appeared within 15s; live billing is disabled "
-            "for this session and only the token TTL caps it"
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Could not resolve the calling participant for billing: {}", e)
-
+    # remaining seconds into the participant identity/metadata. Participant was
+    # already resolved above for voice selection.
     billing_user_id, billing_remaining = parse_participant_budget(
         getattr(_part, "identity", None), getattr(_part, "metadata", None)
     )
@@ -662,12 +614,13 @@ async def my_agent(ctx: agents.JobContext):
 
     ctx.add_shutdown_callback(_final_bill)
 
-    logger.info("LiveKit initial generate_reply beginning")
+    logger.info(
+        "LiveKit initial generate_reply beginning voice={} name_ar={}",
+        profile.key,
+        profile.display_name_ar,
+    )
     await session.generate_reply(
-        instructions=(
-            "ابدئي بتحية سعودية قصيرة ودافئة، وعرّفي نفسك باسم نوف كمرشدة "
-            "ثقافية سعودية، ثم اسألي المستخدم وش يحب يعرف عن السعودية."
-        )
+        instructions=intro_for_voice(profile.key)
     )
     logger.info("LiveKit initial generate_reply completed")
 

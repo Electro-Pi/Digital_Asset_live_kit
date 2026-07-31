@@ -78,37 +78,46 @@ STRETCH_SEARCH_MS = 6.0
 
 # Text normalization before synthesis.
 #
-# This used to delete ALL tashkeel, on the theory that diacritized input
-# destabilized the cloned speaker (~40% male-voice outliers). That instability
-# was really sglang-omni's default audio_temperature of 1.7; with the tuned
-# sampling values below it is gone. Re-measured over 30 requests spanning
-# diacritized and undiacritized input: F0 stayed in the 142-247 Hz female band
-# in every single one, with no male outliers in either condition.
+# Tashkeel is stripped here. Note this reverses an earlier decision, so the
+# history is worth keeping straight:
 #
-# So stripping tashkeel no longer buys stability — it only throws away the
-# vowel information the model needs, leaving it to guess case endings and
-# gemination from a bare consonant skeleton. Diacritics now pass through.
+# Diacritics were once deleted on the theory that they destabilized the cloned
+# speaker (~40% male-voice outliers). That was a misdiagnosis — the real cause
+# was sglang-omni's default audio_temperature of 1.7, and with the tuned
+# sampling values below the instability is gone. Re-measured over 30 requests
+# spanning diacritized and undiacritized input: F0 stayed in the 142-247 Hz
+# female band in every one, with no male outliers in either condition. On that
+# evidence stripping was removed, because diacritics do carry vowel information
+# the model would otherwise have to guess.
 #
-# What is still removed is only text that carries NO pronunciation:
+# Stripping is back by explicit request, not because that measurement was
+# overturned — voice stability is not the reason, and nothing here re-litigates
+# it. The prompt now tells the LLM to emit bare Arabic (see prompts/
+# agent_prompt.py), so in the normal case this regex has nothing to do; it is
+# the belt-and-braces guard for diacritics that slip through anyway.
+#
+# Removed:
+#   * U+064B-U+0652  — standard tashkeel (fatha…sukun, shadda, tanween)
+#   * U+0670         — dagger alef; a real long /aː/ in هٰذا, but stripping it
+#                      yields هذا, which is the ordinary bare spelling
 #   * U+0640 tatweel — a typographic stretch, never phonetic
 #   * U+0610-U+061A  — honorific annotations (e.g. "sallallahu alayhi wasallam")
 #   * U+06D6-U+06ED  — Quranic recitation/annotation marks
-# Standard tashkeel (U+064B-U+0652) and the dagger alef (U+0670, a real long
-# /aː/ in words like هٰذا) are kept.
 _NON_PHONETIC_MARKS = re.compile(
-    "[\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+    "[\\u064b-\\u0652\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
 )
 
 
 def normalize_arabic(text: str) -> str:
-    """Drop non-phonetic marks, preserving vowels and letter identity.
+    """Strip tashkeel and non-phonetic marks, preserving letter identity.
 
     The NFC pass is load-bearing. Hamza and maddah also exist as COMBINING
-    marks (U+0653-U+0655), so decomposed text spells أ as ا+U+0654. The old
-    rule deleted that range, which silently rewrote letters — رئيس became
-    رييس, مؤسسة became موسسة, القرآن became القران — and those really are
-    pronounced wrong. Composing first turns those sequences back into single
-    letters that no rule here can touch.
+    marks (U+0653-U+0655), so decomposed text spells أ as ا+U+0654. Deleting
+    that range silently rewrites letters — رئيس becomes رييس, مؤسسة becomes
+    موسسة, القرآن becomes القران — and those really are pronounced wrong.
+    Composing first turns those sequences back into single letters, which is
+    why U+0653-U+0655 stays out of the character class above: those marks are
+    letter identity, not vowels, and must survive the strip.
     """
     return _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
 
@@ -326,6 +335,7 @@ class MOSSTTSPlugin(tts.TTS):
         model: str = "Rabe3/saudi-tts-4",
         voice: str = "coda-2",
         ref_audio: str | None = None,
+        ref_text: str | None = None,
         seed: int | None = None,
         text_temperature: float = 1.0,
         text_top_p: float = 1.0,
@@ -335,6 +345,8 @@ class MOSSTTSPlugin(tts.TTS):
         audio_top_k: int = 50,
         speed: float = 1.0,
         expected_voice: str = "coda-2",
+        voice_min_f0: float = VOICE_MIN_F0,
+        voice_max_f0: float = VOICE_MAX_F0,
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
@@ -347,9 +359,10 @@ class MOSSTTSPlugin(tts.TTS):
             expected_voice: the voice this deployment is supposed to use. Any
                 other value is logged as a warning, since a silently swapped
                 voice is the most common cause of "the agent sounds wrong".
-            ref_audio: optional server-side reference audio path. When set, the
-                request uses voice=default plus this ref_audio so SGLang does
-                not go through its uploaded-voice alias path.
+            ref_audio: optional reference audio (server path, URL, or data URI).
+                When set, the request uses voice=default plus this ref_audio so
+                SGLang does not go through its uploaded-voice alias path.
+            ref_text: transcript of ``ref_audio`` when cloning from a reference.
             seed: optional deterministic seed for SGLang sampling.
             text_temperature: sampling temperature for the binary continue/stop head.
             text_top_p: nucleus sampling for the binary continue/stop head.
@@ -361,6 +374,8 @@ class MOSSTTSPlugin(tts.TTS):
                 slower delivery. Pitch-preserving (see _WSOLAStretcher); this is
                 deliberately not the server's `speed`, which resamples and so
                 changes the speaker. 1.0 disables the stretch entirely.
+            voice_min_f0 / voice_max_f0: diagnostic pitch band for this speaker
+                (female coda-2 ≈ 135-340 Hz, male clone ≈ 70-180 Hz).
         """
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),
@@ -371,6 +386,7 @@ class MOSSTTSPlugin(tts.TTS):
         self._model = model
         self._voice = voice
         self._ref_audio = ref_audio
+        self._ref_text = ref_text
         self._seed = seed
         self._text_temperature = text_temperature
         self._text_top_p = text_top_p
@@ -395,16 +411,19 @@ class MOSSTTSPlugin(tts.TTS):
             )
             self._speed = 1.0
         self._expected_voice = expected_voice
+        self._voice_min_f0 = float(voice_min_f0)
+        self._voice_max_f0 = float(voice_max_f0)
         self._session = http_session
         logger.info(
             "MOSS TTS plugin initialized server_url={} model={} voice={} ref_audio={} "
-            "seed={} text_temperature={} text_top_p={} text_top_k={} "
+            "ref_text_chars={} seed={} text_temperature={} text_top_p={} text_top_k={} "
             "audio_temperature={} audio_top_p={} audio_top_k={} speed={} "
-            "sample_rate={} channels={}",
+            "sample_rate={} channels={} voice_f0_band={:.0f}-{:.0f}",
             self._server_url,
             self._model,
             self._voice,
-            self._ref_audio,
+            "set" if self._ref_audio else None,
+            len(self._ref_text or ""),
             self._seed,
             self._text_temperature,
             self._text_top_p,
@@ -415,6 +434,8 @@ class MOSSTTSPlugin(tts.TTS):
             self._speed,
             SERVER_SAMPLE_RATE,
             SERVER_CHANNELS,
+            self._voice_min_f0,
+            self._voice_max_f0,
         )
 
     @property
@@ -484,6 +505,8 @@ class MOSSChunkedStream(tts.ChunkedStream):
         }
         if self._tts._ref_audio:
             payload["ref_audio"] = self._tts._ref_audio
+        if self._tts._ref_text:
+            payload["ref_text"] = self._tts._ref_text
         if self._tts._seed is not None:
             payload["seed"] = self._tts._seed
 
@@ -530,9 +553,9 @@ class MOSSChunkedStream(tts.ChunkedStream):
             "MOSS TTS request start request_id={} endpoint={} model={} voice={} "
             "raw_chars={} sanitized_chars={} removed_marks={} text_sha256={} "
             "preview={!r} stream={} response_format={} stream_format={} "
-            "language={} ref_audio={} seed={} text_temperature={} text_top_p={} "
-            "text_top_k={} audio_temperature={} audio_top_p={} audio_top_k={} "
-            "speed={} diagnostic_f0_min={} diagnostic_f0_max={} timeout={}",
+            "language={} ref_audio={} ref_text_chars={} seed={} text_temperature={} "
+            "text_top_p={} text_top_k={} audio_temperature={} audio_top_p={} "
+            "audio_top_k={} speed={} diagnostic_f0_min={} diagnostic_f0_max={} timeout={}",
             request_id,
             endpoint,
             payload["model"],
@@ -546,7 +569,8 @@ class MOSSChunkedStream(tts.ChunkedStream):
             payload["response_format"],
             payload["stream_format"],
             payload["language"],
-            payload.get("ref_audio"),
+            "set" if payload.get("ref_audio") else None,
+            len(payload.get("ref_text") or ""),
             payload.get("seed"),
             payload["text_temperature"],
             payload["text_top_p"],
@@ -555,8 +579,8 @@ class MOSSChunkedStream(tts.ChunkedStream):
             payload["audio_top_p"],
             payload["audio_top_k"],
             speed,
-            VOICE_MIN_F0,
-            VOICE_MAX_F0,
+            self._tts._voice_min_f0,
+            self._tts._voice_max_f0,
             self._conn_options.timeout,
         )
 
@@ -693,7 +717,7 @@ class MOSSChunkedStream(tts.ChunkedStream):
                     "audio was already emitted because fixed-seed direct mode has no gate",
                     request_id,
                 )
-            elif not (VOICE_MIN_F0 <= f0 <= VOICE_MAX_F0):
+            elif not (self._tts._voice_min_f0 <= f0 <= self._tts._voice_max_f0):
                 logger.error(
                     "MOSS TTS diagnostic out-of-range request_id={} seed={} median_f0_hz={:.1f} "
                     "expected_range={:.0f}-{:.0f}; audio was emitted because fixed-seed direct "
@@ -701,8 +725,8 @@ class MOSSChunkedStream(tts.ChunkedStream):
                     request_id,
                     payload.get("seed"),
                     f0,
-                    VOICE_MIN_F0,
-                    VOICE_MAX_F0,
+                    self._tts._voice_min_f0,
+                    self._tts._voice_max_f0,
                 )
         except aiohttp.ClientError as e:
             logger.exception(
