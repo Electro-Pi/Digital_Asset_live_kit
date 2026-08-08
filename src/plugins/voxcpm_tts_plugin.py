@@ -86,8 +86,8 @@ STRETCH_SEARCH_MS = 6.0
 
 # Text normalization before synthesis.
 #
-# Tashkeel is stripped here, by explicit request. The history is worth keeping
-# straight, because it has been reversed twice:
+# Tashkeel is deliberately PRESERVED, and reaches the TTS server intact. The
+# history is worth keeping straight, because it has been reversed three times:
 #
 # Diacritics were once deleted on the theory that they destabilized the cloned
 # speaker (~40% male-voice outliers). That was a misdiagnosis — the real cause
@@ -97,26 +97,46 @@ STRETCH_SEARCH_MS = 6.0
 # every one. On that evidence stripping was removed, because diacritics do carry
 # vowel information the model would otherwise have to guess.
 #
-# Stripping is back by explicit request, not because that measurement was
-# overturned — voice stability is not the reason, and nothing here re-litigates
-# it. The prompt now tells the LLM to emit bare Arabic (see prompts/
-# agent_prompt.py), so in the normal case this regex has nothing to do; it is
-# the belt-and-braces guard for diacritics that slip through anyway.
+# Stripping then came back with a prompt that emitted bare Arabic, so the
+# regex had nothing to do in the normal case. Both are now reversed together:
+# the prompt asks for word-internal tashkeel with bare word endings (see
+# prompts/agent_prompt.py) precisely so the model stops guessing vowels, which
+# only works if the marks survive to the request body. The marks are for the
+# voice, not the reader — the playground transcript strips them for display
+# (frontend src/lib/arabic.ts).
 #
-# Removed:
-#   * U+064B-U+0652  — standard tashkeel (fatha…sukun, shadda, tanween)
-#   * U+0670         — dagger alef; a real long /aː/ in هٰذا, but stripping it
-#                      yields هذا, which is the ordinary bare spelling
+# What remains removed carries no pronunciation at all:
 #   * U+0640 tatweel — a typographic stretch, never phonetic
 #   * U+0610-U+061A  — honorific annotations (e.g. "sallallahu alayhi wasallam")
 #   * U+06D6-U+06ED  — Quranic recitation/annotation marks
+#
+# This matches normalizeArabic() in the frontend's src/lib/upstream.ts, so the
+# playground TTS tab and the live agent pronounce the same text identically.
 _NON_PHONETIC_MARKS = re.compile(
-    "[\\u064b-\\u0652\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+    "[\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+)
+
+# A mark cluster on a word's last letter — one not followed by another Arabic
+# letter. Marks are excluded from the lookahead as well as letters, which is
+# what stops the greedy ``+`` from backtracking into the middle of a cluster and
+# calling an interior shadda "final".
+#
+# The prompt asks the LLM for bare word endings, but asking is not enforcing: a
+# model that vocalizes السَّلَامُ عَلَيْكُمْ reads it as recitation rather than
+# speech. This makes the rule hold whatever the LLM actually sent.
+_WORD_FINAL_MARKS = re.compile(
+    "[\\u064b-\\u0652\\u0670]+"
+    "(?![\\u0621-\\u064a\\u0671-\\u06d3\\u064b-\\u0652\\u0670])"
 )
 
 
+def _keep_shadda_only(match: "re.Match[str]") -> str:
+    """A final shadda is gemination (مُسْتَمِرّ), not an ending, so it survives."""
+    return "ّ" if "ّ" in match.group(0) else ""
+
+
 def normalize_arabic(text: str) -> str:
-    """Strip tashkeel and non-phonetic marks, preserving letter identity.
+    """Keep word-internal tashkeel, drop non-phonetic marks and the i'rab.
 
     The NFC pass is load-bearing. Hamza and maddah also exist as COMBINING
     marks (U+0653-U+0655), so decomposed text spells أ as ا+U+0654. Deleting
@@ -126,7 +146,8 @@ def normalize_arabic(text: str) -> str:
     why U+0653-U+0655 stays out of the character class above: those marks are
     letter identity, not vowels, and must survive the strip.
     """
-    return _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
+    composed = _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
+    return _WORD_FINAL_MARKS.sub(_keep_shadda_only, composed)
 
 
 def _text_hash(text: str) -> str:

@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterable
 from dotenv import load_dotenv
 from typing import Any, Optional
 
@@ -22,6 +23,7 @@ from livekit.agents import (
     ErrorEvent,
     FunctionToolsExecutedEvent,
     MetricsCollectedEvent,
+    ModelSettings,
     SessionUsageUpdatedEvent,
     SpeechCreatedEvent,
     ToolError,
@@ -30,6 +32,7 @@ from livekit.agents import (
     metrics,
     tokenize,
 )
+from livekit.agents.types import TimedString
 from livekit.agents.tts import StreamAdapter
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -38,6 +41,7 @@ from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
 from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
+from src.arabic_text import strip_tashkeel
 from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
 from src.billing import billing_from_env, parse_participant_budget
 from src.voice_profile import parse_voice_from_metadata, voice_profile
@@ -123,7 +127,37 @@ class Assistant(Agent):
             instructions=instructions,
         )
 
+    async def transcription_node(
+        self,
+        text: AsyncIterable[Any],
+        model_settings: ModelSettings,
+    ) -> AsyncIterable[Any]:
+        """Publish the on-screen transcript bare, with no tashkeel.
 
+        The reply is diacritized deliberately so the TTS voices the vowels
+        instead of guessing them (see prompts/agent_prompt.py), but a reader
+        should not see the marks — Arabic prose is written bare.
+
+        Only the transcript branch is touched. ``tts_node`` is fed from the same
+        LLM output through a separate path, so the audio still receives the full
+        diacritization; this is what makes the rule hold for every client rather
+        than only the ones that remember to strip it themselves.
+        """
+        async for delta in text:
+            bare = strip_tashkeel(delta)
+            # TimedString is a str subclass carrying word-level alignment. A
+            # plain str here would silently drop the timing the client uses to
+            # sync captions to the audio, so rebuild it.
+            if isinstance(delta, TimedString):
+                yield TimedString(
+                    bare,
+                    start_time=delta.start_time,
+                    end_time=delta.end_time,
+                    confidence=delta.confidence,
+                    start_time_offset=delta.start_time_offset,
+                )
+            else:
+                yield bare
 
     @function_tool()
     async def lookup_weather(
