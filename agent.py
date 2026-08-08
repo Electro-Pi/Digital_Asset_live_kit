@@ -558,6 +558,58 @@ class Assistant(Agent):
         return result
 
     @function_tool()
+    async def save_meal(
+        self,
+        context: RunContext,
+        meal_id: str,
+        saved: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Save a meal to the user's favourites (the heart button), or remove it.
+        Only meals can be saved — restaurants cannot.
+
+        Args:
+            meal_id: The meal_id from a previous search result.
+            saved: True to save it, False to remove it from favourites.
+        """
+        cat = catalog.load_catalog()
+        meal = cat.by_id(meal_id)
+        if meal is None:
+            # Distinguish the two ways this goes wrong, because the model's
+            # recovery differs: a restaurant id means "you cannot save that",
+            # anything else means "you made the id up, search again".
+            if cat.restaurant_by_id(meal_id) is not None:
+                raise ToolError(
+                    f"{meal_id!r} is a restaurant. Only meals can be saved — "
+                    "pass a meal_id from a search result."
+                )
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Search first and use a real meal_id."
+            )
+
+        saved = bool(saved)
+        outcome = await self._ui.set_saved(meal_id=meal.id, saved=saved)
+        logger.info(
+            "Tool save_meal meal_id={} saved={} ok={} reason={}",
+            meal.id, saved, outcome.ok, outcome.reason,
+        )
+
+        result = outcome.as_tool_result(
+            on_success=(
+                f"حفظت {meal.name} في المفضلة"
+                if saved
+                else f"شلت {meal.name} من المفضلة"
+            ),
+            on_failure=(
+                "ما قدرت أحفظها، احفظها من زر القلب في التطبيق"
+                if saved
+                else "ما قدرت أشيلها من المفضلة"
+            ),
+        )
+        result.update({"meal_name": meal.name, "saved": saved})
+        return result
+
+    @function_tool()
     async def get_cart(self, context: RunContext) -> dict[str, Any]:
         """
         Read what is currently in the user's cart. Use before talking about the

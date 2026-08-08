@@ -74,6 +74,8 @@ class FakeUI:
         # What the meal page is showing as selected — the state the real
         # handler would push into the page's addon checkboxes.
         self.meal_options: dict[str, Any] = {}
+        # Mirrors saved-context: a list of saved meal ids.
+        self.saved: list[str] = []
         self.available = True
 
     async def call(self, method: str, payload: dict[str, Any]) -> UIResult:
@@ -90,6 +92,15 @@ class FakeUI:
         if method == "luqma.addToCart":
             self.cart.append(payload)
             return UIResult(ok=True, data={"cartCount": len(self.cart)})
+        if method == "luqma.setSaved":
+            mid, want = payload["mealId"], payload["saved"]
+            # What the real handler must do: saved-context only exposes a
+            # toggle, so check current state before flipping it.
+            if want and mid not in self.saved:
+                self.saved.append(mid)
+            elif not want and mid in self.saved:
+                self.saved.remove(mid)
+            return UIResult(ok=True, data={"saved": want, "savedCount": len(self.saved)})
         if method == "luqma.getCart":
             return UIResult(ok=True, data={"items": self.cart, "count": len(self.cart)})
         return UIResult(ok=False, reason="frontend_handler_missing")
@@ -115,6 +126,9 @@ class FakeUI:
             {"mealId": meal_id, "quantity": quantity, "spicy": spicy,
              "addonIds": addon_ids or []},
         )
+
+    async def set_saved(self, *, meal_id, saved=True) -> UIResult:
+        return await self.call("luqma.setSaved", {"mealId": meal_id, "saved": saved})
 
     async def get_cart(self) -> UIResult:
         return await self.call("luqma.getCart", {})

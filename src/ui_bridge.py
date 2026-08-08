@@ -32,6 +32,7 @@ from loguru import logger
 METHOD_NAVIGATE = "luqma.navigate"
 METHOD_SHOW_MEAL = "luqma.showMeal"
 METHOD_SET_MEAL_OPTIONS = "luqma.setMealOptions"
+METHOD_SET_SAVED = "luqma.setSaved"
 METHOD_ADD_TO_CART = "luqma.addToCart"
 METHOD_GET_CART = "luqma.getCart"
 
@@ -186,6 +187,16 @@ class UIBridge:
                 "addonIds": addon_ids or [],
             },
         )
+
+    async def set_saved(self, *, meal_id: str, saved: bool = True) -> UIResult:
+        """Set a meal's saved state — deliberately absolute, never a toggle.
+
+        The agent cannot see which hearts are already filled, so "toggle" would
+        mean asking twice unsaves the dish, and a retry after a timeout undoes
+        the save it just made. Sending the desired end state makes the call
+        idempotent: "save this" is safe to repeat.
+        """
+        return await self.call(METHOD_SET_SAVED, {"mealId": meal_id, "saved": saved})
 
     async def get_cart(self) -> UIResult:
         return await self.call(METHOD_GET_CART, {})

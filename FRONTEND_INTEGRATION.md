@@ -6,7 +6,7 @@ frontend ships the code below is move the UI: open a meal page, add to cart, or
 read the cart back.
 
 Nothing here changes the voice pipeline or the token route — that all works
-today. This is five RPC handlers on the LiveKit `Room` you already connect.
+today. This is six RPC handlers on the LiveKit `Room` you already connect.
 
 ---
 
@@ -103,6 +103,17 @@ room.localParticipant.registerRpcMethod("luqma.addToCart", async (data) => {
   return ok({ cartCount: /* new count */ 0 });
 });
 
+room.localParticipant.registerRpcMethod("luqma.setSaved", async (data) => {
+  const { mealId, saved } = JSON.parse(data.payload) as {
+    mealId: string;
+    saved: boolean;
+  };
+  // saved-context only exposes a toggle, so check the current state first —
+  // the agent sends the DESIRED state, not a flip. See the note below.
+  if (saved !== isSavedRef.current(mealId)) toggleSaved(mealId);
+  return ok({ saved });
+});
+
 room.localParticipant.registerRpcMethod("luqma.getCart", async () => {
   return ok({
     count: items.length,
@@ -117,18 +128,20 @@ room.localParticipant.registerRpcMethod("luqma.getCart", async () => {
 
 ### Two React gotchas
 
-- **Stale closures.** These handlers are registered once but read `items` and
-  `addItem`. If they close over the first render's values, `luqma.getCart` will
-  keep reporting an empty cart forever. Keep the live values in a ref
+- **Stale closures.** These handlers are registered once but read `items`,
+  `addItem` and `isSaved`. If they close over the first render's values,
+  `luqma.getCart` will keep reporting an empty cart forever and `luqma.setSaved`
+  will decide to flip based on a stale answer. Keep the live values in refs
   (`const cartRef = useRef(items); cartRef.current = items;`) and read
-  `cartRef.current` inside the handler, or re-register when they change.
+  `cartRef.current` inside the handler, or re-register when they change. The
+  `isSavedRef` in the example above is exactly this.
 - **Unregister on disconnect**, next to your existing `clearAudioElements()`:
   `room.localParticipant.unregisterRpcMethod("luqma.navigate")` etc. Otherwise a
   reconnect stacks duplicate handlers.
 
 ---
 
-## 3. The five methods
+## 3. The six methods
 
 Every payload includes `"v": 1` (protocol version). Ignore it, or log it if it
 is ever not `1`.
@@ -208,6 +221,30 @@ Guarantees from the backend, so you do not need to re-check them:
 The agent already told the user the line total, computed as
 `(price + Σ addon prices) × quantity` using `offerPrice` when the meal is on
 offer. Match that in `addItem` or the spoken total and the screen will disagree.
+
+### `luqma.setSaved`
+The heart / save button on a meal.
+```jsonc
+// payload
+{ "mealId": "aseel-burger-classic", "saved": true, "v": 1 }
+// response
+{ "ok": true, "saved": true }
+```
+**`saved` is the desired end state, not a toggle** — and this is the one place
+your implementation has to do a little work, because `saved-context` only gives
+you `toggleSaved`. Check `isSaved(mealId)` first and flip only if it differs:
+
+```ts
+if (saved !== isSaved(mealId)) toggleSaved(mealId);
+// or, for the false case: if (isSaved(mealId)) removeSaved(mealId);
+```
+
+Calling it as a straight toggle would break two real cases: the user says "save
+it" twice and the second one un-saves it, and a retry after a timeout undoes the
+save that actually succeeded. Sending an absolute state makes repeats harmless.
+
+Only **meals** are savable — the backend rejects a restaurant id before the call
+is made, matching what `saved-context` stores.
 
 ### `luqma.getCart`
 ```jsonc
@@ -293,7 +330,7 @@ Option 3 is a five-line script and is enough.
 ## 7. Testing without voice
 
 `tests/test_luqma_flow.py` in the backend runs whole conversations in text with
-a `FakeUI` that mimics these five handlers, so you can see the exact payload
+a `FakeUI` that mimics these six handlers, so you can see the exact payload
 sequence a real call produces:
 
 ```bash
