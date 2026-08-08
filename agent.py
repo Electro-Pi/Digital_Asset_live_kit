@@ -596,14 +596,14 @@ class Assistant(Agent):
 
         result = outcome.as_tool_result(
             on_success=(
-                f"حفظت {meal.name} في المفضلة"
+                f"حفظت {meal.name} في المحفوظات"
                 if saved
-                else f"شلت {meal.name} من المفضلة"
+                else f"شلت {meal.name} من المحفوظات"
             ),
             on_failure=(
                 "ما قدرت أحفظها، احفظها من زر القلب في التطبيق"
                 if saved
-                else "ما قدرت أشيلها من المفضلة"
+                else "ما قدرت أشيلها من المحفوظات"
             ),
         )
         result.update({"meal_name": meal.name, "saved": saved})
