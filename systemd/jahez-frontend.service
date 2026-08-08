@@ -1,0 +1,22 @@
+[Unit]
+Description=Jahez Next.js frontend (لقمة mockup)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/projects/jahez-project/jahez-frontend
+Environment=NODE_ENV=production
+# Bound to loopback only — nginx (port 6702) is the sole public entry point.
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 6701
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jahez-frontend
+
+[Install]
+WantedBy=multi-user.target

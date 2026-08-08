@@ -1,72 +1,90 @@
-# Systemd Services
+# Systemd Services (jahez-project)
 
-The project includes systemd units for both application processes:
+Two independent units. They are **not** wired to each other — the frontend is a
+standalone mockup and does not call the agent.
 
-- `digital-asset-agent.service`: the LiveKit backend agent
-- `digital-asset-frontend.service`: the production frontend on port `8090`
+| Unit                    | What                     | Port                          |
+| ----------------------- | ------------------------ | ----------------------------- |
+| `jahez-agent.service`   | LiveKit voice agent      | `6700` (local health/debug)   |
+| `jahez-frontend.service`| Next.js frontend         | `6701` (loopback only)        |
+| nginx `jahez-frontend`  | public TLS entry point   | `6702`                        |
+
+Public URL: <https://demo.testdevelopment.top:6702>
+
+The agent is a LiveKit **worker**: it dials out to `LIVEKIT_URL` and is not
+reachable from the internet. Port `6700` is only its local health endpoint.
 
 ## Install and enable
 
-Run once after cloning the project or changing either unit file:
+Run once after cloning or changing either unit file:
 
 ```bash
-cd /home/ai2/Digital_Asset_live_kit
-sudo cp systemd/*.service /etc/systemd/system/
+cd /home/ubuntu/projects/jahez-project/coda-jahez-agent-backend
+sudo cp systemd/jahez-agent.service systemd/jahez-frontend.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now digital-asset-agent.service digital-asset-frontend.service
+sudo systemctl enable --now jahez-agent.service jahez-frontend.service
 ```
 
-## Migrate from an older manually run agent
-
-The backend uses port `2952`. If systemd reports that this port is already in
-use, an older agent process is still running and receiving LiveKit jobs. Check
-the process, stop it, then start the systemd service:
+nginx vhost (already installed):
 
 ```bash
-sudo fuser -v 2952/tcp
-sudo fuser -TERM -k 2952/tcp
-sudo systemctl restart digital-asset-agent.service
-sudo systemctl status digital-asset-agent.service --no-pager
+sudo cp systemd/jahez-frontend.nginx.conf /etc/nginx/sites-available/jahez-frontend.conf
+sudo ln -sfn /etc/nginx/sites-available/jahez-frontend.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Run the stop command only after confirming that the listener on port `2952` is
-the old Digital Asset agent.
+## First-time setup
 
-Before the first frontend start, install dependencies and create the production
-build:
+Backend dependencies and the VAD / turn-detector model files:
 
 ```bash
-cd /home/ai2/Digital_Asset_live_kit/frontend
+cd /home/ubuntu/projects/jahez-project/coda-jahez-agent-backend
+uv sync
+.venv/bin/python agent.py download-files
+```
+
+Frontend production build (required before the first start):
+
+```bash
+cd /home/ubuntu/projects/jahez-project/jahez-frontend
 npm ci
 npm run build
+```
+
+## Port conflicts
+
+`6700` must be unique per agent on this host — `2952` belongs to the unrelated
+`digital-asset-agent.service`. If systemd reports the port is taken, confirm the
+listener is a stale agent of *this* deployment before killing it:
+
+```bash
+sudo fuser -v 6700/tcp
+sudo fuser -TERM -k 6700/tcp
+sudo systemctl restart jahez-agent.service
 ```
 
 ## Restart
 
 ```bash
-sudo systemctl restart digital-asset-agent.service
-sudo systemctl restart digital-asset-frontend.service
+sudo systemctl restart jahez-agent.service jahez-frontend.service
 ```
 
-Restart both at once:
+After frontend code changes, rebuild before restarting:
 
 ```bash
-sudo systemctl restart digital-asset-agent.service digital-asset-frontend.service
-```
-
-After frontend code changes, rebuild before restarting it:
-
-```bash
-cd /home/ai2/Digital_Asset_live_kit/frontend
+cd /home/ubuntu/projects/jahez-project/jahez-frontend
 npm run build
-sudo systemctl restart digital-asset-frontend.service
+sudo systemctl restart jahez-frontend.service
 ```
 
 ## Status and logs
 
 ```bash
-sudo systemctl status digital-asset-agent.service digital-asset-frontend.service --no-pager
-sudo journalctl -u digital-asset-agent.service -f
-sudo journalctl -u digital-asset-frontend.service -f
-curl http://localhost:8090/healthz
+sudo systemctl status jahez-agent.service jahez-frontend.service --no-pager
+sudo journalctl -u jahez-agent.service -f
+sudo journalctl -u jahez-frontend.service -f
+curl -I https://demo.testdevelopment.top:6702/
 ```
+
+A healthy agent logs `HTTP server listening on :6700` followed by
+`registered worker ... url=wss://...`.

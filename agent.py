@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from typing import Any, Optional
+from typing import Any
 
 import asyncio
 import os
@@ -39,7 +39,6 @@ from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
 from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
-from src.billing import billing_from_env, parse_participant_budget
 from src.voice_profile import parse_voice_from_metadata, voice_profile
 
 
@@ -206,11 +205,6 @@ class Assistant(Agent):
 AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
 server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
 
-# Authoritative per-user live-minutes meter. Talks to Supabase with the
-# service-role key (server-only). No-op if Supabase env is unset — in that case
-# only the LiveKit token TTL caps the session.
-billing = billing_from_env()
-
 
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
@@ -263,8 +257,7 @@ async def my_agent(ctx: agents.JobContext):
         _part = await asyncio.wait_for(ctx.wait_for_participant(), timeout=15)
     except asyncio.TimeoutError:
         logger.warning(
-            "No remote participant appeared within 15s; defaulting to female voice "
-            "and disabling live billing (token TTL still caps the session)"
+            "No remote participant appeared within 15s; defaulting to female voice"
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not resolve the calling participant: {}", e)
@@ -506,113 +499,6 @@ async def my_agent(ctx: agents.JobContext):
         ),
     )
     logger.info("LiveKit session.start completed room_name={}", getattr(ctx.room, "name", None))
-
-    # ─── Per-user live-minutes budget (authoritative meter) ──────────────────
-    # The /api/connection-details token route stamped the Supabase user id +
-    # remaining seconds into the participant identity/metadata. Participant was
-    # already resolved above for voice selection.
-    billing_user_id, billing_remaining = parse_participant_budget(
-        getattr(_part, "identity", None), getattr(_part, "metadata", None)
-    )
-    logger.info(
-        "Live budget resolved user={} remaining={}s billing_enabled={}",
-        billing_user_id,
-        billing_remaining,
-        billing.enabled,
-    )
-
-    # The remaining-seconds hint in the token is a SNAPSHOT taken when the token
-    # was minted, so it cannot see budget spent by a session that started after
-    # it — two tabs opened together would each believe they own the whole budget.
-    # Re-read the authoritative number from Supabase and take the tighter of the
-    # two, then let every checkpoint below correct it against the live server
-    # value.
-    if billing_user_id and billing.enabled:
-        _authoritative = await billing.live_remaining(billing_user_id)
-        if _authoritative is not None:
-            if billing_remaining is None or _authoritative < billing_remaining:
-                logger.info(
-                    "Live budget tightened from token hint {}s to server value {}s user={}",
-                    billing_remaining,
-                    _authoritative,
-                    billing_user_id,
-                )
-                billing_remaining = _authoritative
-
-    _meter_start = time.monotonic()
-    _billed_seconds = 0
-    # Checkpoint often enough that the overrun past a spent budget is a couple of
-    # seconds rather than a whole billing chunk. A user with 5s left used to get
-    # a full 15s of conversation for free, every single time.
-    _METER_TICK = 5
-
-    async def _end_for_quota() -> None:
-        logger.info(
-            "Live budget exhausted user={} budget={}s — ending session",
-            billing_user_id,
-            billing_remaining,
-        )
-        try:
-            await session.say(
-                "انتهت دقائقك المجانية لهذا الشهر. تقدر ترقّي اشتراكك عشان نكمل.",
-                allow_interruptions=False,
-            )
-            await asyncio.sleep(2)
-        except Exception as say_err:  # noqa: BLE001
-            logger.warning("Budget goodbye message failed: {}", say_err)
-        # Ending the job only removes the AGENT: the browser stays in the room
-        # and its on-screen timer keeps running, which looks like the session is
-        # still live. Delete the room so the client is actually disconnected.
-        try:
-            await ctx.delete_room()
-        except Exception as del_err:  # noqa: BLE001
-            logger.warning("Could not delete room after budget exhaustion: {}", del_err)
-        ctx.shutdown(reason="live_quota_exhausted")
-
-    async def _bill_delta(target_elapsed: int) -> Optional[int]:
-        """Charge everything not yet billed. Returns server-reported remaining."""
-        nonlocal _billed_seconds
-        delta = target_elapsed - _billed_seconds
-        if not (billing_user_id and delta > 0):
-            return None
-        remaining = await billing.consume_live_seconds(billing_user_id, delta)
-        _billed_seconds += delta
-        return remaining
-
-    async def _meter_loop() -> None:
-        try:
-            while True:
-                await asyncio.sleep(_METER_TICK)
-                elapsed = int(time.monotonic() - _meter_start)
-                remaining = await _bill_delta(elapsed)
-                # Prefer the value the server just returned: it accounts for
-                # every other session this user has running concurrently. Only
-                # fall back to the local budget when the RPC failed.
-                if remaining is not None:
-                    if remaining <= 0:
-                        await _end_for_quota()
-                        return
-                elif billing_remaining is not None and elapsed >= billing_remaining:
-                    await _end_for_quota()
-                    return
-        except asyncio.CancelledError:
-            pass
-
-    _meter_task = None
-    if billing_user_id:
-        if billing_remaining is not None and billing_remaining <= 0:
-            # Nothing left before a word was spoken — don't hand out a free turn.
-            await _end_for_quota()
-            return
-        _meter_task = asyncio.create_task(_meter_loop())
-
-    async def _final_bill() -> None:
-        if _meter_task:
-            _meter_task.cancel()
-        elapsed = int(time.monotonic() - _meter_start)
-        await _bill_delta(elapsed)
-
-    ctx.add_shutdown_callback(_final_bill)
 
     logger.info(
         "LiveKit initial generate_reply beginning voice={} name_ar={}",
