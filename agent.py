@@ -282,6 +282,44 @@ class Assistant(Agent):
         )
 
     @function_tool()
+    async def show_restaurant(
+        self,
+        context: RunContext,
+        restaurant: str,
+    ) -> dict[str, Any]:
+        """
+        Open one restaurant's page in the user's app, and get its details plus
+        a few of its popular dishes. Use when the user asks about a specific
+        restaurant rather than a dish.
+
+        Args:
+            restaurant: The restaurant's Arabic name (e.g. "بيت الشواية") or a
+                restaurant_id from an earlier search result. Never invent an id.
+        """
+        details = catalog.restaurant_details(restaurant)
+        if details is None:
+            raise ToolError(
+                f"No restaurant matching {restaurant!r}. Use one of the names in "
+                "your restaurant list, or a restaurant_id from a search result."
+            )
+
+        outcome = await self._ui.navigate(details["page_path"])
+        logger.info(
+            "Tool show_restaurant input={!r} resolved={} path={} ok={} reason={}",
+            restaurant, details["restaurant_id"], details["page_path"],
+            outcome.ok, outcome.reason,
+        )
+
+        result = outcome.as_tool_result(
+            on_success=f"فتحت لك صفحة {details['name']}",
+            on_failure="ما قدرت أفتح صفحة المطعم، افتحها من التطبيق",
+        )
+        # The details are returned either way: even when the page did not open,
+        # لقمة can still answer questions about the restaurant from real data.
+        result.update(details)
+        return result
+
+    @function_tool()
     async def open_page(
         self,
         context: RunContext,
@@ -291,10 +329,13 @@ class Assistant(Agent):
         Open one of the app's main pages for the user.
 
         Args:
-            page: One of "home", "cart", "orders", "offers", "search", "saved".
+            page: One of "home", "restaurants", "cart", "orders", "offers",
+                "search", "saved". For one specific restaurant use
+                show_restaurant instead.
         """
         paths = {
             "home": "/",
+            "restaurants": "/restaurants",
             "cart": "/cart",
             "orders": "/orders",
             "offers": "/offers",

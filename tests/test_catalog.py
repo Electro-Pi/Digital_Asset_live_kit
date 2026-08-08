@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.catalog import (  # noqa: E402
     load_catalog,
     meal_details,
+    restaurant_details,
     number_to_arabic_words,
     resolve_restaurant,
     sar_words,
@@ -112,6 +113,17 @@ check("46", number_to_arabic_words(46), "ستة وأربعين")
 check("780", number_to_arabic_words(780), "سبع مئة وثمانين")
 check("2200", number_to_arabic_words(2200), "ألفين ومئتين")
 check("sar", sar_words(8), "ثمانية ريال")
+
+print("\n── restaurant pages ──")
+bayt = restaurant_details("بيت الشواية")
+check("Arabic name resolves to a page path", bayt["page_path"], "/restaurants/bayt-alshawaya")
+check("mangled id resolves too",
+      restaurant_details("aseel-burger-id")["page_path"], "/restaurants/aseel-burger")
+check_true("popular dishes ride along so the follow-up needs no second call",
+           len(bayt["popular_meals"]) == 3
+           and all(m["meal_id"] and m["price_say_ar"] for m in bayt["popular_meals"]))
+check("unknown restaurant returns None", restaurant_details("مطعم ما له وجود أبدا"), None)
+check_true("spoken min order", bayt["min_order_say_ar"].endswith("ريال"))
 
 print("\n── details carry what the addon flow needs ──")
 details = meal_details("aseel-burger-classic")

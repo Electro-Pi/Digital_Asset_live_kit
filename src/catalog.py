@@ -799,6 +799,51 @@ def meal_details(meal_id: str, catalog: Optional[Catalog] = None) -> Optional[di
     }
 
 
+def restaurant_details(
+    value: str, catalog: Optional[Catalog] = None
+) -> Optional[dict[str, Any]]:
+    """Resolve a restaurant and describe it, with a few of its popular dishes.
+
+    Accepts the same loose input as ``resolve_restaurant`` — an Arabic name is
+    what the model normally has. The popular dishes ride along because the next
+    question is almost always "وش أشهر شي عندهم؟", and answering it from here
+    saves a second round trip mid-conversation.
+    """
+    cat = catalog or load_catalog()
+    restaurant_id = resolve_restaurant(value, cat)
+    if restaurant_id is None:
+        return None
+    restaurant = cat.restaurant_by_id(restaurant_id)
+    if restaurant is None:
+        return None
+
+    meals = [m for m in cat.meals if m.restaurant_id == restaurant_id]
+    popular = sorted(meals, key=lambda m: (not m.is_popular, -m.rating, m.id))[:3]
+
+    return {
+        "restaurant_id": restaurant_id,
+        "name": restaurant.get("name"),
+        "cuisine": restaurant.get("cuisine"),
+        "rating": restaurant.get("rating"),
+        "delivery_time": restaurant.get("deliveryTime"),
+        "delivery_fee_sar": restaurant.get("deliveryFee"),
+        "delivery_fee_say_ar": sar_words(float(restaurant.get("deliveryFee") or 0)),
+        "min_order_sar": restaurant.get("minOrder"),
+        "min_order_say_ar": sar_words(float(restaurant.get("minOrder") or 0)),
+        "open_24h": bool(restaurant.get("open24h")),
+        "meals_count": len(meals),
+        "popular_meals": [
+            {
+                "meal_id": m.id,
+                "name": m.name,
+                "price_say_ar": sar_words(m.effective_price),
+            }
+            for m in popular
+        ],
+        "page_path": f"/restaurants/{restaurant_id}",
+    }
+
+
 def catalog_index(catalog: Optional[Catalog] = None) -> str:
     """A ~1KB "what exists" summary for the system prompt.
 

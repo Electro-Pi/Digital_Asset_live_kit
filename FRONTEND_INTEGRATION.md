@@ -146,7 +146,12 @@ Open one of the app's main pages.
 // response
 { "ok": true, "path": "/cart" }
 ```
-`path` is always one of: `/`, `/cart`, `/orders`, `/offers`, `/search`, `/saved`.
+`path` is one of the fixed pages — `/`, `/restaurants`, `/cart`, `/orders`,
+`/offers`, `/search`, `/saved` — **or** a single restaurant's page,
+`/restaurants/<restaurantId>`, when the user asks about one by name. The
+restaurant id is always resolved against the catalog first, so the path always
+points at a restaurant that exists. Your handler needs no change for either:
+it already pushes whatever path arrives.
 
 ### `luqma.showMeal`
 Open a meal's page. This is the one that fires most — لقمة calls it the moment
