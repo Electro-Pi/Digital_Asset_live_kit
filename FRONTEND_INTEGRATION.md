@@ -6,7 +6,7 @@ frontend ships the code below is move the UI: open a meal page, add to cart, or
 read the cart back.
 
 Nothing here changes the voice pipeline or the token route — that all works
-today. This is four RPC handlers on the LiveKit `Room` you already connect.
+today. This is five RPC handlers on the LiveKit `Room` you already connect.
 
 ---
 
@@ -76,6 +76,21 @@ room.localParticipant.registerRpcMethod("luqma.showMeal", async (data) => {
   return ok({ path: path || `/meals/${mealId}` });
 });
 
+room.localParticipant.registerRpcMethod("luqma.setMealOptions", async (data) => {
+  const { mealId, quantity, spicy, addonIds } = JSON.parse(data.payload) as {
+    mealId: string;
+    quantity: number;
+    spicy: boolean;
+    addonIds: string[];
+  };
+  // Only updates what the meal page shows as selected — do NOT add to the cart.
+  // Wire this to the same state your addon checkboxes already use.
+  setSelectedAddons(addonIds);   // your existing page state
+  setSpicy(spicy);
+  setQuantity(quantity);
+  return ok({ selected: addonIds });
+});
+
 room.localParticipant.registerRpcMethod("luqma.addToCart", async (data) => {
   const { mealId, quantity, spicy, addonIds } = JSON.parse(data.payload) as {
     mealId: string;
@@ -113,7 +128,7 @@ room.localParticipant.registerRpcMethod("luqma.getCart", async () => {
 
 ---
 
-## 3. The four methods
+## 3. The five methods
 
 Every payload includes `"v": 1` (protocol version). Ignore it, or log it if it
 is ever not `1`.
@@ -146,6 +161,30 @@ it settles on a recommendation, so the user sees the dish while hearing why.
 `path` is prebuilt from your existing `app/meals/[id]` route — just push it.
 `reason` is a short Arabic line you may display (a toast, or a highlight on the
 page). Optional; ignoring it is fine.
+
+### `luqma.setMealOptions`
+Tick the additions on the meal page the user is already looking at, so the
+checkboxes move while لقمة is still asking about them. **This must not touch the
+cart** — it is display state only.
+```jsonc
+// payload
+{ "mealId": "aseel-burger-classic", "quantity": 1, "spicy": false,
+  "addonIds": ["fries", "cola"], "v": 1 }
+// response
+{ "ok": true, "selected": ["fries", "cola"] }
+```
+`addonIds` is always the **complete** selection, not a delta — replace your
+state with it rather than merging. If the user changes their mind, a second
+call arrives with the new full list.
+
+Sent right after the user names the additions, and before `addToCart`. The
+agent already spoke the running total for this combination, computed the same
+way `addToCart` computes it.
+
+This handler lives on the meal page, so it is the one case where a `null` state
+setter is likely — if the user has navigated away, return
+`{"ok": false, "error": "not_on_meal_page"}` and لقمة will keep the choices and
+still add them correctly when it calls `addToCart`.
 
 ### `luqma.addToCart`
 ```jsonc
@@ -200,10 +239,15 @@ addItem({
 ```
 
 **Note:** each `addToCart` creates a new cart line. The agent is prompted to
-collect addons *before* adding so this happens once, and it warns itself if it
-adds the same meal twice in one call — but if you want "add fries to the line
-that's already there", that needs an `updateCartItem` method we have not
-specced.
+collect addons via `setMealOptions` *before* adding, so this happens once per
+meal, and it warns itself if it adds the same meal twice in one call. If you
+want "add fries to the line that's already in the cart", that needs an
+`updateCartItem` method we have not specced.
+
+`addToCart` may arrive **without** `addonIds` repeated after a `setMealOptions`
+call — the backend remembers the selection and fills it in, so the payload you
+receive always carries the full, final list. You never have to correlate the
+two calls yourself.
 
 ---
 
@@ -244,7 +288,7 @@ Option 3 is a five-line script and is enough.
 ## 7. Testing without voice
 
 `tests/test_luqma_flow.py` in the backend runs whole conversations in text with
-a `FakeUI` that mimics these four handlers, so you can see the exact payload
+a `FakeUI` that mimics these five handlers, so you can see the exact payload
 sequence a real call produces:
 
 ```bash
@@ -259,3 +303,6 @@ sudo journalctl -u jahez-agent.service -f | grep -E "Tool |UI call"
 
 A working `showMeal` logs `UI call ok method=luqma.showMeal`. A missing one logs
 `UI method luqma.showMeal is not registered by the frontend`.
+
+`tests/test_catalog.py` is the deterministic half — no LLM, no network, ~1s —
+and covers meal tagging, restaurant-id resolution and spoken numbers.

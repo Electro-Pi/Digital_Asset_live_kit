@@ -144,6 +144,9 @@ class Assistant(Agent):
         # the model reliably makes: adding a meal, then "adding the fries" as a
         # second call, which silently creates a second line for the same dish.
         self._added_this_session: dict[str, int] = {}
+        # meal_id → the addon/spicy/quantity choices the user stated out loud,
+        # so add_to_cart can honour them without the model repeating them.
+        self._meal_options: dict[str, dict[str, Any]] = {}
 
     # ─── Catalog ─────────────────────────────────────────────────────────────
 
@@ -159,7 +162,7 @@ class Assistant(Agent):
         max_price: float = 0,
         spicy: bool = False,
         only_offers: bool = False,
-        restaurant_id: str = "",
+        restaurant: str = "",
         sort: str = "relevance",
     ) -> dict[str, Any]:
         """
@@ -180,7 +183,9 @@ class Assistant(Agent):
             max_price: Highest price in SAR. 0 means no limit.
             spicy: True to only return meals that offer a spicy version.
             only_offers: True to only return meals that have a discount.
-            restaurant_id: Restrict to one restaurant id from an earlier result.
+            restaurant: Restrict to one restaurant, by its Arabic name (e.g.
+                "أصيل برجر") or a restaurant_id copied from an earlier result.
+                Never invent an id.
             sort: "relevance", "calories_asc", "price_asc", "rating_desc" or
                 "protein_desc".
         """
@@ -200,17 +205,18 @@ class Assistant(Agent):
             max_price=max_price or None,
             spicy=True if spicy else None,
             only_offers=bool(only_offers),
-            restaurant_id=restaurant_id or None,
+            restaurant_id=restaurant or None,
             sort=sort or "relevance",
         )
         logger.info(
             "Tool search_meals query={!r} cuisine={!r} protein={!r} max_cal={} "
             "min_protein={} max_price={} spicy={} offers={} restaurant={!r} "
-            "sort={} -> total={} showing={} ambiguous={}",
+            "sort={} -> total={} showing={} ambiguous={} ignored_restaurant={}",
             query, cuisine, protein, max_calories, min_protein, max_price,
-            spicy, only_offers, restaurant_id, sort,
+            spicy, only_offers, restaurant, sort,
             result.get("total_matches"), result.get("showing"),
             (result.get("ambiguous") or {}).get("ask_about"),
+            result.get("ignored_restaurant"),
         )
         return result
 
@@ -306,6 +312,124 @@ class Assistant(Agent):
             on_failure="ما قدرت أفتحها، افتحها من التطبيق",
         )
 
+    def _resolve_meal_options(
+        self,
+        meal: "catalog.Meal",
+        addon_ids: list[str] | None,
+        spicy: bool,
+        quantity: int,
+        *,
+        tool: str,
+    ) -> dict[str, Any]:
+        """Validate addons/spicy/quantity against one meal and price the line.
+
+        Shared by set_meal_options and add_to_cart so the additions the user
+        sees ticked on the page are exactly the ones that reach the cart, at
+        exactly the total لقمة said out loud. Two code paths pricing the same
+        line is how the screen and the voice start disagreeing.
+        """
+        quantity = max(1, int(quantity or 1))
+
+        # Addons are validated against this meal, not accepted on trust: an
+        # invented addon id would either 500 the frontend or, worse, be quoted
+        # to the user as a real extra with a real price.
+        valid = {str(a.get("id")): a for a in meal.addons}
+        requested = [str(a) for a in (addon_ids or [])]
+        accepted = [a for a in requested if a in valid]
+        rejected = [a for a in requested if a not in valid]
+        if rejected:
+            logger.warning(
+                "Tool {} dropped unknown addons meal_id={} rejected={} valid={}",
+                tool, meal.id, rejected, list(valid),
+            )
+
+        if spicy and not meal.spicy_option:
+            spicy = False
+
+        addons_total = sum(float(valid[a].get("price") or 0) for a in accepted)
+        line_total = (meal.effective_price + addons_total) * quantity
+
+        return {
+            "quantity": quantity,
+            "spicy": spicy,
+            "accepted": accepted,
+            "rejected": rejected,
+            "addon_names": [valid[a].get("name") for a in accepted],
+            "line_total": line_total,
+        }
+
+    @function_tool()
+    async def set_meal_options(
+        self,
+        context: RunContext,
+        meal_id: str,
+        quantity: int = 1,
+        spicy: bool = False,
+        addon_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Tick the additions on the meal page the user is looking at, so they see
+        their choices appear while you talk. This does NOT add anything to the
+        cart — call add_to_cart afterwards, once they agree.
+
+        Call this the moment the user says which additions they want, before
+        asking whether to add the meal to the cart.
+
+        Args:
+            meal_id: The meal_id of the meal whose page is open.
+            quantity: How many, at least 1.
+            spicy: True only if the user asked for the spicy version.
+            addon_ids: addon_id values taken from get_meal_details.
+        """
+        meal = catalog.load_catalog().by_id(meal_id)
+        if meal is None:
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Search first and use a real meal_id."
+            )
+
+        opts = self._resolve_meal_options(
+            meal, addon_ids, spicy, quantity, tool="set_meal_options"
+        )
+
+        outcome = await self._ui.set_meal_options(
+            meal_id=meal.id,
+            quantity=opts["quantity"],
+            spicy=opts["spicy"],
+            addon_ids=opts["accepted"],
+        )
+        # Remembered whether or not the UI accepted it: the user stated these
+        # choices out loud, so add_to_cart must honour them even if the page
+        # never showed them.
+        self._meal_options[meal.id] = {
+            "addon_ids": opts["accepted"],
+            "spicy": opts["spicy"],
+            "quantity": opts["quantity"],
+        }
+        logger.info(
+            "Tool set_meal_options meal_id={} qty={} spicy={} addons={} total={} ok={} reason={}",
+            meal.id, opts["quantity"], opts["spicy"], opts["accepted"],
+            opts["line_total"], outcome.ok, outcome.reason,
+        )
+
+        result = outcome.as_tool_result(
+            on_success="حدثت الخيارات في الصفحة",
+            on_failure="ما قدرت أعلمها في الصفحة، بس خياراته محفوظة عندي",
+        )
+        result.update(
+            {
+                "meal_name": meal.name,
+                "quantity": opts["quantity"],
+                "spicy": opts["spicy"],
+                "addons_selected": opts["addon_names"],
+                "line_total_sar": round(opts["line_total"], 2),
+                "line_total_say_ar": catalog.sar_words(opts["line_total"]),
+                "added_to_cart": False,
+            }
+        )
+        if opts["rejected"]:
+            result["ignored_unknown_addons"] = opts["rejected"]
+        return result
+
     @function_tool()
     async def add_to_cart(
         self,
@@ -323,8 +447,9 @@ class Assistant(Agent):
             meal_id: The meal_id from a previous search result.
             quantity: How many, at least 1.
             spicy: True only if the user asked for the spicy version.
-            addon_ids: addon_id values taken from get_meal_details. Leave empty
-                if the user did not ask for additions.
+            addon_ids: addon_id values taken from get_meal_details. Omit it
+                entirely to keep whatever you already set with
+                set_meal_options; pass an empty list to add the meal plain.
         """
         meal = catalog.load_catalog().by_id(meal_id)
         if meal is None:
@@ -332,26 +457,28 @@ class Assistant(Agent):
                 f"No meal with id {meal_id!r}. Search first and use a real meal_id."
             )
 
-        quantity = max(1, int(quantity or 1))
-
-        # Addons are validated against this meal, not accepted on trust: an
-        # invented addon id would either 500 the frontend or, worse, be quoted
-        # to the user as a real extra with a real price.
-        valid = {str(a.get("id")): a for a in meal.addons}
-        requested = [str(a) for a in (addon_ids or [])]
-        accepted = [a for a in requested if a in valid]
-        rejected = [a for a in requested if a not in valid]
-        if rejected:
-            logger.warning(
-                "Tool add_to_cart dropped unknown addons meal_id={} rejected={} valid={}",
-                meal.id, rejected, list(valid),
+        # Omitting addon_ids after set_meal_options means "the options I already
+        # chose", not "nothing". Losing the additions between the two calls
+        # would silently ship an order the user did not agree to — and the model
+        # does drop them: it treats the second call as a fresh one.
+        remembered = self._meal_options.get(meal.id)
+        if addon_ids is None and remembered:
+            addon_ids = remembered["addon_ids"]
+            if not spicy:
+                spicy = remembered["spicy"]
+            if quantity == 1 and remembered["quantity"] != 1:
+                quantity = remembered["quantity"]
+            logger.info(
+                "Tool add_to_cart reused options from set_meal_options meal_id={} {}",
+                meal.id, remembered,
             )
 
-        if spicy and not meal.spicy_option:
-            spicy = False
-
-        addons_total = sum(float(valid[a].get("price") or 0) for a in accepted)
-        line_total = (meal.effective_price + addons_total) * quantity
+        opts = self._resolve_meal_options(
+            meal, addon_ids, spicy, quantity, tool="add_to_cart"
+        )
+        quantity, spicy = opts["quantity"], opts["spicy"]
+        accepted, rejected = opts["accepted"], opts["rejected"]
+        line_total = opts["line_total"]
 
         outcome = await self._ui.add_to_cart(
             meal_id=meal.id, quantity=quantity, spicy=spicy, addon_ids=accepted
@@ -370,7 +497,7 @@ class Assistant(Agent):
                 "meal_name": meal.name,
                 "quantity": quantity,
                 "spicy": spicy,
-                "addons_added": [valid[a].get("name") for a in accepted],
+                "addons_added": opts["addon_names"],
                 "line_total_sar": round(line_total, 2),
                 "line_total_say_ar": catalog.sar_words(line_total),
             }

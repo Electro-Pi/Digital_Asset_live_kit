@@ -31,6 +31,7 @@ from loguru import logger
 # collide with anything else the app registers on the same participant.
 METHOD_NAVIGATE = "luqma.navigate"
 METHOD_SHOW_MEAL = "luqma.showMeal"
+METHOD_SET_MEAL_OPTIONS = "luqma.setMealOptions"
 METHOD_ADD_TO_CART = "luqma.addToCart"
 METHOD_GET_CART = "luqma.getCart"
 
@@ -142,6 +143,30 @@ class UIBridge:
     async def show_meal(self, meal_id: str, path: str, reason: str = "") -> UIResult:
         return await self.call(
             METHOD_SHOW_MEAL, {"mealId": meal_id, "path": path, "reason": reason}
+        )
+
+    async def set_meal_options(
+        self,
+        *,
+        meal_id: str,
+        quantity: int = 1,
+        spicy: bool = False,
+        addon_ids: Optional[list[str]] = None,
+    ) -> UIResult:
+        """Tick the addon/spicy/quantity controls on the open meal page.
+
+        Deliberately separate from ``add_to_cart``: this only moves the UI, so
+        the user watches the additions appear while لقمة is still asking about
+        them. Nothing is committed to the cart here.
+        """
+        return await self.call(
+            METHOD_SET_MEAL_OPTIONS,
+            {
+                "mealId": meal_id,
+                "quantity": quantity,
+                "spicy": spicy,
+                "addonIds": addon_ids or [],
+            },
         )
 
     async def add_to_cart(

@@ -342,6 +342,57 @@ _STOPWORDS = {
 }
 
 
+def resolve_restaurant(value: Optional[str], catalog: Optional[Catalog] = None) -> Optional[str]:
+    """Resolve an Arabic name or a (possibly mangled) id to a real restaurant id.
+
+    This exists because of a live failure. The model was given a restaurant
+    filter but never given any real ids, so it invented them from the names it
+    could see: ``aseel-burger-id`` for ``aseel-burger``, ``mazaq_alsham_id`` for
+    ``madhaq-alsham``. The filter then matched nothing, search returned zero,
+    and لقمة told the user there was a burger it could not open — the search had
+    silently excluded every meal.
+
+    So: accept what the model actually has (the Arabic name), tolerate the id
+    shapes it invents, and return ``None`` rather than a wrong match. The caller
+    drops an unresolvable filter instead of returning an empty result.
+    """
+    if not value:
+        return None
+    cat = catalog or load_catalog()
+
+    raw = normalize_ar(value).replace("_", "-").strip()
+    trimmed = raw[:-3].rstrip("-") if raw.endswith("-id") else raw
+
+    for candidate in (raw, trimmed):
+        for restaurant in cat.restaurants:
+            if normalize_ar(restaurant.get("id")) == candidate:
+                return str(restaurant["id"])
+
+    # Arabic name, which is what the prompt's index actually shows the model.
+    for restaurant in cat.restaurants:
+        name = normalize_ar(restaurant.get("name"))
+        if name and (name == raw or raw in name or name in raw):
+            return str(restaurant["id"])
+
+    # Id with extra or missing pieces: aseel-burger-id, aseel_burger, burger.
+    for restaurant in cat.restaurants:
+        rid = normalize_ar(restaurant.get("id"))
+        if rid and (trimmed.startswith(rid) or rid.startswith(trimmed)):
+            return str(restaurant["id"])
+
+    # Last resort: token overlap, which catches a misspelt transliteration
+    # (mazaq-alsham vs madhaq-alsham share "alsham").
+    tokens = {t for t in re.split(r"[-\s]+", trimmed) if len(t) > 2 and t != "id"}
+    best, best_score = None, 0
+    for restaurant in cat.restaurants:
+        other = set(re.split(r"[-\s]+", normalize_ar(restaurant.get("id"))))
+        other |= set(normalize_ar(restaurant.get("name")).split())
+        score = len(tokens & other)
+        if score > best_score:
+            best, best_score = str(restaurant["id"]), score
+    return best
+
+
 @dataclass
 class SearchFilters:
     """Normalized view of what the caller asked for, used for the `why` text."""
@@ -628,6 +679,16 @@ def search_meals(
     query_norm = normalize_ar(query)
     implied = _implied_tags(query_norm)
 
+    # An unrecognised restaurant must never silently empty the result set — that
+    # is exactly how "there is a burger but I cannot open it" happened. Drop the
+    # filter, search everything else, and report what was ignored.
+    ignored_restaurant: Optional[str] = None
+    if restaurant_id:
+        resolved = resolve_restaurant(restaurant_id, cat)
+        if resolved is None:
+            ignored_restaurant = restaurant_id
+        restaurant_id = resolved
+
     filters = SearchFilters(
         query=query_norm,
         cuisine=cuisine or None,
@@ -675,6 +736,13 @@ def search_meals(
         "showing": len(top),
         "results": [meal_summary(m, filters) for m in top],
     }
+
+    if ignored_restaurant:
+        result["ignored_restaurant"] = ignored_restaurant
+        result["note_ar"] = (
+            "ما عرفت المطعم اللي حددتيه، فبحثت في كل المطاعم. استخدمي "
+            "restaurant_id من نتيجة سابقة أو اسم المطعم بالعربي."
+        )
 
     if total == 0:
         # Tell the model what to relax rather than letting it guess or invent.

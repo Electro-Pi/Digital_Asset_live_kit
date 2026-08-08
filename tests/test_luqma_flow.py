@@ -71,6 +71,9 @@ class FakeUI:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.cart: list[dict[str, Any]] = []
         self.current_path = "/"
+        # What the meal page is showing as selected — the state the real
+        # handler would push into the page's addon checkboxes.
+        self.meal_options: dict[str, Any] = {}
         self.available = True
 
     async def call(self, method: str, payload: dict[str, Any]) -> UIResult:
@@ -81,6 +84,9 @@ class FakeUI:
         if method == "luqma.showMeal":
             self.current_path = payload["path"]
             return UIResult(ok=True, data={"path": self.current_path})
+        if method == "luqma.setMealOptions":
+            self.meal_options = payload
+            return UIResult(ok=True, data={"selected": payload["addonIds"]})
         if method == "luqma.addToCart":
             self.cart.append(payload)
             return UIResult(ok=True, data={"cartCount": len(self.cart)})
@@ -94,6 +100,13 @@ class FakeUI:
     async def show_meal(self, meal_id: str, path: str, reason: str = "") -> UIResult:
         return await self.call(
             "luqma.showMeal", {"mealId": meal_id, "path": path, "reason": reason}
+        )
+
+    async def set_meal_options(self, *, meal_id, quantity=1, spicy=False, addon_ids=None) -> UIResult:
+        return await self.call(
+            "luqma.setMealOptions",
+            {"mealId": meal_id, "quantity": quantity, "spicy": spicy,
+             "addonIds": addon_ids or []},
         )
 
     async def add_to_cart(self, *, meal_id, quantity=1, spicy=False, addon_ids=None) -> UIResult:
