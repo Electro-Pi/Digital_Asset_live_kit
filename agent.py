@@ -38,7 +38,10 @@ from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
 from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
-from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
+from src import catalog
+from src.prefs import build_prefs_context, summarize_prefs
+from src.prompts.agent_prompt import compose_instructions, intro_for_voice
+from src.ui_bridge import UIBridge
 from src.voice_profile import parse_voice_from_metadata, voice_profile
 
 
@@ -109,6 +112,18 @@ STT_FOREGROUND_MIN_DURATION = float(
 )
 
 
+# Load and index the catalog at import, not on the first tool call: a missing or
+# malformed catalog.json then shows up in the boot log instead of as لقمة going
+# quiet mid-sentence. It is deliberately not fatal — a voice agent that can still
+# talk is better than one that will not start.
+try:
+    catalog.load_catalog()
+except Exception as e:  # noqa: BLE001
+    logger.error(
+        "Catalog failed to load at startup; meal search will fail until fixed: {}", e
+    )
+
+
 def _preview(value: Any, limit: int = 220) -> str:
     text = " ".join(str(value).split())
     if len(text) <= limit:
@@ -117,12 +132,277 @@ def _preview(value: Any, limit: int = 220) -> str:
 
 
 class Assistant(Agent):
-    def __init__(self, instructions: str) -> None:
+    def __init__(self, instructions: str, ui: UIBridge | None = None) -> None:
         super().__init__(
             instructions=instructions,
         )
+        # None only in tests / when no participant resolved; the UI tools then
+        # report failure instead of pretending the browser moved.
+        self._ui = ui or UIBridge(room=None, identity=None)
+        # meal_id → times added this session. The cart lives in the browser, so
+        # this is not a mirror of it — it is only here to catch the one mistake
+        # the model reliably makes: adding a meal, then "adding the fries" as a
+        # second call, which silently creates a second line for the same dish.
+        self._added_this_session: dict[str, int] = {}
 
+    # ─── Catalog ─────────────────────────────────────────────────────────────
 
+    @function_tool()
+    async def search_meals(
+        self,
+        context: RunContext,
+        query: str = "",
+        cuisine: str = "",
+        protein_type: str = "",
+        max_calories: int = 0,
+        min_protein: int = 0,
+        max_price: float = 0,
+        spicy: bool = False,
+        only_offers: bool = False,
+        restaurant_id: str = "",
+        sort: str = "relevance",
+    ) -> dict[str, Any]:
+        """
+        Search the Jahez catalog for meals. Call this as soon as you know ONE
+        thing the user wants — do not collect every filter first. The result
+        reports total_matches, and an `ambiguous` hint when narrowing would
+        genuinely help. Every meal name and price you say must come from here.
+        When speaking a price or calorie count, read the ready-made Arabic in
+        `price_say_ar` / `calories_say_ar` verbatim. Never convert the digits
+        yourself.
+
+        Args:
+            query: Free text in Arabic, e.g. "كبسة" or "شي خفيف". Optional.
+            cuisine: Cuisine name in Arabic, e.g. "سعودي", "شامي", "بحري", "صحي".
+            protein_type: One of "meat", "chicken", "seafood", "vegetarian".
+            max_calories: Highest calories to allow. 0 means no limit.
+            min_protein: Lowest protein in grams. 0 means no limit.
+            max_price: Highest price in SAR. 0 means no limit.
+            spicy: True to only return meals that offer a spicy version.
+            only_offers: True to only return meals that have a discount.
+            restaurant_id: Restrict to one restaurant id from an earlier result.
+            sort: "relevance", "calories_asc", "price_asc", "rating_desc" or
+                "protein_desc".
+        """
+        protein = (protein_type or "").strip().lower()
+        if protein and protein not in {"meat", "chicken", "seafood", "vegetarian"}:
+            # A silently ignored bad value would look like "no meals with meat".
+            raise ToolError(
+                "protein_type must be meat, chicken, seafood or vegetarian"
+            )
+
+        result = catalog.search_meals(
+            query=query or "",
+            cuisine=cuisine or None,
+            protein_type=protein or None,
+            max_calories=max_calories or None,
+            min_protein=min_protein or None,
+            max_price=max_price or None,
+            spicy=True if spicy else None,
+            only_offers=bool(only_offers),
+            restaurant_id=restaurant_id or None,
+            sort=sort or "relevance",
+        )
+        logger.info(
+            "Tool search_meals query={!r} cuisine={!r} protein={!r} max_cal={} "
+            "min_protein={} max_price={} spicy={} offers={} restaurant={!r} "
+            "sort={} -> total={} showing={} ambiguous={}",
+            query, cuisine, protein, max_calories, min_protein, max_price,
+            spicy, only_offers, restaurant_id, sort,
+            result.get("total_matches"), result.get("showing"),
+            (result.get("ambiguous") or {}).get("ask_about"),
+        )
+        return result
+
+    @function_tool()
+    async def get_meal_details(
+        self,
+        context: RunContext,
+        meal_id: str,
+    ) -> dict[str, Any]:
+        """
+        Full details for one meal, including its addons list. Call this before
+        offering additions, so you offer real addons at real prices. Speak
+        prices from the `price_say_ar` fields verbatim, never from the digits.
+
+        Args:
+            meal_id: The meal_id from a previous search result.
+        """
+        details = catalog.meal_details(meal_id)
+        if details is None:
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Run search_meals again and use a "
+                "meal_id from its results."
+            )
+        logger.info(
+            "Tool get_meal_details meal_id={} name={} addons={}",
+            meal_id, details["name"], len(details["addons"]),
+        )
+        return details
+
+    # ─── UI control (LiveKit RPC to the browser) ─────────────────────────────
+
+    @function_tool()
+    async def show_meal(
+        self,
+        context: RunContext,
+        meal_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """
+        Open the meal's page in the user's app so they can see it while you
+        talk. Call this once you have settled on a recommendation.
+
+        Args:
+            meal_id: The meal_id from a previous search result.
+            reason: One short Arabic sentence on why this meal, shown in the UI.
+        """
+        meal = catalog.load_catalog().by_id(meal_id)
+        if meal is None:
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Search first and use a real meal_id."
+            )
+
+        outcome = await self._ui.show_meal(
+            meal_id=meal.id, path=meal.page_path, reason=reason
+        )
+        logger.info(
+            "Tool show_meal meal_id={} path={} ok={} reason_for_failure={}",
+            meal.id, meal.page_path, outcome.ok, outcome.reason,
+        )
+        return outcome.as_tool_result(
+            on_success=f"فتحت لك صفحة {meal.name}",
+            on_failure="ما قدرت أفتح الصفحة، افتحها من التطبيق",
+        )
+
+    @function_tool()
+    async def open_page(
+        self,
+        context: RunContext,
+        page: str,
+    ) -> dict[str, Any]:
+        """
+        Open one of the app's main pages for the user.
+
+        Args:
+            page: One of "home", "cart", "orders", "offers", "search", "saved".
+        """
+        paths = {
+            "home": "/",
+            "cart": "/cart",
+            "orders": "/orders",
+            "offers": "/offers",
+            "search": "/search",
+            "saved": "/saved",
+        }
+        target = paths.get((page or "").strip().lower())
+        if target is None:
+            raise ToolError(f"Unknown page {page!r}. Use one of: {', '.join(paths)}")
+
+        outcome = await self._ui.navigate(target)
+        logger.info("Tool open_page page={} path={} ok={}", page, target, outcome.ok)
+        return outcome.as_tool_result(
+            on_success="فتحتها لك",
+            on_failure="ما قدرت أفتحها، افتحها من التطبيق",
+        )
+
+    @function_tool()
+    async def add_to_cart(
+        self,
+        context: RunContext,
+        meal_id: str,
+        quantity: int = 1,
+        spicy: bool = False,
+        addon_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Add a meal to the user's cart. Only call this after the user has
+        clearly agreed to add it.
+
+        Args:
+            meal_id: The meal_id from a previous search result.
+            quantity: How many, at least 1.
+            spicy: True only if the user asked for the spicy version.
+            addon_ids: addon_id values taken from get_meal_details. Leave empty
+                if the user did not ask for additions.
+        """
+        meal = catalog.load_catalog().by_id(meal_id)
+        if meal is None:
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Search first and use a real meal_id."
+            )
+
+        quantity = max(1, int(quantity or 1))
+
+        # Addons are validated against this meal, not accepted on trust: an
+        # invented addon id would either 500 the frontend or, worse, be quoted
+        # to the user as a real extra with a real price.
+        valid = {str(a.get("id")): a for a in meal.addons}
+        requested = [str(a) for a in (addon_ids or [])]
+        accepted = [a for a in requested if a in valid]
+        rejected = [a for a in requested if a not in valid]
+        if rejected:
+            logger.warning(
+                "Tool add_to_cart dropped unknown addons meal_id={} rejected={} valid={}",
+                meal.id, rejected, list(valid),
+            )
+
+        if spicy and not meal.spicy_option:
+            spicy = False
+
+        addons_total = sum(float(valid[a].get("price") or 0) for a in accepted)
+        line_total = (meal.effective_price + addons_total) * quantity
+
+        outcome = await self._ui.add_to_cart(
+            meal_id=meal.id, quantity=quantity, spicy=spicy, addon_ids=accepted
+        )
+        logger.info(
+            "Tool add_to_cart meal_id={} qty={} spicy={} addons={} total={} ok={} reason={}",
+            meal.id, quantity, spicy, accepted, line_total, outcome.ok, outcome.reason,
+        )
+
+        result = outcome.as_tool_result(
+            on_success=f"أضفت {meal.name} للسلة",
+            on_failure="ما قدرت أضيفها للسلة، ضيفها من التطبيق",
+        )
+        result.update(
+            {
+                "meal_name": meal.name,
+                "quantity": quantity,
+                "spicy": spicy,
+                "addons_added": [valid[a].get("name") for a in accepted],
+                "line_total_sar": round(line_total, 2),
+                "line_total_say_ar": catalog.sar_words(line_total),
+            }
+        )
+        if rejected:
+            result["ignored_unknown_addons"] = rejected
+
+        if outcome.ok:
+            previous = self._added_this_session.get(meal.id, 0)
+            self._added_this_session[meal.id] = previous + 1
+            if previous:
+                result["duplicate_note_ar"] = (
+                    f"{meal.name} كانت مضافة قبل في هذي المكالمة، فصارت سطر ثاني "
+                    "في السلة. إذا كان قصده يعدل السطر الأول، قولي له يعدله من "
+                    "التطبيق."
+                )
+        return result
+
+    @function_tool()
+    async def get_cart(self, context: RunContext) -> dict[str, Any]:
+        """
+        Read what is currently in the user's cart. Use before talking about the
+        cart contents or total, so you never guess them.
+        """
+        outcome = await self._ui.get_cart()
+        logger.info("Tool get_cart ok={} reason={}", outcome.ok, outcome.reason)
+        return outcome.as_tool_result(
+            on_success="",
+            on_failure="ما قدرت أشوف السلة الحين",
+        )
+
+    # ─── Misc ────────────────────────────────────────────────────────────────
 
     @function_tool()
     async def lookup_weather(
@@ -262,9 +542,12 @@ async def my_agent(ctx: agents.JobContext):
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not resolve the calling participant: {}", e)
 
-    selected_voice = parse_voice_from_metadata(
-        getattr(_part, "metadata", None) if _part else None
-    )
+    # One read of the participant metadata feeds both the voice selection and
+    # the user's saved food preferences — the frontend stamps them into the same
+    # JSON blob when it mints the token.
+    participant_metadata = getattr(_part, "metadata", None) if _part else None
+
+    selected_voice = parse_voice_from_metadata(participant_metadata)
     profile = voice_profile(selected_voice, female_tts_voice=TTS_VOICE)
     logger.info(
         "Voice profile selected key={} name_ar={} tts_voice={} has_ref_audio={} "
@@ -276,6 +559,27 @@ async def my_agent(ctx: agents.JobContext):
         len(profile.ref_text or ""),
         getattr(_part, "identity", None),
     )
+
+    # Saved onboarding answers, rendered as an Arabic block appended to the
+    # persona prompt. Empty when the client sent no `prefs` object at all, in
+    # which case the agent runs on the bare persona.
+    prefs_context = build_prefs_context(participant_metadata)
+    instructions = compose_instructions(
+        voice=profile.key,
+        catalog_index=catalog.catalog_index(),
+        prefs_context=prefs_context,
+    )
+    logger.info(
+        "User preferences resolved has_prefs_block={} summary={} block_chars={} "
+        "instructions_chars={} participant={}",
+        bool(prefs_context),
+        summarize_prefs(participant_metadata),
+        len(prefs_context),
+        len(instructions),
+        getattr(_part, "identity", None),
+    )
+    if prefs_context:
+        logger.info("User preferences block injected: {}", _preview(prefs_context, 400))
 
     voice_tts = VoxCPMTTSPlugin(
         server_url=TTS_SERVER_URL,
@@ -488,10 +792,20 @@ async def my_agent(ctx: agents.JobContext):
             except Exception as e:
                 logger.warning(f"Could not calculate EOU latency: {e}")
 
+    # UI control targets the participant that is actually on the call. Without
+    # one (the 15s wait above timed out) the bridge reports failure per call
+    # rather than silently no-oping, so لقمة never claims it opened a page.
+    ui_bridge = UIBridge(room=ctx.room, identity=getattr(_part, "identity", None))
+    logger.info(
+        "UI bridge ready available={} target_identity={}",
+        ui_bridge.available,
+        getattr(_part, "identity", None),
+    )
+
     logger.info("LiveKit session.start beginning room_name={}", getattr(ctx.room, "name", None))
     await session.start(
         room=ctx.room,
-        agent=Assistant(instructions=prompt_for_voice(profile.key)),
+        agent=Assistant(instructions=instructions, ui=ui_bridge),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=_noise_cancellation_for

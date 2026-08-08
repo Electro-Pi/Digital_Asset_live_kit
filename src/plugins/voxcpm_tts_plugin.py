@@ -35,6 +35,7 @@ deliberately absent here rather than passed and ignored.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import time
 import unicodedata
@@ -86,47 +87,67 @@ STRETCH_SEARCH_MS = 6.0
 
 # Text normalization before synthesis.
 #
-# Tashkeel is stripped here, by explicit request. The history is worth keeping
-# straight, because it has been reversed twice:
+# Two separate character classes, because they answer different questions.
 #
-# Diacritics were once deleted on the theory that they destabilized the cloned
-# speaker (~40% male-voice outliers). That was a misdiagnosis — the real cause
-# was the old MOSS/sglang-omni server's default audio_temperature of 1.7, and
-# with tuned sampling the instability was gone. Re-measured over 30 requests
-# spanning diacritized and undiacritized input: F0 stayed in the female band in
-# every one. On that evidence stripping was removed, because diacritics do carry
-# vowel information the model would otherwise have to guess.
-#
-# Stripping is back by explicit request, not because that measurement was
-# overturned — voice stability is not the reason, and nothing here re-litigates
-# it. The prompt now tells the LLM to emit bare Arabic (see prompts/
-# agent_prompt.py), so in the normal case this regex has nothing to do; it is
-# the belt-and-braces guard for diacritics that slip through anyway.
-#
-# Removed:
-#   * U+064B-U+0652  — standard tashkeel (fatha…sukun, shadda, tanween)
+# _NON_PHONETIC_MARKS is always removed. None of it is ever pronounced:
 #   * U+0670         — dagger alef; a real long /aː/ in هٰذا, but stripping it
 #                      yields هذا, which is the ordinary bare spelling
 #   * U+0640 tatweel — a typographic stretch, never phonetic
 #   * U+0610-U+061A  — honorific annotations (e.g. "sallallahu alayhi wasallam")
 #   * U+06D6-U+06ED  — Quranic recitation/annotation marks
+#
+# _TASHKEEL (U+064B-U+0652: fatha…sukun, shadda, tanween) is the short-vowel
+# information, and whether to keep it is a policy toggle, TTS_STRIP_TASHKEEL.
+#
+# The history is worth keeping straight, because it has now been reversed three
+# times. Diacritics were first deleted on the theory that they destabilized the
+# cloned speaker (~40% male-voice outliers). That was a misdiagnosis — the real
+# cause was the old MOSS/sglang-omni server's default audio_temperature of 1.7,
+# and with tuned sampling the instability was gone. Re-measured over 30 requests
+# spanning diacritized and undiacritized input: F0 stayed in the female band in
+# every one. Stripping was then reinstated by request, with the prompt emitting
+# bare Arabic to match.
+#
+# The default is now KEEP, because the لقمة prompt deliberately emits partial
+# tashkeel — every letter but the last of each word — so the TTS reads short
+# vowels instead of guessing them. Stripping here would silently undo that whole
+# prompt rule, which is exactly the failure this comment exists to prevent. Set
+# TTS_STRIP_TASHKEEL=1 in .env.local to go back to bare input without a code
+# change; the prompt should be changed to match if you do.
+_TASHKEEL = "\\u064b-\\u0652"
 _NON_PHONETIC_MARKS = re.compile(
-    "[\\u064b-\\u0652\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+    "[\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
+)
+_ALL_REMOVABLE_MARKS = re.compile(
+    "[" + _TASHKEEL + "\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
 )
 
+STRIP_TASHKEEL = os.getenv("TTS_STRIP_TASHKEEL", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
-def normalize_arabic(text: str) -> str:
-    """Strip tashkeel and non-phonetic marks, preserving letter identity.
+
+def normalize_arabic(text: str, *, strip_tashkeel: bool | None = None) -> str:
+    """Remove non-phonetic marks, preserving letter identity.
+
+    Short vowels survive unless ``strip_tashkeel`` (default: the
+    ``TTS_STRIP_TASHKEEL`` env flag) asks for them to go.
 
     The NFC pass is load-bearing. Hamza and maddah also exist as COMBINING
     marks (U+0653-U+0655), so decomposed text spells أ as ا+U+0654. Deleting
     that range silently rewrites letters — رئيس becomes رييس, مؤسسة becomes
     موسسة, القرآن becomes القران — and those really are pronounced wrong.
     Composing first turns those sequences back into single letters, which is
-    why U+0653-U+0655 stays out of the character class above: those marks are
-    letter identity, not vowels, and must survive the strip.
+    why U+0653-U+0655 stays out of both character classes above: those marks
+    are letter identity, not vowels, and must survive normalization.
     """
-    return _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
+    if strip_tashkeel is None:
+        strip_tashkeel = STRIP_TASHKEEL
+    pattern = _ALL_REMOVABLE_MARKS if strip_tashkeel else _NON_PHONETIC_MARKS
+    return pattern.sub("", unicodedata.normalize("NFC", text))
 
 
 def _text_hash(text: str) -> str:
