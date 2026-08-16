@@ -49,6 +49,19 @@ LANGUAGE = "ar"
 DEFAULT_MODEL = "CohereLabs/cohere-transcribe-arabic-07-2026"
 
 
+def _repair_heard(text: str) -> str:
+    """Fix known ASR slips before the LLM sees the turn."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    try:
+        from src.catalog import repair_user_transcript
+
+        return repair_user_transcript(cleaned)
+    except Exception:  # noqa: BLE001 - never drop a turn over a repair miss
+        return cleaned
+
+
 def _pcm16_to_wav_bytes(pcm: bytes, sample_rate: int = SERVER_SAMPLE_RATE) -> bytes:
     out = io.BytesIO()
     with wave.open(out, "wb") as wav:
@@ -199,7 +212,7 @@ class CohereASRStreamingSTT(stt.STT):
             alternatives=[
                 stt.SpeechData(
                     language=LANGUAGE,
-                    text=(data.get("text") or "").strip(),
+                    text=_repair_heard((data.get("text") or "").strip()),
                 )
             ],
         )
@@ -279,7 +292,7 @@ class CohereASRSpeechStream(stt.SpeechStream):
                                     alternatives=[
                                         stt.SpeechData(
                                             language=LANGUAGE,
-                                            text=text.strip(),
+                                            text=_repair_heard(text.strip()),
                                         )
                                     ],
                                 )
@@ -313,7 +326,7 @@ class CohereASRSpeechStream(stt.SpeechStream):
                     alternatives=[
                         stt.SpeechData(
                             language=LANGUAGE,
-                            text=text,
+                            text=_repair_heard(text),
                         )
                     ],
                 )

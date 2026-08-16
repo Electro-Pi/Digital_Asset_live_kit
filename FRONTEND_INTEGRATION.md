@@ -1,4 +1,4 @@
-# Frontend work needed for لقمة (voice → UI control)
+# Frontend work needed for سلمى (voice → UI control)
 
 The agent backend is done and deployed. It can search the catalog, decide on a
 meal, and explain the choice on its own. What it **cannot** do until the
@@ -17,7 +17,7 @@ this exact browser tab — the voice call — and LiveKit exposes request/respon
 RPC on it. The agent calls a method, your handler runs, and whatever you return
 goes back to the agent as the tool result.
 
-The return value is the point. If your handler is missing or fails, لقمة is
+The return value is the point. If your handler is missing or fails, سلمى is
 told the action failed and will say so out loud instead of claiming it opened a
 page it never opened. It is under explicit instruction not to fake actions, and
 that only works if it hears the truth back from you.
@@ -29,7 +29,7 @@ agent tool  →  perform_rpc(method, payload)  →  your registered handler
 
 **Current behaviour without this work:** every UI call returns
 `frontend_handler_missing`, the agent logs an error naming the method, and
-لقمة keeps talking normally — it just cannot drive the screen. So you can ship
+سلمى keeps talking normally — it just cannot drive the screen. So you can ship
 these handlers one at a time.
 
 ---
@@ -141,7 +141,7 @@ room.localParticipant.registerRpcMethod("luqma.getCart", async () => {
 
 ---
 
-## 3. The six methods
+## 3. The methods
 
 Every payload includes `"v": 1` (protocol version). Ignore it, or log it if it
 is ever not `1`.
@@ -167,7 +167,7 @@ points at a restaurant that exists. Your handler needs no change for either:
 it already pushes whatever path arrives.
 
 ### `luqma.showMeal`
-Open a meal's page. This is the one that fires most — لقمة calls it the moment
+Open a meal's page. This is the one that fires most — سلمى calls it the moment
 it settles on a recommendation, so the user sees the dish while hearing why.
 ```jsonc
 // payload
@@ -182,7 +182,7 @@ page). Optional; ignoring it is fine.
 
 ### `luqma.setMealOptions`
 Tick the additions on the meal page the user is already looking at, so the
-checkboxes move while لقمة is still asking about them. **This must not touch the
+checkboxes move while سلمى is still asking about them. **This must not touch the
 cart** — it is display state only.
 ```jsonc
 // payload
@@ -201,7 +201,7 @@ way `addToCart` computes it.
 
 This handler lives on the meal page, so it is the one case where a `null` state
 setter is likely — if the user has navigated away, return
-`{"ok": false, "error": "not_on_meal_page"}` and لقمة will keep the choices and
+`{"ok": false, "error": "not_on_meal_page"}` and سلمى will keep the choices and
 still add them correctly when it calls `addToCart`.
 
 ### `luqma.addToCart`
@@ -221,6 +221,32 @@ Guarantees from the backend, so you do not need to re-check them:
 The agent already told the user the line total, computed as
 `(price + Σ addon prices) × quantity` using `offerPrice` when the meal is on
 offer. Match that in `addItem` or the spoken total and the screen will disagree.
+
+**Important:** `addToCart` *adds* to any existing line for the same meal. It
+must not be used to set an absolute quantity or to remove. That is
+`luqma.setCartQuantity`.
+
+### `luqma.setCartQuantity`  ← required for "شيلها / خليهم واحد"
+Sets the **absolute** quantity of a cart line. `quantity: 0` removes the line.
+Without this handler, سلمى correctly calls the tool but the browser returns
+`UNSUPPORTED_METHOD` and she cannot remove anything.
+
+```jsonc
+// payload
+{ "mealId": "kabsa-dar-lamb-kabsa", "quantity": 0, "spicy": false,
+  "addonIds": [], "v": 1 }
+// response
+{ "ok": true, "mealId": "kabsa-dar-lamb-kabsa", "quantity": 0,
+  "removed": true, "itemsNow": 2, "cartCount": 2 }
+```
+
+Wiring (already in source as `lib/voice-rpc/set-cart-quantity.ts`):
+1. Register `luqma.setCartQuantity` in `registerLuqmaRpcs`.
+2. Pass `setQuantity` + `removeItem` from `useCart()` (via refs).
+3. Match the cart line by `mealId` (and spicy/addons when more than one line).
+4. `quantity <= 0` → `removeItem(lineId)`; else `setQuantity(lineId, quantity)`.
+5. **Rebuild and restart** the Next.js service — source alone is not enough.
+   Live failure 2026-08-16: source had the handler, running `.next` build did not.
 
 ### `luqma.setSaved`
 The heart / save button on a meal.
@@ -254,7 +280,7 @@ is made, matching what `saved-context` stores.
 { "ok": true, "count": 2,
   "items": [{ "mealId": "sushi-noi-gyoza", "quantity": 1, "unitPrice": 42 }] }
 ```
-Called before لقمة says anything about the cart. If it fails, it says it cannot
+Called before سلمى says anything about the cart. If it fails, it says it cannot
 see the cart rather than guessing.
 
 ---
@@ -300,7 +326,7 @@ two calls yourself.
 - `jahez-frontend/data/catalog.json` (what the UI renders)
 - `coda-jahez-agent-backend/resturant's-catalog/catalog.json` (what the agent searches)
 
-They are identical today. When they drift, لقمة will confidently recommend a
+They are identical today. When they drift, سلمى will confidently recommend a
 meal whose id 404s in your router — and it will look like an AI bug, not a data
 bug, so it will cost hours to find.
 
@@ -316,9 +342,9 @@ Option 3 is a five-line script and is enough.
 ## 6. Optional, but nice
 
 - **Show what it's doing.** The `reason` in `showMeal` is written to be shown.
-  A small "لقمة اختارت لك هذي" banner makes the voice feel connected to the UI.
+  A small "سلمى اختارت لك هذي" banner makes the voice feel connected to the UI.
 - **Send the current page to the agent.** Not implemented on either side. If
-  you want لقمة to answer "what am I looking at?", the agent would need a
+  you want سلمى to answer "what am I looking at?", the agent would need a
   `getUiState` equivalent in reverse — ask and it can be added backend-side.
 - **Preferences.** Already working — `buildParticipantMetadata()` in
   `VoiceWidget.tsx` ships `prefs` and the agent injects them into its context.

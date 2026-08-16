@@ -1,4 +1,4 @@
-"""Turn the frontend's preferences JSON into a prompt block for لقمة.
+"""Turn the frontend's preferences JSON into a prompt block for سلمى.
 
 The web client stamps the onboarding answers into LiveKit participant metadata
 (see ``jahez-frontend/components/voice-widget/VoiceWidget.tsx``), alongside the
@@ -40,7 +40,7 @@ from loguru import logger
 # Bookkeeping fields of the prefs payload — real answers are everything else.
 _META_KEYS = {"done", "skipped", "schemaVersion", "schema_version", "version"}
 
-_HEADER = "# تفضيلات المستخدم (من تطبيق جاهز)"
+_HEADER = "# تفضيلات المستخدم (من تطبيق لقمة)"
 
 _HEADER_NOTE = (
     "هذي معلومات وصلتك من التطبيق عن المستخدم اللي يكلمك الحين، مو كلام قاله "
@@ -55,14 +55,32 @@ _NO_PREFS = (
 
 # Per-preference phrasing: what the agent should actually *do*, not a restating
 # of the label. A label alone ("يهتم بالسعرات") tends to get read out loud.
+#
+# The two branches are the whole onboarding screen: "نعم، أتابع السعرات" and
+# "لا، مو مهم حالياً". They have to read as two different jobs, not as one job
+# with a footnote — a single line like "يهتم بالسعرات" was getting read out
+# loud instead of acted on.
 _CALORIES_GUIDANCE = {
     "care": (
-        "يهتم بالسعرات الحرارية. اذكري عدد السعرات باختصار لما ترشحين وجبة، "
-        "ورجحي الخيار الأخف إذا كان يناسب طلبه."
+        "**يتابع السعرات.** هذا مسار الترشيح عنده:\n"
+        "  - كل وجبة ترشحينها، اذكري سعراتها وبروتينها من حقول الأداة "
+        "(calories_say_ar و protein_say_ar) في نفس الجملة، قبل السعر.\n"
+        "  - بين خيارين متقاربين في الذوق، رجحي الأعلى بروتين، "
+        "وقولي ليش في نص جملة من رقم الأداة.\n"
+        "  - إذا طلب ترشيح أو بروتين عالي أو أكل صحي، نفذي search_meals فورا "
+        "بـ min_protein=30 و sort=protein_desc، ورشحي أول نتيجة. لا تحسبين "
+        "سعرات في رأسك ولا تقولين إنك راح ترشحين بعدين.\n"
+        "  - مجموع سعرات السلة من get_cart فقط (nutrition_say_ar). ممنوع الجمع اليدوي.\n"
+        "  - لا تعلقين على وزنه ولا تنصحينه بحمية. أنت تعطين رقم، مو رأي."
     ),
     "dont_care": (
-        "ما يهتم بالسعرات الحرارية. لا تفتحين موضوع السعرات ولا الدايت إلا إذا "
-        "سأل هو عنها."
+        "**ما يتابع السعرات.** هذا مسار الترشيح عنده:\n"
+        "  - ممنوع تذكرين سعرات ولا بروتين ولا دايت ولا \"خفيف/دسم\" كوصف صحي "
+        "من نفسك، ولا مرة.\n"
+        "  - رشحي على الذوق والتقييم والسعر وسرعة التوصيل.\n"
+        "  - ما تستخدمين فلتر السعرات في البحث إلا إذا هو طلبه بصوته.\n"
+        "  - إذا سأل هو عن السعرات، جاوبي من الأداة عادي وبدون تعليق، وبعدين "
+        "ارجعي لمسارك. سؤاله ما يغيّر تفضيله المحفوظ."
     ),
     "unknown": (
         "ما حدد موقفه من السعرات الحرارية. لا تفترضين شي، واذكريها فقط إذا سأل."
@@ -160,7 +178,7 @@ def _render_pref(key: str, value: Any) -> Optional[str]:
 
 
 def build_prefs_context(metadata: Optional[str]) -> str:
-    """Build the prompt block appended to لقمة's system prompt.
+    """Build the prompt block appended to سلمى's system prompt.
 
     Always returns a block once metadata carries a ``prefs`` object, including
     the "nothing saved" case — telling the model it has no preferences is what

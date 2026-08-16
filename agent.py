@@ -1,7 +1,9 @@
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, AsyncIterable, Optional, Sequence
 
 import asyncio
+import difflib
+import json
 import os
 import time
 from loguru import logger
@@ -30,7 +32,11 @@ from livekit.agents import (
     metrics,
     tokenize,
 )
+from livekit.agents.llm import ChatChunk, ChoiceDelta
+from livekit.agents.llm.llm import FunctionToolCall
+from livekit.agents.types import NOT_GIVEN
 from livekit.agents.tts import StreamAdapter
+from livekit.agents.voice.agent import ModelSettings
 from livekit.plugins import noise_cancellation, silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -41,6 +47,12 @@ from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
 from src import catalog
 from src.prefs import build_prefs_context, summarize_prefs
 from src.prompts.agent_prompt import compose_instructions, intro_for_voice
+from src.spoken_lexicon import written_phone, written_text
+from src.text_tool_calls import (
+    contains_text_tool_call,
+    extract_text_tool_calls,
+    recover_implied_show_meal,
+)
 from src.ui_bridge import UIBridge
 from src.voice_profile import parse_voice_from_metadata, voice_profile
 
@@ -113,7 +125,7 @@ STT_FOREGROUND_MIN_DURATION = float(
 
 
 # Load and index the catalog at import, not on the first tool call: a missing or
-# malformed catalog.json then shows up in the boot log instead of as لقمة going
+# malformed catalog.json then shows up in the boot log instead of as سلمى going
 # quiet mid-sentence. It is deliberately not fatal — a voice agent that can still
 # talk is better than one that will not start.
 try:
@@ -129,6 +141,50 @@ def _preview(value: Any, limit: int = 220) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit]}..."
+
+
+def _match_addon_loose(requested: str, addons: Sequence[dict]) -> Optional[str]:
+    """Resolve a garbled addon reference to a real addon id of this meal.
+
+    The model passes whatever it has — the id, the Arabic name, or the ASR's
+    rendering of the name ("Sauce Tomb" for "صوص ثوم"). Matching is scoped to
+    the one meal's handful of addons, so loose matching is safe: there is
+    nothing else "sauce" could mean here.
+    """
+    want = catalog.normalize_ar(requested)
+    if not want:
+        return None
+    want_tokens = set(want.split())
+
+    best_id: Optional[str] = None
+    best_score = 0.0
+    for addon in addons:
+        addon_id = str(addon.get("id") or "")
+        name = catalog.normalize_ar(addon.get("name"))
+        id_text = catalog.normalize_ar(addon_id.replace("-", " ").replace("_", " "))
+        if want in (addon_id.lower(), name, id_text):
+            return addon_id
+
+        candidate_tokens = set(name.split()) | set(id_text.split())
+        overlap = 0.0
+        if want_tokens and candidate_tokens:
+            # Relative to the smaller side, so "sauce tomb" still meets
+            # "garlic sauce" on their one shared token.
+            overlap = len(want_tokens & candidate_tokens) / min(
+                len(want_tokens), len(candidate_tokens)
+            )
+        fuzz = max(
+            difflib.SequenceMatcher(None, want, name).ratio() if name else 0.0,
+            difflib.SequenceMatcher(None, want, id_text).ratio() if id_text else 0.0,
+        )
+        score = max(fuzz, overlap)
+        if score > best_score:
+            best_score = score
+            best_id = addon_id
+
+    # Half the tokens (or a strong character-level ratio) is the bar;
+    # unrelated words score well below it against these short names.
+    return best_id if best_score >= 0.5 else None
 
 
 class Assistant(Agent):
@@ -147,6 +203,133 @@ class Assistant(Agent):
         # meal_id → the addon/spicy/quantity choices the user stated out loud,
         # so add_to_cart can honour them without the model repeating them.
         self._meal_options: dict[str, dict[str, Any]] = {}
+        # Cross-page session memory: last UI snapshot + checkout fields the user
+        # already said, so a page change does not wipe what they told سلمى.
+        self._last_ui_state: dict[str, Any] = {}
+        self._checkout_draft: dict[str, str] = {}
+        self._last_meal_id: str | None = None
+        self._last_restaurant: str | None = None
+
+    @staticmethod
+    def _tool_names(tools: Sequence[Any]) -> set[str]:
+        names: set[str] = set()
+        for tool in tools or []:
+            info = getattr(tool, "_info", None) or getattr(tool, "info", None)
+            name = getattr(info, "name", None) if info is not None else None
+            if name:
+                names.add(str(name))
+        return names
+
+    async def llm_node(
+        self,
+        chat_ctx,
+        tools,
+        model_settings: ModelSettings,
+    ):
+        """Run the LLM, recovering tool calls printed as plain text.
+
+        Gemma sometimes writes ``call:show_meal{…}`` into the assistant content
+        instead of using the function-calling channel. Those leaks used to
+        become empty TTS (and a hard session error) while the meal page never
+        opened. The whole text turn is held until the stream ends so a call
+        split across chunks is still recovered, then real ``FunctionToolCall``
+        chunks are emitted and only leftover Arabic is spoken.
+        """
+        activity = self._get_activity_or_raise()
+        assert activity.llm is not None, "llm_node called but no LLM is available"
+        tool_choice = model_settings.tool_choice if model_settings else NOT_GIVEN
+        conn_options = activity.session.conn_options.llm_conn_options
+        allowed = self._tool_names(tools)
+
+        text_parts: list[str] = []
+        last_chunk_id = "recovered"
+        pending: list[Any] = []
+
+        async with activity.llm.chat(
+            chat_ctx=chat_ctx,
+            tools=tools,
+            tool_choice=tool_choice,
+            conn_options=conn_options,
+        ) as stream:
+            async for chunk in stream:
+                if isinstance(chunk, ChatChunk):
+                    last_chunk_id = chunk.id or last_chunk_id
+                    if chunk.delta and chunk.delta.tool_calls:
+                        pending.append(chunk)
+                        continue
+                    if chunk.delta and chunk.delta.content:
+                        text_parts.append(chunk.delta.content)
+                        continue
+                    pending.append(chunk)
+                elif isinstance(chunk, str):
+                    text_parts.append(chunk)
+                else:
+                    pending.append(chunk)
+
+        # Structured tool calls from the provider first.
+        for chunk in pending:
+            yield chunk
+
+        text = "".join(text_parts)
+        speech, recovered = extract_text_tool_calls(text, allowed_names=allowed)
+
+        def _chunks_have_tool(name: str) -> bool:
+            for chunk in pending:
+                if not isinstance(chunk, ChatChunk) or not chunk.delta:
+                    continue
+                for tc in chunk.delta.tool_calls or []:
+                    if getattr(tc, "name", None) == name:
+                        return True
+            return any(c.get("name") == name for c in recovered)
+
+        # Live 2026-08-16: she said "فتحت لك صفحة … أميكو" after search_meals
+        # with zero show_meal — recover it from the last search hit she named.
+        if (
+            "show_meal" in allowed
+            and not _chunks_have_tool("show_meal")
+            and speech.strip()
+        ):
+            implied = recover_implied_show_meal(speech, chat_ctx)
+            if implied:
+                recovered = list(recovered) + [implied]
+                logger.warning(
+                    "Recovered implied show_meal after open-claim meal_id={}",
+                    implied["arguments"].get("meal_id"),
+                )
+
+        if recovered:
+            logger.warning(
+                "Recovered {} text-leaked tool call(s) into real function calls: {}",
+                len(recovered),
+                [(c["name"], c["arguments"]) for c in recovered],
+            )
+            yield ChatChunk(
+                id=last_chunk_id,
+                delta=ChoiceDelta(
+                    role="assistant",
+                    tool_calls=[
+                        FunctionToolCall(
+                            name=c["name"],
+                            arguments=json.dumps(c["arguments"], ensure_ascii=False),
+                            call_id=c["call_id"],
+                        )
+                        for c in recovered
+                    ],
+                ),
+            )
+        elif contains_text_tool_call(text):
+            logger.warning(
+                "Dropped unparseable text tool-call leak chars={} preview={!r}",
+                len(text),
+                text[:180],
+            )
+            speech = ""
+
+        if speech.strip():
+            yield ChatChunk(
+                id=last_chunk_id,
+                delta=ChoiceDelta(role="assistant", content=speech),
+            )
 
     # ─── Catalog ─────────────────────────────────────────────────────────────
 
@@ -163,6 +346,7 @@ class Assistant(Agent):
         spicy: bool = False,
         only_offers: bool = False,
         restaurant: str = "",
+        serves: int = 0,
         sort: str = "relevance",
     ) -> dict[str, Any]:
         """
@@ -186,8 +370,18 @@ class Assistant(Agent):
             restaurant: Restrict to one restaurant, by its Arabic name (e.g.
                 "أصيل برجر") or a restaurant_id copied from an earlier result.
                 Never invent an id.
-            sort: "relevance", "calories_asc", "price_asc", "rating_desc" or
-                "protein_desc".
+            serves: How many people are eating, when the user states it
+                ("لثلاث أشخاص" → 3, "أنا وأمي وأبوي" → 3, "أنا ومعي خمسة" → 6).
+                Meals sized exactly for that headcount rank first. Do not add
+                one extra person when they already listed themselves. If the
+                result says no_meal_serves_requested, tell the user honestly
+                that no family-size option exists and suggest ordering several
+                regular ones. 0 means not stated.
+            sort: "relevance", "calories_asc", "calories_desc", "price_asc",
+                "rating_desc", "protein_desc" or "fat_desc". For high-protein
+                requests use min_protein=30 and sort=protein_desc. For "دسم" /
+                fatty food the tool ranks by fat itself — do not treat دسمة as
+                a missing dish name. Do not wait or narrate — search now.
         """
         protein = (protein_type or "").strip().lower()
         if protein and protein not in {"meat", "chicken", "seafood", "vegetarian"}:
@@ -195,6 +389,14 @@ class Assistant(Agent):
             raise ToolError(
                 "protein_type must be meat, chicken, seafood or vegetarian"
             )
+
+        # The restaurant the user is standing in ranks first but does not filter.
+        # Scoping hard to it (the earlier fix for missing مذاق الشام menu items)
+        # backfires on a catalog this size: "ابغى بيتزا" said inside a grill
+        # house came back empty and سلمى reported "ما عندنا بيتزا" with 63 in
+        # the catalog. Preference gets the on-screen menu without that lie.
+        restaurant_arg = (restaurant or "").strip()
+        prefer_arg = restaurant_arg or (self._last_restaurant or "")
 
         result = catalog.search_meals(
             query=query or "",
@@ -205,15 +407,18 @@ class Assistant(Agent):
             max_price=max_price or None,
             spicy=True if spicy else None,
             only_offers=bool(only_offers),
-            restaurant_id=restaurant or None,
+            restaurant_id=restaurant_arg or None,
+            prefer_restaurant_id=prefer_arg or None,
+            serves=serves or None,
             sort=sort or "relevance",
         )
         logger.info(
             "Tool search_meals query={!r} cuisine={!r} protein={!r} max_cal={} "
             "min_protein={} max_price={} spicy={} offers={} restaurant={!r} "
-            "sort={} -> total={} showing={} ambiguous={} ignored_restaurant={}",
+            "prefer={!r} serves={} sort={} -> total={} showing={} ambiguous={} "
+            "ignored_restaurant={}",
             query, cuisine, protein, max_calories, min_protein, max_price,
-            spicy, only_offers, restaurant, sort,
+            spicy, only_offers, restaurant_arg, prefer_arg, serves, sort,
             result.get("total_matches"), result.get("showing"),
             (result.get("ambiguous") or {}).get("ask_about"),
             result.get("ignored_restaurant"),
@@ -228,8 +433,9 @@ class Assistant(Agent):
     ) -> dict[str, Any]:
         """
         Full details for one meal, including its addons list. Call this before
-        offering additions, so you offer real addons at real prices. Speak
-        prices from the `price_say_ar` fields verbatim, never from the digits.
+        offering additions, and again if the user disputes a price you just
+        said. Speak prices from `price_sentence_ar` or `price_say_ar`
+        verbatim, never from the digits.
 
         Args:
             meal_id: The meal_id from a previous search result.
@@ -257,7 +463,9 @@ class Assistant(Agent):
     ) -> dict[str, Any]:
         """
         Open the meal's page in the user's app so they can see it while you
-        talk. Call this once you have settled on a recommendation.
+        talk. Call this once you have settled on a recommendation. The result
+        includes `price_sentence_ar` — read that price, do not convert
+        `price_sar` yourself.
 
         Args:
             meal_id: The meal_id from a previous search result.
@@ -276,10 +484,53 @@ class Assistant(Agent):
             "Tool show_meal meal_id={} path={} ok={} reason_for_failure={}",
             meal.id, meal.page_path, outcome.ok, outcome.reason,
         )
-        return outcome.as_tool_result(
+        if outcome.ok:
+            self._last_meal_id = meal.id
+            self._last_ui_state = {
+                "path": meal.page_path,
+                "page": "meal",
+                "mealId": meal.id,
+                "titleAr": meal.name,
+            }
+        result = outcome.as_tool_result(
             on_success=f"فتحت لك صفحة {meal.name}",
             on_failure="ما قدرت أفتح الصفحة، افتحها من التطبيق",
         )
+        # Canonical meal facts ride along so she quotes the on-screen price
+        # and headcount instead of converting digits from memory. Live
+        # failure: after opening the 71-riyal pizza-for-3 she said 61, then
+        # repeated 61 when the user challenged it, never calling get_meal_details.
+        details = catalog.meal_details(meal.id)
+        if details:
+            for key in (
+                "name_say_ar",
+                "price_sar",
+                "price_say_ar",
+                "price_sentence_ar",
+                "price_speech_rule_ar",
+                "serves_people",
+                "serves_say_ar",
+                "serves_rule_ar",
+                "includes",
+                "includes_say_ar",
+                "calories",
+                "calories_say_ar",
+                "protein_g",
+                "protein_say_ar",
+            ):
+                if key in details:
+                    result[key] = details[key]
+        result["spicy_available"] = meal.spicy_option
+        result["addons"] = [
+            {
+                "addon_id": a.get("id"),
+                "name": a.get("name"),
+                "price_sar": a.get("price"),
+                "price_say_ar": catalog.sar_words(float(a.get("price") or 0)),
+            }
+            for a in meal.addons
+        ]
+        return result
 
     @function_tool()
     async def show_restaurant(
@@ -314,8 +565,16 @@ class Assistant(Agent):
             on_success=f"فتحت لك صفحة {details['name']}",
             on_failure="ما قدرت أفتح صفحة المطعم، افتحها من التطبيق",
         )
+        if outcome.ok:
+            self._last_restaurant = details.get("name")
+            self._last_ui_state = {
+                "path": details.get("page_path"),
+                "page": "restaurant",
+                "restaurantId": details.get("restaurant_id"),
+                "titleAr": details.get("name"),
+            }
         # The details are returned either way: even when the page did not open,
-        # لقمة can still answer questions about the restaurant from real data.
+        # سلمى can still answer questions about the restaurant from real data.
         result.update(details)
         return result
 
@@ -329,29 +588,367 @@ class Assistant(Agent):
         Open one of the app's main pages for the user.
 
         Args:
-            page: One of "home", "restaurants", "cart", "orders", "offers",
-                "search", "saved". For one specific restaurant use
-                show_restaurant instead.
+            page: One of "home", "restaurants", "cart", "checkout", "orders",
+                "offers", "search", "saved". Arabic names are accepted too:
+                الرئيسية، المطاعم، السلة، إتمام الطلب، الطلبات، العروض،
+                البحث، المحفوظات. Call this immediately when the user says
+                روح للسلة / وريني السلة / افتح السلة / الكارت.
         """
         paths = {
             "home": "/",
             "restaurants": "/restaurants",
             "cart": "/cart",
+            "checkout": "/checkout",
             "orders": "/orders",
             "offers": "/offers",
             "search": "/search",
             "saved": "/saved",
         }
-        target = paths.get((page or "").strip().lower())
-        if target is None:
+        aliases = {
+            "الرئيسية": "home",
+            "الرئيسيه": "home",
+            "البيت": "home",
+            "المطاعم": "restaurants",
+            "مطاعم": "restaurants",
+            "السلة": "cart",
+            "سله": "cart",
+            "سلة": "cart",
+            "السله": "cart",
+            "الكارت": "cart",
+            "الكرت": "cart",
+            "الكارد": "cart",
+            "السالفه": "cart",
+            "السالفة": "cart",
+            "اتمام الطلب": "checkout",
+            "إتمام الطلب": "checkout",
+            "الدفع": "checkout",
+            "الطلبات": "orders",
+            "العروض": "offers",
+            "البحث": "search",
+            "المحفوظات": "saved",
+        }
+        raw = (page or "").strip()
+        key = raw.lower()
+        folded = catalog.normalize_ar(raw)
+        target_key = (
+            key if key in paths
+            else aliases.get(raw) or aliases.get(folded) or aliases.get(key)
+        )
+        target = paths.get(target_key or "")
+        if not target or not target_key:
             raise ToolError(f"Unknown page {page!r}. Use one of: {', '.join(paths)}")
 
         outcome = await self._ui.navigate(target)
-        logger.info("Tool open_page page={} path={} ok={}", page, target, outcome.ok)
+        logger.info("Tool open_page page={} resolved={} path={} ok={}", page, target_key, target, outcome.ok)
+        if outcome.ok:
+            self._last_ui_state = {
+                "path": target,
+                "page": target_key,
+                "titleAr": {
+                    "home": "الرئيسية",
+                    "restaurants": "المطاعم",
+                    "cart": "السلة",
+                    "checkout": "إتمام الطلب",
+                    "orders": "الطلبات",
+                    "offers": "العروض",
+                    "search": "البحث",
+                    "saved": "المحفوظات",
+                }.get(target_key, target),
+            }
         return outcome.as_tool_result(
             on_success="فتحتها لك",
             on_failure="ما قدرت أفتحها، افتحها من التطبيق",
         )
+
+    @function_tool()
+    async def press_checkout_button(self, context: RunContext) -> dict[str, Any]:
+        """
+        Press the "إتمام الطلب" button in the cart, which opens the checkout
+        form. Call this immediately, with no questions first, whenever the user
+        says إتمام الطلب / كملي الطلب / اضغطي الزر / نروح للدفع. Do NOT ask for
+        name, phone or address before pressing — press first, then ask once for
+        whatever is still missing.
+        """
+        outcome = await self._ui.navigate("/checkout")
+        logger.info("Tool press_checkout_button ok={} reason={}", outcome.ok, outcome.reason)
+        if not outcome.ok:
+            return outcome.as_tool_result(
+                on_success="",
+                on_failure="ما قدرت أضغط زر إتمام الطلب، اضغطه من التطبيق",
+            )
+
+        self._last_ui_state = {
+            "path": "/checkout",
+            "page": "checkout",
+            "titleAr": "إتمام الطلب",
+        }
+        # Re-apply anything the user already told us so a returning user does
+        # not get asked for the same three fields twice.
+        if self._checkout_draft:
+            await self._ui.fill_checkout(
+                name=self._checkout_draft.get("name"),
+                phone=self._checkout_draft.get("phone"),
+                address=self._checkout_draft.get("address"),
+            )
+
+        missing = [
+            key for key in ("name", "phone", "address")
+            if not self._checkout_draft.get(key)
+        ]
+        return {
+            "ok": True,
+            "page": "checkout",
+            "checkout_draft": dict(self._checkout_draft),
+            "missing_fields": missing,
+            "say_to_user_ar": (
+                "ضغطت إتمام الطلب. أعطني الاسم ورقم الجوال والعنوان."
+                if len(missing) == 3
+                else "ضغطت إتمام الطلب وعبّيت اللي عندي."
+            ),
+        }
+
+    @function_tool()
+    async def get_ui_state(self, context: RunContext) -> dict[str, Any]:
+        """
+        Read which page the user is looking at right now in the app (path,
+        page name, open meal/restaurant id). Call this when they ask "وين أنا؟"
+        / "وش قدامي؟", or before acting on a page-specific control, or after
+        navigating so your next sentence matches the screen.
+        """
+        outcome = await self._ui.get_ui_state()
+        logger.info(
+            "Tool get_ui_state ok={} reason={} data={}",
+            outcome.ok, outcome.reason, outcome.data,
+        )
+        if outcome.ok and outcome.data:
+            self._last_ui_state = {
+                k: outcome.data.get(k)
+                for k in ("path", "page", "mealId", "restaurantId", "titleAr")
+                if outcome.data.get(k) is not None
+            }
+            return {
+                "ok": True,
+                "source": "rpc",
+                "path": outcome.data.get("path"),
+                "page": outcome.data.get("page"),
+                "meal_id": outcome.data.get("mealId"),
+                "restaurant_id": outcome.data.get("restaurantId"),
+                "title_ar": outcome.data.get("titleAr"),
+                "session_memory": {
+                    "last_meal_id": self._last_meal_id,
+                    "last_restaurant": self._last_restaurant,
+                    "checkout_draft": dict(self._checkout_draft),
+                    "last_ui_state": dict(self._last_ui_state),
+                },
+                "say_to_user_ar": f"أنت الحين في {outcome.data.get('titleAr') or 'التطبيق'}",
+            }
+
+        # Browser pushes luqma_* attributes on every route change — works even
+        # when the getUiState RPC handler is missing from an old tab.
+        attrs = self._ui.page_attributes()
+        if attrs.get("luqma_path"):
+            self._last_ui_state = {
+                "path": attrs.get("luqma_path"),
+                "page": attrs.get("luqma_page"),
+                "mealId": attrs.get("luqma_meal_id") or None,
+                "restaurantId": attrs.get("luqma_restaurant_id") or None,
+                "titleAr": attrs.get("luqma_title") or attrs.get("luqma_path"),
+            }
+            title = self._last_ui_state.get("titleAr") or "التطبيق"
+            return {
+                "ok": True,
+                "source": "attributes",
+                "path": self._last_ui_state.get("path"),
+                "page": self._last_ui_state.get("page"),
+                "meal_id": self._last_ui_state.get("mealId"),
+                "restaurant_id": self._last_ui_state.get("restaurantId"),
+                "title_ar": title,
+                "session_memory": {
+                    "last_meal_id": self._last_meal_id,
+                    "last_restaurant": self._last_restaurant,
+                    "checkout_draft": dict(self._checkout_draft),
+                    "last_ui_state": dict(self._last_ui_state),
+                },
+                "say_to_user_ar": f"أنت الحين في {title}",
+            }
+
+        # Fall back to whatever we last navigated to ourselves.
+        if self._last_ui_state:
+            return {
+                "ok": True,
+                "stale": True,
+                **self._last_ui_state,
+                "session_memory": {
+                    "last_meal_id": self._last_meal_id,
+                    "last_restaurant": self._last_restaurant,
+                    "checkout_draft": dict(self._checkout_draft),
+                },
+                "say_to_user_ar": (
+                    f"آخر صفحة فتحتها لك هي "
+                    f"{self._last_ui_state.get('titleAr') or self._last_ui_state.get('path')}"
+                ),
+            }
+        return outcome.as_tool_result(
+            on_success="هذي الصفحة الحالية",
+            on_failure="ما قدرت أعرف الصفحة الحالية من التطبيق",
+        )
+
+    @function_tool()
+    async def fill_checkout_form(
+        self,
+        context: RunContext,
+        name: str = "",
+        phone: str = "",
+        address: str = "",
+    ) -> dict[str, Any]:
+        """
+        Fill the checkout form fields the user said out loud. Opens /checkout
+        first if needed, writes the fields into the form, and remembers them
+        for complete_order. Phone must be a Saudi mobile: 05XXXXXXXX.
+
+        Args:
+            name: Customer full name.
+            phone: Saudi mobile, digits like 05XXXXXXXX.
+            address: Delivery address (district, street, building).
+        """
+        if name:
+            self._checkout_draft["name"] = written_text(name)
+        if phone:
+            self._checkout_draft["phone"] = written_phone(phone)
+        if address:
+            self._checkout_draft["address"] = written_text(address)
+
+        # Make sure the form is on screen so the user sees fields fill in.
+        nav = await self._ui.navigate("/checkout")
+        if nav.ok:
+            self._last_ui_state = {
+                "path": "/checkout",
+                "page": "checkout",
+                "titleAr": "إتمام الطلب",
+            }
+
+        outcome = await self._ui.fill_checkout(
+            name=self._checkout_draft.get("name"),
+            phone=self._checkout_draft.get("phone"),
+            address=self._checkout_draft.get("address"),
+        )
+        logger.info(
+            "Tool fill_checkout_form draft={} nav_ok={} fill_ok={} reason={}",
+            self._checkout_draft, nav.ok, outcome.ok, outcome.reason,
+        )
+        # Buffered fill (page not mounted yet) still counts as success — the
+        # checkout page applies pending fields as soon as it mounts.
+        fill_ok = outcome.ok or (outcome.data or {}).get("buffered") is True
+        if fill_ok:
+            result = {
+                "ok": True,
+                "say_to_user_ar": "عبّيت البيانات في نموذج إتمام الطلب",
+                "checkout_draft": dict(self._checkout_draft),
+                "page_opened": nav.ok,
+                "buffered": bool((outcome.data or {}).get("buffered")),
+            }
+            return result
+        result = outcome.as_tool_result(
+            on_success="عبّيت البيانات في نموذج إتمام الطلب",
+            on_failure=(
+                "حفظت البيانات عندي. أكمل التأكيد بـ complete_order "
+                "باسم ورقم جوال سعودي وعنوان"
+            ),
+        )
+        result["checkout_draft"] = dict(self._checkout_draft)
+        result["page_opened"] = nav.ok
+        return result
+
+    @function_tool()
+    async def complete_order(
+        self,
+        context: RunContext,
+        name: str = "",
+        phone: str = "",
+        address: str = "",
+    ) -> dict[str, Any]:
+        """
+        Place the order from the user's cart and open the success page. Only
+        call after the user clearly asked to confirm / finish the order AND
+        you have name + Saudi phone (05XXXXXXXX) + address. Missing fields can
+        be taken from checkout_draft remembered earlier in this call.
+
+        Args:
+            name: Customer full name (or empty to reuse draft).
+            phone: Saudi mobile 05XXXXXXXX (or empty to reuse draft).
+            address: Delivery address (or empty to reuse draft).
+        """
+        if name.strip():
+            self._checkout_draft["name"] = written_text(name)
+        if phone.strip():
+            self._checkout_draft["phone"] = written_phone(phone)
+        if address.strip():
+            self._checkout_draft["address"] = written_text(address)
+
+        final_name = written_text(self._checkout_draft.get("name", ""))
+        final_phone = written_phone(self._checkout_draft.get("phone", ""))
+        final_address = written_text(self._checkout_draft.get("address", ""))
+
+        missing = [
+            label
+            for label, val in (
+                ("name", final_name),
+                ("phone", final_phone),
+                ("address", final_address),
+            )
+            if not val
+        ]
+        if missing:
+            return {
+                "ok": False,
+                "failure_reason": "missing_fields",
+                "missing": missing,
+                "checkout_draft": dict(self._checkout_draft),
+                "say_to_user_ar": (
+                    "باقي بيانات ناقصة عشان أكمل الطلب: "
+                    + " و".join(
+                        {"name": "الاسم", "phone": "رقم الجوال", "address": "العنوان"}[m]
+                        for m in missing
+                    )
+                ),
+            }
+
+        outcome = await self._ui.complete_order(
+            name=final_name, phone=final_phone, address=final_address
+        )
+        logger.info(
+            "Tool complete_order ok={} reason={} data={}",
+            outcome.ok, outcome.reason, outcome.data,
+        )
+        if outcome.ok:
+            self._last_ui_state = {
+                "path": (outcome.data or {}).get("path") or "/order-success",
+                "page": "order_success",
+                "titleAr": "نجاح الطلب",
+            }
+            order_id = (outcome.data or {}).get("orderId")
+            total = (outcome.data or {}).get("total")
+            total_say = catalog.sar_words(float(total or 0))
+            return {
+                "ok": True,
+                "order_id": order_id,
+                "total_sar": total,
+                "total_say_ar": total_say,
+                "say_to_user_ar": f"تم تأكيد طلبك، والمجموع {total_say}",
+            }
+
+        reason = outcome.reason or "unknown"
+        say = {
+            "empty_cart": "سلتك فارغة، ما أقدر أكمل طلب فاضي",
+            "bad_phone": "رقم الجوال لازم يكون سعودي مثل صفر خمسة وبعده ثمان أرقام",
+            "missing_fields": "باقي بيانات ناقصة عشان أكمل الطلب",
+        }.get(reason, "ما قدرت أكمل تأكيد الطلب من التطبيق")
+        return {
+            "ok": False,
+            "failure_reason": reason,
+            "checkout_draft": dict(self._checkout_draft),
+            "say_to_user_ar": say,
+        }
 
     def _resolve_meal_options(
         self,
@@ -366,18 +963,33 @@ class Assistant(Agent):
 
         Shared by set_meal_options and add_to_cart so the additions the user
         sees ticked on the page are exactly the ones that reach the cart, at
-        exactly the total لقمة said out loud. Two code paths pricing the same
+        exactly the total سلمى said out loud. Two code paths pricing the same
         line is how the screen and the voice start disagreeing.
         """
         quantity = max(1, int(quantity or 1))
 
         # Addons are validated against this meal, not accepted on trust: an
         # invented addon id would either 500 the frontend or, worse, be quoted
-        # to the user as a real extra with a real price.
+        # to the user as a real extra with a real price. But validation is
+        # loose on spelling: the model often passes the addon *name* as it
+        # heard it, and the ASR garbles Arabic addon names into English-ish
+        # text ("Sauce Tomb" for "صوص ثوم"). Exact ids pass through untouched;
+        # anything else is resolved against this meal's addon ids and names.
         valid = {str(a.get("id")): a for a in meal.addons}
         requested = [str(a) for a in (addon_ids or [])]
-        accepted = [a for a in requested if a in valid]
-        rejected = [a for a in requested if a not in valid]
+        accepted: list[str] = []
+        rejected: list[str] = []
+        for req in requested:
+            match = req if req in valid else _match_addon_loose(req, meal.addons)
+            if match and match not in accepted:
+                accepted.append(match)
+                if match != req:
+                    logger.info(
+                        "Tool {} resolved addon {!r} -> {!r} meal_id={}",
+                        tool, req, match, meal.id,
+                    )
+            elif not match:
+                rejected.append(req)
         if rejected:
             logger.warning(
                 "Tool {} dropped unknown addons meal_id={} rejected={} valid={}",
@@ -399,6 +1011,49 @@ class Assistant(Agent):
             "line_total": line_total,
         }
 
+    async def _cart_snapshot(self) -> dict[str, Any]:
+        """Live cart totals from the browser — never invent them from memory."""
+        outcome = await self._ui.get_cart()
+        if not outcome.ok:
+            return {"ok": False, "failure_reason": outcome.reason}
+        lines: list[dict[str, Any]] = []
+        subtotal = 0.0
+        loaded = catalog.load_catalog()
+        for item in (outcome.data or {}).get("items", []) or []:
+            meal = loaded.by_id(item.get("mealId", ""))
+            qty = int(item.get("quantity") or 1)
+            unit = float(item.get("unitPrice") or 0.0)
+            subtotal += unit * qty
+            line = {
+                "meal_id": item.get("mealId"),
+                "name": meal.name if meal else item.get("mealId"),
+                "name_say_ar": catalog.speakable_name(meal.name) if meal else "",
+                "quantity": qty,
+                "unit_price_sar": unit,
+                "line_total_sar": round(unit * qty, 2),
+                "line_total_say_ar": catalog.sar_words(unit * qty),
+            }
+            if meal:
+                line["calories"] = meal.calories
+                line["protein_g"] = meal.protein
+                line["carbs_g"] = meal.carbs
+                line["fat_g"] = meal.fat
+            lines.append(line)
+        snap: dict[str, Any] = {
+            "ok": True,
+            "items": lines,
+            "item_count": sum(line["quantity"] for line in lines),
+            "subtotal_sar": round(subtotal, 2),
+            "subtotal_say_ar": catalog.sar_words(subtotal),
+            "is_empty": not lines,
+            "cart_speech_rule_ar": (
+                "انطقي subtotal_say_ar حرف بحرف. هذا مجموع السلة الحقيقي "
+                "على الشاشة. ممنوع تقولين رقم من line_total أو من ذاكرتك."
+            ),
+        }
+        snap.update(catalog.cart_nutrition(lines))
+        return snap
+
     @function_tool()
     async def set_meal_options(
         self,
@@ -411,10 +1066,14 @@ class Assistant(Agent):
         """
         Tick the additions on the meal page the user is looking at, so they see
         their choices appear while you talk. This does NOT add anything to the
-        cart — call add_to_cart afterwards, once they agree.
+        cart by itself — call add_to_cart once the user agrees.
 
-        Call this the moment the user says which additions they want, before
-        asking whether to add the meal to the cart.
+        If the meal is already in the cart and the user names new additions,
+        this tool updates the page and adds a new cart line with the addons
+        (tell the user to remove the plain line from the cart if two lines
+        appear).
+
+        Call this the moment the user says which additions they want.
 
         Args:
             meal_id: The meal_id of the meal whose page is open.
@@ -459,9 +1118,13 @@ class Assistant(Agent):
         result.update(
             {
                 "meal_name": meal.name,
+                "meal_name_say_ar": catalog.speakable_name(meal.name),
                 "quantity": opts["quantity"],
                 "spicy": opts["spicy"],
                 "addons_selected": opts["addon_names"],
+                "addons_selected_say_ar": [
+                    catalog.speakable_name(n) for n in opts["addon_names"] if n
+                ],
                 "line_total_sar": round(opts["line_total"], 2),
                 "line_total_say_ar": catalog.sar_words(opts["line_total"]),
                 "added_to_cart": False,
@@ -469,6 +1132,34 @@ class Assistant(Agent):
         )
         if opts["rejected"]:
             result["ignored_unknown_addons"] = opts["rejected"]
+
+        # Live failure 2026-08-12: user added to cart plain, then named addons.
+        # set_meal_options updated the page but the cart line stayed at 73 SAR.
+        # Without a frontend replace RPC, the only backend fix is to push a
+        # second cart line that carries the addons and tell the user to drop
+        # the plain line from the cart UI if both show up.
+        if meal.id in self._added_this_session and opts["accepted"]:
+            cart_outcome = await self._ui.add_to_cart(
+                meal_id=meal.id,
+                quantity=opts["quantity"],
+                spicy=opts["spicy"],
+                addon_ids=opts["accepted"],
+            )
+            logger.info(
+                "Tool set_meal_options cart_readd meal_id={} addons={} total={} ok={} reason={}",
+                meal.id, opts["accepted"], opts["line_total"],
+                cart_outcome.ok, cart_outcome.reason,
+            )
+            if cart_outcome.ok:
+                self._added_this_session[meal.id] = (
+                    self._added_this_session.get(meal.id, 0) + 1
+                )
+                result["cart_readded_with_addons"] = True
+                result["added_to_cart"] = True
+                result["duplicate_plain_line_note_ar"] = (
+                    f"أضفت {meal.name} مرة ثانية بالإضافات. إذا ظهر سطران في "
+                    "السلة، احذف السطر القديم بدون إضافات من التطبيق."
+                )
         return result
 
     @function_tool()
@@ -536,9 +1227,13 @@ class Assistant(Agent):
         result.update(
             {
                 "meal_name": meal.name,
+                "meal_name_say_ar": catalog.speakable_name(meal.name),
                 "quantity": quantity,
                 "spicy": spicy,
                 "addons_added": opts["addon_names"],
+                "addons_added_say_ar": [
+                    catalog.speakable_name(n) for n in opts["addon_names"] if n
+                ],
                 "line_total_sar": round(line_total, 2),
                 "line_total_say_ar": catalog.sar_words(line_total),
             }
@@ -551,10 +1246,110 @@ class Assistant(Agent):
             self._added_this_session[meal.id] = previous + 1
             if previous:
                 result["duplicate_note_ar"] = (
-                    f"{meal.name} كانت مضافة قبل في هذي المكالمة، فصارت سطر ثاني "
-                    "في السلة. إذا كان قصده يعدل السطر الأول، قولي له يعدله من "
-                    "التطبيق."
+                    f"{meal.name} كانت مضافة قبل في هذي المكالمة. "
+                    "add_to_cart *يزيد* الكمية، ما يستبدلها. إذا المستخدم "
+                    "قال 'خليهم اثنين' أو 'واحد بس'، استخدمي set_cart_quantity "
+                    "بالعدد المطلق."
                 )
+            # Always re-read the cart: line_total is only this call's payload,
+            # while the browser may already have had quantity on the same line.
+            cart = await self._cart_snapshot()
+            if cart.get("ok"):
+                result["cart"] = cart
+                result["subtotal_sar"] = cart["subtotal_sar"]
+                result["subtotal_say_ar"] = cart["subtotal_say_ar"]
+                result["cart_item_count"] = cart["item_count"]
+        return result
+
+    @function_tool()
+    async def set_cart_quantity(
+        self,
+        context: RunContext,
+        meal_id: str,
+        quantity: int,
+        spicy: bool = False,
+        addon_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Set the absolute quantity of a meal already in the cart, or remove it.
+        Use this when the user changes how many they want ("خليهم واحد",
+        "اعمل اثنين", "شيلها من السلة"). Do NOT use add_to_cart for that —
+        add_to_cart adds on top of what is already there.
+
+        Args:
+            meal_id: The meal_id of the cart line.
+            quantity: Absolute count. 0 removes the line entirely.
+            spicy: Match the spicy flag of the cart line if known.
+            addon_ids: Match the addons of the cart line if known; omit to
+                target the only line for this meal_id.
+        """
+        meal = catalog.load_catalog().by_id(meal_id)
+        if meal is None:
+            raise ToolError(
+                f"No meal with id {meal_id!r}. Use a meal_id from get_cart."
+            )
+        if quantity < 0:
+            raise ToolError("quantity must be 0 or more")
+
+        remembered = self._meal_options.get(meal.id)
+        if addon_ids is None and remembered:
+            addon_ids = remembered["addon_ids"]
+            if not spicy:
+                spicy = remembered["spicy"]
+
+        accepted: list[str] = []
+        if addon_ids:
+            known = {str(a.get("id")) for a in meal.addons}
+            accepted = [a for a in addon_ids if a in known]
+
+        outcome = await self._ui.set_cart_quantity(
+            meal_id=meal.id,
+            quantity=quantity,
+            spicy=spicy,
+            addon_ids=accepted,
+        )
+        logger.info(
+            "Tool set_cart_quantity meal_id={} qty={} spicy={} addons={} ok={} reason={}",
+            meal.id, quantity, spicy, accepted, outcome.ok, outcome.reason,
+        )
+        if quantity <= 0:
+            success = f"شلت {meal.name} من السلة"
+            failure = (
+                "ما قدرت أشيلها من السلة لأن التطبيق ما يدعم تعديل الكمية بعد. "
+                "قولي للمستخدم يحدّث الصفحة أو يشيلها من الشاشة، وما تدّعين إنك شلتيها."
+            )
+        else:
+            success = f"عدّلت كمية {meal.name} إلى {quantity}"
+            failure = (
+                "ما قدرت أعدّل الكمية لأن التطبيق ما يدعمها بعد. "
+                "قولي للمستخدم يعدّلها من الشاشة، وما تدّعين إنك عدّلتيها."
+            )
+        result = outcome.as_tool_result(on_success=success, on_failure=failure)
+        if not outcome.ok and outcome.reason == "frontend_handler_missing":
+            result["frontend_action_required"] = (
+                "Deploy luqma.setCartQuantity (see FRONTEND_INTEGRATION.md). "
+                "Source may exist but the running Next build must be rebuilt."
+            )
+            result["say_to_user_ar"] = (
+                "ما أقدر أشيلها من هنا الحين، عدّلها أنت من السلة على الشاشة."
+            )
+        result.update(
+            {
+                "meal_name": meal.name,
+                "meal_name_say_ar": catalog.speakable_name(meal.name),
+                "quantity": max(0, quantity),
+                "removed": quantity <= 0,
+            }
+        )
+        if outcome.ok:
+            if quantity <= 0:
+                self._added_this_session.pop(meal.id, None)
+            cart = await self._cart_snapshot()
+            if cart.get("ok"):
+                result["cart"] = cart
+                result["subtotal_sar"] = cart["subtotal_sar"]
+                result["subtotal_say_ar"] = cart["subtotal_say_ar"]
+                result["cart_item_count"] = cart["item_count"]
         return result
 
     @function_tool()
@@ -606,21 +1401,72 @@ class Assistant(Agent):
                 else "ما قدرت أشيلها من المحفوظات"
             ),
         )
-        result.update({"meal_name": meal.name, "saved": saved})
+        result.update(
+            {
+                "meal_name": meal.name,
+                "meal_name_say_ar": catalog.speakable_name(meal.name),
+                "saved": saved,
+            }
+        )
         return result
 
     @function_tool()
     async def get_cart(self, context: RunContext) -> dict[str, Any]:
         """
         Read what is currently in the user's cart. Use before talking about the
-        cart contents or total, so you never guess them.
+        cart contents, total price, or calorie/protein totals, so you never
+        guess or add the numbers yourself. Speak calories from
+        `calories_total_say_ar` and protein from `protein_total_say_ar`, or
+        read `nutrition_say_ar` verbatim.
         """
         outcome = await self._ui.get_cart()
         logger.info("Tool get_cart ok={} reason={}", outcome.ok, outcome.reason)
-        return outcome.as_tool_result(
+        result = outcome.as_tool_result(
             on_success="",
             on_failure="ما قدرت أشوف السلة الحين",
         )
+        if not outcome.ok:
+            return result
+
+        # The RPC only knows meal ids and prices. Resolve names here so سلمى can
+        # read the cart back without inventing what is in it.
+        lines: list[dict[str, Any]] = []
+        subtotal = 0.0
+        loaded = catalog.load_catalog()
+        for item in (outcome.data or {}).get("items", []) or []:
+            meal = loaded.by_id(item.get("mealId", ""))
+            qty = int(item.get("quantity") or 1)
+            unit = float(item.get("unitPrice") or 0.0)
+            subtotal += unit * qty
+            line = {
+                "meal_id": item.get("mealId"),
+                "name": meal.name if meal else item.get("mealId"),
+                "name_say_ar": catalog.speakable_name(meal.name) if meal else "",
+                "quantity": qty,
+                "unit_price_sar": unit,
+                "line_total_sar": round(unit * qty, 2),
+                "line_total_say_ar": catalog.sar_words(unit * qty),
+            }
+            if meal:
+                line["calories"] = meal.calories
+                line["calories_say_ar"] = catalog.number_to_arabic_words(meal.calories)
+                line["protein_g"] = meal.protein
+                line["protein_say_ar"] = catalog.number_to_arabic_words(meal.protein)
+                line["carbs_g"] = meal.carbs
+                line["fat_g"] = meal.fat
+            lines.append(line)
+
+        result["items"] = lines
+        result["item_count"] = sum(line["quantity"] for line in lines)
+        result["subtotal_sar"] = round(subtotal, 2)
+        result["subtotal_say_ar"] = catalog.sar_words(subtotal)
+        result["is_empty"] = not lines
+        result["cart_speech_rule_ar"] = (
+            "انطقي subtotal_say_ar حرف بحرف. هذا مجموع السلة الحقيقي "
+            "على الشاشة. ممنوع تقولين رقم من ذاكرتك."
+        )
+        result.update(catalog.cart_nutrition(lines))
+        return result
 
     # ─── Misc ────────────────────────────────────────────────────────────────
 
@@ -709,12 +1555,13 @@ server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
+    # Room.sid is an async property in the current SDK; touching it without
+    # await creates an orphan coroutine and a RuntimeWarning on every session.
     logger.info(
-        "LiveKit agent job starting room_name={} room_sid={} job_id={} "
+        "LiveKit agent job starting room_name={} job_id={} "
         "tts_server_url={} tts_model={} tts_voice_default={} "
         "tts_seed={} tts_speed={} sentence_min_len={}",
         getattr(ctx.room, "name", None),
-        getattr(ctx.room, "sid", None),
         getattr(job, "id", None),
         TTS_SERVER_URL,
         TTS_MODEL,
@@ -816,6 +1663,9 @@ async def my_agent(ctx: agents.JobContext):
         expected_voice=profile.expected_voice,
         voice_min_f0=profile.voice_min_f0,
         voice_max_f0=profile.voice_max_f0,
+        # Enforces the tashkeel rules the prompt cannot hold, then respells the
+        # words the voice reads wrong. See catalog.clean_for_speech.
+        text_filter=catalog.clean_for_speech,
     )
 
     voice_vad = silero.VAD.load(
@@ -1014,7 +1864,7 @@ async def my_agent(ctx: agents.JobContext):
 
     # UI control targets the participant that is actually on the call. Without
     # one (the 15s wait above timed out) the bridge reports failure per call
-    # rather than silently no-oping, so لقمة never claims it opened a page.
+    # rather than silently no-oping, so سلمى never claims it opened a page.
     ui_bridge = UIBridge(room=ctx.room, identity=getattr(_part, "identity", None))
     logger.info(
         "UI bridge ready available={} target_identity={}",

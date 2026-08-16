@@ -40,6 +40,8 @@ import re
 import time
 import unicodedata
 
+from typing import Callable
+
 import aiohttp
 try:
     import numpy as np
@@ -108,7 +110,7 @@ STRETCH_SEARCH_MS = 6.0
 # every one. Stripping was then reinstated by request, with the prompt emitting
 # bare Arabic to match.
 #
-# The default is now KEEP, because the لقمة prompt deliberately emits partial
+# The default is now KEEP, because the سلمى prompt deliberately emits partial
 # tashkeel — every letter but the last of each word — so the TTS reads short
 # vowels instead of guessing them. Stripping here would silently undo that whole
 # prompt rule, which is exactly the failure this comment exists to prevent. Set
@@ -148,6 +150,35 @@ def normalize_arabic(text: str, *, strip_tashkeel: bool | None = None) -> str:
         strip_tashkeel = STRIP_TASHKEEL
     pattern = _ALL_REMOVABLE_MARKS if strip_tashkeel else _NON_PHONETIC_MARKS
     return pattern.sub("", unicodedata.normalize("NFC", text))
+
+
+# Chat-template control tokens that leak out of the LLM into the reply text.
+# Observed live: a turn was synthesized as "...طَعْمُه وَاللَّه. <|channel>thought
+# <channel|>", i.e. the voice read the token out loud. They are never speech, so
+# they are removed unconditionally on the way to the TTS.
+_CONTROL_TOKENS = re.compile(r"<\|?[^<>]{0,80}?\|?>")
+# The bare keyword between two tokens is part of the artifact, not speech:
+# "<|channel>thought<channel|>" leaves "thought" behind once the brackets go.
+# Only removed when a control token was actually present, so ordinary English
+# in a translation request is untouched.
+_TEMPLATE_WORDS = re.compile(
+    r"\b(?:thought|analysis|commentary|final|channel|assistant|system)\b",
+    re.IGNORECASE,
+)
+
+
+def strip_control_tokens(text: str) -> str:
+    """Drop chat-template artifacts so the voice never speaks them."""
+    cleaned = _CONTROL_TOKENS.sub(" ", text)
+    # Gemma sometimes emits the bare keyword with no angle brackets (live
+    # failure 2026-08-12: a whole TTS turn was just "thought").
+    cleaned = _TEMPLATE_WORDS.sub(" ", cleaned)
+    # Raw tool-call text leaked as assistant content (call:show_meal{...}).
+    if re.search(r"\bcall\s*:", cleaned, re.IGNORECASE):
+        return ""
+    if re.search(r"<\s*tool_call\b", cleaned, re.IGNORECASE):
+        return ""
+    return " ".join(cleaned.split())
 
 
 def _text_hash(text: str) -> str:
@@ -215,6 +246,142 @@ def _median_f0(audio_bytes: bytes) -> tuple[float | None, float | None, int | No
     if len(f0s) < 4:
         return None, rms, peak
     return float(np.median(f0s)), rms, peak
+
+
+# Trailing breath / ghost-word trim.
+#
+# VoxCPM ends almost every generation with an inhale (the user hears it as
+# "تابونة") after the last real syllable. Holding back the last HOLD_MS of
+# the stream lets us cut that tail on flush without un-emitting audio already
+# sent to LiveKit. A pause-then-speech pattern in that window is treated as a
+# hallucinated extra word and dropped.
+HOLD_TAIL_MS = 480
+BREATH_FRAME_MS = 10
+BREATH_RATIO = 0.15
+POST_PAUSE_MS = 90
+TRAILING_SILENCE_MS = 60
+FADE_MS = 18
+# Quiet tail after real speech (inhale) vs the window just before it.
+DECAY_TAIL_MS = 140
+DECAY_RATIO = 0.45
+DECAY_PEAK_RATIO = 0.28
+
+
+def _pcm16(pcm: bytes) -> "np.ndarray":
+    aligned = (len(pcm) // 2) * 2
+    return np.frombuffer(pcm[:aligned], dtype="<i2")
+
+
+def _pack_pcm(samples: "np.ndarray") -> bytes:
+    if samples.size == 0:
+        return b""
+    return np.clip(samples, -32767, 32767).astype("<i2").tobytes()
+
+
+def trim_trailing_artifacts(pcm: bytes, sample_rate: int = SERVER_SAMPLE_RATE) -> bytes:
+    """Drop end-of-utterance breath and a ghost word after a pause.
+
+    Do not clip a fixed number of milliseconds off every utterance: that ate
+    the last syllable of every reply (the greeting died at «لقمة» / «اليوم»).
+    Keep the last voiced speech, cut a pause-then-burst ghost word, and only
+    drop a tail that is clearly quieter than the speech before it (the inhale).
+    """
+    if np is None or not pcm:
+        return pcm
+    samples = _pcm16(pcm).astype(np.float32)
+    if samples.size < int(sample_rate * 0.08):
+        return pcm
+
+    frame = max(1, int(sample_rate * BREATH_FRAME_MS / 1000))
+    n_frames = len(samples) // frame
+    if n_frames < 4:
+        return pcm
+
+    rms = np.array(
+        [
+            float(np.sqrt(np.mean(samples[i * frame : (i + 1) * frame] ** 2)))
+            for i in range(n_frames)
+        ],
+        dtype=np.float32,
+    )
+    peak = float(rms.max()) if rms.size else 0.0
+    if peak <= 0:
+        return b""
+    voiced = rms >= (BREATH_RATIO * peak)
+
+    last_voiced = int(np.max(np.nonzero(voiced)[0])) if voiced.any() else -1
+    if last_voiced < 0:
+        return b""
+    cut_at = last_voiced
+
+    # If the tail is "speech, pause, speech", the second burst is the ghost
+    # word. Cut at the pause.
+    pause_frames = max(1, int(POST_PAUSE_MS / BREATH_FRAME_MS))
+    window_start = max(0, n_frames - int(HOLD_TAIL_MS / BREATH_FRAME_MS) - 2)
+    silent_run = 0
+    for i in range(last_voiced, window_start - 1, -1):
+        if voiced[i]:
+            if silent_run >= pause_frames:
+                cut_at = i
+                break
+            silent_run = 0
+        else:
+            silent_run += 1
+
+    # Inhale rides on the last 100–150ms at a fraction of speech energy.
+    # Only drop it when it is actually quieter than what came before — a
+    # falling last syllable at full-ish energy must stay.
+    decay_frames = max(2, int(DECAY_TAIL_MS / BREATH_FRAME_MS))
+    if cut_at + 1 >= decay_frames * 2:
+        tail_mean = float(rms[cut_at + 1 - decay_frames : cut_at + 1].mean())
+        prev_mean = float(
+            rms[cut_at + 1 - 2 * decay_frames : cut_at + 1 - decay_frames].mean()
+        )
+        if (
+            prev_mean > 0
+            and tail_mean < DECAY_RATIO * prev_mean
+            and tail_mean < DECAY_PEAK_RATIO * peak
+        ):
+            cut_at = max(0, cut_at - decay_frames)
+
+    end = min(len(samples), (cut_at + 1) * frame)
+    # Also drop trailing frames that are only breath, even without a pause.
+    while end > frame:
+        tail = samples[max(0, end - frame) : end]
+        if float(np.sqrt(np.mean(tail ** 2))) >= BREATH_RATIO * peak:
+            break
+        end -= frame // 2
+
+    out = samples[:end]
+    fade = min(len(out), int(sample_rate * FADE_MS / 1000))
+    if fade > 1:
+        out[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
+    return _pack_pcm(out)
+
+
+class _TailHoldback:
+    """Keep the last HOLD_TAIL_MS unemitted so flush can trim it."""
+
+    def __init__(self, sample_rate: int, hold_ms: int = HOLD_TAIL_MS) -> None:
+        self._hold = int(sample_rate * hold_ms / 1000) * 2
+        self._buf = bytearray()
+
+    def push(self, pcm: bytes) -> bytes:
+        if not pcm:
+            return b""
+        self._buf.extend(pcm)
+        extra = len(self._buf) - self._hold
+        if extra < 2:
+            return b""
+        extra -= extra % 2
+        emit = bytes(self._buf[:extra])
+        del self._buf[:extra]
+        return emit
+
+    def flush(self, sample_rate: int) -> bytes:
+        trimmed = trim_trailing_artifacts(bytes(self._buf), sample_rate)
+        self._buf.clear()
+        return trimmed
 
 
 class _WSOLAStretcher:
@@ -367,6 +534,7 @@ class VoxCPMTTSPlugin(tts.TTS):
         expected_voice: str = "hoda",
         voice_min_f0: float = VOICE_MIN_F0,
         voice_max_f0: float = VOICE_MAX_F0,
+        text_filter: "Callable[[str], str] | None" = None,
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
@@ -431,6 +599,10 @@ class VoxCPMTTSPlugin(tts.TTS):
             )
             self._speed = 1.0
         self._expected_voice = expected_voice
+        # Caller-supplied text transform applied just before synthesis. Kept as
+        # a callable so this plugin stays a TTS plugin: the food vocabulary that
+        # has to reach the voice undiacritized lives in src/catalog.py, not here.
+        self._text_filter = text_filter
         self._voice_min_f0 = float(voice_min_f0)
         self._voice_max_f0 = float(voice_max_f0)
         self._session = http_session
@@ -500,7 +672,42 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = f"voxcpm-{utils.shortuuid()}"
         raw_input = self.input_text
-        sanitized_input = normalize_arabic(raw_input)
+        sanitized_input = strip_control_tokens(normalize_arabic(raw_input))
+        if self._tts._text_filter is not None:
+            try:
+                sanitized_input = self._tts._text_filter(sanitized_input)
+            except Exception as e:  # noqa: BLE001 - never lose a turn over this
+                logger.warning("TTS text filter failed, using unfiltered text: {}", e)
+
+        # A turn that sanitizes down to nothing must end here, not at the
+        # server. Live failure: the model emitted "<|channel>thought <channel|>"
+        # and nothing else; stripping the control tokens left "", the server
+        # answered 400 "Input text cannot be empty", and because that status is
+        # not retryable it surfaced as an unrecoverable session error — سلمى
+        # went silent for the rest of the call. There is no audio for empty
+        # text, so emitting an empty segment is the whole correct behaviour.
+        if not sanitized_input.strip():
+            logger.warning(
+                "VoxCPM TTS skipped empty input request_id={} raw_chars={} "
+                "raw_preview={!r}",
+                request_id,
+                len(raw_input),
+                _preview(raw_input),
+            )
+            output_emitter.initialize(
+                request_id=request_id,
+                sample_rate=SERVER_SAMPLE_RATE,
+                num_channels=1,
+                mime_type="audio/pcm",
+            )
+            # LiveKit treats "no frames pushed" as a hard TTS error and can
+            # kill the turn — which is how a leaked call:show_meal text
+            # silenced the pizza recommendation. A few ms of silence is fine.
+            silence = b"\x00\x00" * int(SERVER_SAMPLE_RATE * 0.04)
+            output_emitter.push(silence)
+            output_emitter.flush()
+            return
+
         payload = {
             "model": self._tts._model,
             "input": sanitized_input,
@@ -536,6 +743,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             if speed != 1.0
             else None
         )
+        holdback = _TailHoldback(SERVER_SAMPLE_RATE)
 
         expected_voice = self._tts._expected_voice
         if (
@@ -553,7 +761,8 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         logger.info(
             "VoxCPM TTS request start request_id={} endpoint={} model={} voice={} "
             "raw_chars={} sanitized_chars={} removed_marks={} text_sha256={} "
-            "preview={!r} stream={} response_format={} stream_format={} "
+            "raw_preview={!r} sanitized_preview={!r} changed={} "
+            "stream={} response_format={} stream_format={} "
             "language={} ref_audio={} ref_text_chars={} seed={} speed={} "
             "diagnostic_f0_min={} diagnostic_f0_max={} timeout={}",
             request_id,
@@ -564,7 +773,9 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             len(sanitized_input),
             len(raw_input) - len(sanitized_input),
             _text_hash(sanitized_input),
+            _preview(raw_input),
             _preview(sanitized_input),
+            raw_input != sanitized_input,
             payload["stream"],
             payload["response_format"],
             payload["stream_format"],
@@ -652,31 +863,34 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                     if len(analysis_audio) < analysis_limit:
                         needed = analysis_limit - len(analysis_audio)
                         analysis_audio.extend(aligned_chunk[:needed])
-                    if chunks == 1 or chunks % 25 == 0:
-                        logger.info(
-                            "VoxCPM TTS stream progress request_id={} chunks={} bytes={} "
-                            "audio_seconds={:.3f} elapsed={:.3f}s remainder_bytes={}",
-                            request_id,
-                            chunks,
-                            bytes_received,
-                            bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
-                            time.perf_counter() - started_at,
-                            len(remainder),
-                        )
-                    emitted = (
+                    stretched = (
                         stretcher.push(aligned_chunk)
                         if stretcher is not None
                         else aligned_chunk
                     )
+                    emitted = holdback.push(stretched)
                     if emitted:
                         bytes_pushed += len(emitted)
                         output_emitter.push(emitted)
 
             if stretcher is not None:
-                emitted = stretcher.flush()
-                if emitted:
-                    bytes_pushed += len(emitted)
-                    output_emitter.push(emitted)
+                leftover = stretcher.flush()
+                if leftover:
+                    extra = holdback.push(leftover)
+                    if extra:
+                        bytes_pushed += len(extra)
+                        output_emitter.push(extra)
+
+            tail = holdback.flush(SERVER_SAMPLE_RATE)
+            if tail:
+                bytes_pushed += len(tail)
+                output_emitter.push(tail)
+
+            # Short closed silence after the fade, not a long hang that sounds
+            # like another inhale.
+            trailing = b"\x00\x00" * int(SERVER_SAMPLE_RATE * TRAILING_SILENCE_MS / 1000)
+            bytes_pushed += len(trailing)
+            output_emitter.push(trailing)
 
             output_emitter.flush()
             elapsed = time.perf_counter() - started_at

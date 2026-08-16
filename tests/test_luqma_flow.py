@@ -1,6 +1,6 @@
 """End-to-end harness: real prompt, real tools, real LLM, stubbed browser.
 
-Runs لقمة through scripted conversations in text. The voice pipeline is the
+Runs سلمى through scripted conversations in text. The voice pipeline is the
 slow, flaky part of this agent and it is not what changes when the catalog or
 the prompt changes — so the loop worth having is this one: it exercises the
 exact tool schemas the model will see, the exact search code, and the exact
@@ -103,6 +103,37 @@ class FakeUI:
             return UIResult(ok=True, data={"saved": want, "savedCount": len(self.saved)})
         if method == "luqma.getCart":
             return UIResult(ok=True, data={"items": self.cart, "count": len(self.cart)})
+        if method == "luqma.getUiState":
+            page = "home"
+            if self.current_path.startswith("/meals/"):
+                page = "meal"
+            elif self.current_path.startswith("/restaurants/") and self.current_path != "/restaurants":
+                page = "restaurant"
+            elif self.current_path == "/checkout":
+                page = "checkout"
+            elif self.current_path == "/cart":
+                page = "cart"
+            return UIResult(
+                ok=True,
+                data={
+                    "path": self.current_path,
+                    "page": page,
+                    "mealId": None,
+                    "restaurantId": None,
+                    "titleAr": page,
+                },
+            )
+        if method == "luqma.fillCheckout":
+            return UIResult(ok=True, data={"fields": payload})
+        if method == "luqma.completeOrder":
+            if not self.cart:
+                return UIResult(ok=False, reason="empty_cart")
+            self.current_path = "/order-success?id=ord-test"
+            self.cart = []
+            return UIResult(
+                ok=True,
+                data={"orderId": "ord-test", "total": 40, "path": self.current_path},
+            )
         return UIResult(ok=False, reason="frontend_handler_missing")
 
     async def navigate(self, path: str) -> UIResult:
@@ -132,6 +163,25 @@ class FakeUI:
 
     async def get_cart(self) -> UIResult:
         return await self.call("luqma.getCart", {})
+
+    async def get_ui_state(self) -> UIResult:
+        return await self.call("luqma.getUiState", {})
+
+    async def fill_checkout(self, *, name=None, phone=None, address=None) -> UIResult:
+        payload = {}
+        if name is not None:
+            payload["name"] = name
+        if phone is not None:
+            payload["phone"] = phone
+        if address is not None:
+            payload["address"] = address
+        return await self.call("luqma.fillCheckout", payload)
+
+    async def complete_order(self, *, name, phone, address) -> UIResult:
+        return await self.call(
+            "luqma.completeOrder",
+            {"name": name, "phone": phone, "address": address},
+        )
 
 
 class BrokenUI(FakeUI):
@@ -213,7 +263,7 @@ async def run_conversation(title: str, turns: list[str], *, prefs: str | None, u
                     )
 
             reply = (msg.get("content") or "").strip()
-            print(f"لقمة  : {reply}")
+            print(f"سلمى  : {reply}")
             w, m, v = audit_tashkeel(reply)
             stats["words"] += w
             stats["marked"] += m

@@ -113,7 +113,7 @@ def voice_profile(
         )
     return VoiceProfile(
         key="female",
-        display_name_ar="لقمة",
+        display_name_ar="سلمى",
         tts_voice=female_tts_voice,
         ref_audio=None,
         ref_text=None,

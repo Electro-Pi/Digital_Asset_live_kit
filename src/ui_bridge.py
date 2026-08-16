@@ -8,7 +8,7 @@ polling. See FRONTEND_INTEGRATION.md for the handler side.
 
 RPC rather than ``publish_data`` specifically because it **returns a value**. A
 fire-and-forget data message leaves the agent unable to distinguish "the user is
-now looking at the meal page" from "nothing happened", and لقمة is under
+now looking at the meal page" from "nothing happened", and سلمى is under
 instruction never to claim an action it did not perform. Here a failure comes
 back as a failure, and the tool tells the model to say so.
 
@@ -34,15 +34,33 @@ METHOD_SHOW_MEAL = "luqma.showMeal"
 METHOD_SET_MEAL_OPTIONS = "luqma.setMealOptions"
 METHOD_SET_SAVED = "luqma.setSaved"
 METHOD_ADD_TO_CART = "luqma.addToCart"
+METHOD_SET_CART_QUANTITY = "luqma.setCartQuantity"
 METHOD_GET_CART = "luqma.getCart"
+METHOD_GET_UI_STATE = "luqma.getUiState"
+METHOD_FILL_CHECKOUT = "luqma.fillCheckout"
+METHOD_COMPLETE_ORDER = "luqma.completeOrder"
 
 # Bump when a payload shape changes incompatibly; the frontend echoes it back so
 # a version skew shows up in logs instead of as silently ignored fields.
 PROTOCOL_VERSION = 1
 
-# Short on purpose. This blocks a live conversation: لقمة is mid-sentence while
-# it runs, so a slow answer is worse than a failed one.
-DEFAULT_RPC_TIMEOUT = 5.0
+# Short on purpose. This blocks a live conversation: سلمى is mid-sentence while
+# it runs, so a slow answer is worse than a failed one. One quick retry after a
+# timeout (browsers throttle hidden tabs; the second attempt usually lands)
+# keeps the worst case at ~7s instead of a single longer wait.
+DEFAULT_RPC_TIMEOUT = 4.0
+RETRY_RPC_TIMEOUT = 3.0
+
+# RPC error codes that describe a transient transport problem rather than the
+# frontend refusing the call. Worth one retry against a re-resolved target.
+_TRANSIENT_RPC_CODES = frozenset(
+    {
+        RpcError.ErrorCode.CONNECTION_TIMEOUT,
+        RpcError.ErrorCode.RESPONSE_TIMEOUT,
+        RpcError.ErrorCode.RECIPIENT_DISCONNECTED,
+        RpcError.ErrorCode.RECIPIENT_NOT_FOUND,
+    }
+)
 
 
 @dataclass
@@ -83,60 +101,120 @@ class UIBridge:
         self._room = room
         self._identity = identity
         self._timeout = timeout
-        # Latched after the first UNSUPPORTED_METHOD: if the frontend has not
-        # shipped the handlers, every later call would burn a round trip to
-        # rediscover that, mid-conversation.
-        self._unsupported: set[str] = set()
+        # Do NOT permanently latch UNSUPPORTED_METHOD. A production frontend can
+        # be rebuilt mid-day while the voice session stays up; latching made
+        # getUiState/fillCheckout dead for the whole call after one miss.
 
     @property
     def available(self) -> bool:
-        return bool(self._room and self._identity)
+        return bool(self._room and self._resolve_identity())
+
+    def _resolve_identity(self) -> Optional[str]:
+        """Pick the browser participant to call, right now.
+
+        The identity captured at session start goes stale the moment the user
+        reloads the page: the tab rejoins the room under a new identity, and
+        every RPC to the old one dies with CONNECTION_TIMEOUT (observed live —
+        showMeal/navigate failing mid-session while the user was right there).
+        So the stored identity is only a preference; whoever is actually in
+        the room wins.
+        """
+        if self._room is None:
+            return None
+        remotes = list(self._room.remote_participants.values())
+        for participant in remotes:
+            if participant.identity == self._identity:
+                return self._identity
+        # Stored identity is gone. Prefer a participant that pushes luqma_
+        # attributes (that is the Luqmah tab by definition), else any remote.
+        fallback: Optional[str] = None
+        for participant in remotes:
+            attrs = getattr(participant, "attributes", None) or {}
+            if any(str(k).startswith("luqma_") for k in dict(attrs)):
+                return participant.identity
+            if fallback is None:
+                fallback = participant.identity
+        return fallback
+
+    def page_attributes(self) -> dict[str, str]:
+        """Page snapshot the browser pushes onto the participant attributes."""
+        identity = self._resolve_identity()
+        if not identity or self._room is None:
+            return {}
+        for participant in self._room.remote_participants.values():
+            if participant.identity == identity:
+                attrs = getattr(participant, "attributes", None) or {}
+                return {str(k): str(v) for k, v in dict(attrs).items() if str(k).startswith("luqma_")}
+        return {}
 
     async def call(self, method: str, payload: dict[str, Any]) -> UIResult:
-        if not self.available:
+        identity = self._resolve_identity()
+        if not identity or self._room is None:
             logger.warning(
                 "UI call skipped, no participant to send to method={} payload={}",
                 method,
                 payload,
             )
             return UIResult(ok=False, reason="no_ui_participant")
-
-        if method in self._unsupported:
-            return UIResult(ok=False, reason="frontend_handler_missing")
+        if identity != self._identity:
+            logger.info(
+                "UI call retargeted from stale identity {} to {}",
+                self._identity, identity,
+            )
+            self._identity = identity
 
         body = dict(payload)
         body["v"] = PROTOCOL_VERSION
+        encoded = json.dumps(body, ensure_ascii=False)
 
-        try:
-            raw = await self._room.local_participant.perform_rpc(
-                destination_identity=self._identity,
-                method=method,
-                payload=json.dumps(body, ensure_ascii=False),
-                response_timeout=self._timeout,
-            )
-        except RpcError as e:
-            if e.code == RpcError.ErrorCode.UNSUPPORTED_METHOD:
-                self._unsupported.add(method)
-                logger.error(
-                    "UI method {} is not registered by the frontend. See "
-                    "FRONTEND_INTEGRATION.md — the agent will keep working but "
-                    "cannot drive the UI.",
-                    method,
+        last_error: Optional[RpcError] = None
+        for attempt, timeout in enumerate((self._timeout, RETRY_RPC_TIMEOUT)):
+            if attempt:
+                # The target may have changed while the first attempt hung
+                # (e.g. the tab finished reloading under a new identity).
+                identity = self._resolve_identity()
+                if not identity:
+                    break
+                self._identity = identity
+                logger.info(
+                    "UI call retrying method={} identity={} timeout={}s",
+                    method, identity, timeout,
                 )
-                return UIResult(ok=False, reason="frontend_handler_missing")
-            logger.warning(
-                "UI call failed method={} code={} message={}", method, e.code, e.message
-            )
-            return UIResult(ok=False, reason=f"rpc_error_{e.code}")
-        except Exception as e:  # noqa: BLE001 - a UI failure must not end the call
-            logger.exception("UI call raised method={} error={}", method, e)
-            return UIResult(ok=False, reason="rpc_exception")
+            try:
+                raw = await self._room.local_participant.perform_rpc(
+                    destination_identity=identity,
+                    method=method,
+                    payload=encoded,
+                    response_timeout=timeout,
+                )
+            except RpcError as e:
+                if e.code == RpcError.ErrorCode.UNSUPPORTED_METHOD:
+                    logger.error(
+                        "UI method {} is not registered by the frontend (user may "
+                        "need a hard refresh after deploy). See FRONTEND_INTEGRATION.md.",
+                        method,
+                    )
+                    return UIResult(ok=False, reason="frontend_handler_missing")
+                logger.warning(
+                    "UI call failed method={} code={} message={} attempt={}",
+                    method, e.code, e.message, attempt + 1,
+                )
+                last_error = e
+                if e.code in _TRANSIENT_RPC_CODES:
+                    continue
+                return UIResult(ok=False, reason=f"rpc_error_{e.code}")
+            except Exception as e:  # noqa: BLE001 - a UI failure must not end the call
+                logger.exception("UI call raised method={} error={}", method, e)
+                return UIResult(ok=False, reason="rpc_exception")
 
-        data = _parse_response(method, raw)
-        if data.get("ok") is False:
-            return UIResult(ok=False, reason=str(data.get("error") or "frontend_declined"), data=data)
-        logger.info("UI call ok method={} response={}", method, raw[:300])
-        return UIResult(ok=True, data=data)
+            data = _parse_response(method, raw)
+            if data.get("ok") is False:
+                return UIResult(ok=False, reason=str(data.get("error") or "frontend_declined"), data=data)
+            logger.info("UI call ok method={} response={}", method, raw[:300])
+            return UIResult(ok=True, data=data)
+
+        code = last_error.code if last_error else "unknown"
+        return UIResult(ok=False, reason=f"rpc_error_{code}")
 
     async def navigate(self, path: str) -> UIResult:
         return await self.call(METHOD_NAVIGATE, {"path": path})
@@ -157,7 +235,7 @@ class UIBridge:
         """Tick the addon/spicy/quantity controls on the open meal page.
 
         Deliberately separate from ``add_to_cart``: this only moves the UI, so
-        the user watches the additions appear while لقمة is still asking about
+        the user watches the additions appear while سلمى is still asking about
         them. Nothing is committed to the cart here.
         """
         return await self.call(
@@ -188,6 +266,31 @@ class UIBridge:
             },
         )
 
+    async def set_cart_quantity(
+        self,
+        *,
+        meal_id: str,
+        quantity: int,
+        spicy: bool = False,
+        addon_ids: Optional[list[str]] = None,
+        line_id: str = "",
+    ) -> UIResult:
+        """Set absolute quantity on a cart line. 0 removes the line.
+
+        Distinct from ``add_to_cart``, which *adds* to any existing quantity.
+        Live failure: "اعمل اثنين" called add_to_cart(qty=2) on a line that
+        already had 1 → cart became 3 (231 SAR) while she said 154.
+        """
+        payload: dict[str, Any] = {
+            "mealId": meal_id,
+            "quantity": quantity,
+            "spicy": spicy,
+            "addonIds": addon_ids or [],
+        }
+        if line_id:
+            payload["lineId"] = line_id
+        return await self.call(METHOD_SET_CART_QUANTITY, payload)
+
     async def set_saved(self, *, meal_id: str, saved: bool = True) -> UIResult:
         """Set a meal's saved state — deliberately absolute, never a toggle.
 
@@ -200,6 +303,40 @@ class UIBridge:
 
     async def get_cart(self) -> UIResult:
         return await self.call(METHOD_GET_CART, {})
+
+    async def get_ui_state(self) -> UIResult:
+        """Ask the browser which page the user is looking at right now."""
+        return await self.call(METHOD_GET_UI_STATE, {})
+
+    async def fill_checkout(
+        self,
+        *,
+        name: Optional[str] = None,
+        phone: Optional[str] = None,
+        address: Optional[str] = None,
+    ) -> UIResult:
+        """Fill fields on the open checkout form (page must be mounted)."""
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if phone is not None:
+            payload["phone"] = phone
+        if address is not None:
+            payload["address"] = address
+        return await self.call(METHOD_FILL_CHECKOUT, payload)
+
+    async def complete_order(
+        self,
+        *,
+        name: str,
+        phone: str,
+        address: str,
+    ) -> UIResult:
+        """Place the order from the live cart and open the success page."""
+        return await self.call(
+            METHOD_COMPLETE_ORDER,
+            {"name": name, "phone": phone, "address": address},
+        )
 
 
 def _parse_response(method: str, raw: str) -> dict[str, Any]:
