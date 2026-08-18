@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import uuid
@@ -19,17 +20,23 @@ from livekit.agents import (
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from loguru import logger
 
-from src.utils.speech_format import format_for_speech, split_for_tts_synthesis
+from src.utils.speech_format import split_for_tts_synthesis
+from src.utils.tts_normalize import normalize_for_tts
 
 _FRAME_MS = 20
 _BYTES_PER_SAMPLE = 2
 _CHUNK_GAP_MS = 60
+_CHUNK_REQUEST_GAP_S = float(os.getenv("TTS_CHUNK_REQUEST_GAP_S", "0.35"))
 _INITIAL_TRIM_MS = int(os.getenv("OMNIVOICE_INITIAL_TRIM_MS", "260"))
 _INITIAL_FADE_MS = int(os.getenv("OMNIVOICE_INITIAL_FADE_MS", "35"))
-
-
-def sanitize_text(text: str) -> str:
-    return format_for_speech(text)
+_OOM_RETRIES = int(os.getenv("TTS_OOM_RETRIES", "2"))
+_OOM_RETRY_WAIT_S = float(os.getenv("TTS_OOM_RETRY_WAIT_S", "1.5"))
+_OOM_FALLBACK = os.getenv(
+    "TTS_OOM_FALLBACK",
+    "عذرا، الخدمة الصوتية مشغولة الحين، ممكن تعيد السؤال؟",
+)
+# Serialize Moss requests so concurrent jobs don't pile onto an already-full GPU.
+_tts_lock = asyncio.Lock()
 
 
 def _push_aligned(buf: bytearray, data: bytes, emitter: tts.AudioEmitter, frame_bytes: int) -> bytearray:
@@ -156,19 +163,72 @@ class _Stream(tts.ChunkedStream):
             "response_format": self._impl._response_format,
             **self._impl._extra_body,
         }
-        resp = await client.post(url, json=body)
-        if resp.status_code != 200:
-            raise APIStatusError(
-                f"OmniVoice returned {resp.status_code}: {resp.text}",
+
+        last_error: APIStatusError | None = None
+        for attempt in range(_OOM_RETRIES + 1):
+            resp = await client.post(url, json=body, headers=self._impl._headers)
+            if resp.status_code == 200:
+                return _audio_to_pcm(resp.content)
+
+            err = APIStatusError(
+                f"TTS returned {resp.status_code}: {resp.text}",
                 status_code=resp.status_code,
                 request_id=request_id,
                 body=resp.content,
             )
-        return _audio_to_pcm(resp.content)
+            last_error = err
+            is_oom = resp.status_code == 500 and "out of memory" in (resp.text or "").lower()
+            if is_oom and attempt < _OOM_RETRIES:
+                wait = _OOM_RETRY_WAIT_S * (attempt + 1)
+                logger.warning(
+                    f"TTS CUDA OOM on chunk ({len(chunk)} chars); waiting {wait:.1f}s "
+                    f"(attempt {attempt + 1}/{_OOM_RETRIES})"
+                )
+                await asyncio.sleep(wait)
+                continue
+            raise err
+
+        assert last_error is not None
+        raise last_error
+
+    async def _emit_chunks(
+        self,
+        client: httpx.AsyncClient,
+        chunks: list[str],
+        rid: str,
+        output_emitter: tts.AudioEmitter,
+        target_sr: int,
+        frame_bytes: int,
+    ) -> float:
+        total_duration = 0.0
+        for idx, chunk in enumerate(chunks):
+            if idx > 0 and _CHUNK_REQUEST_GAP_S > 0:
+                await asyncio.sleep(_CHUNK_REQUEST_GAP_S)
+
+            pcm, src_sr = await self._synthesize_chunk(client, chunk, rid)
+            pcm = _resample_pcm(pcm, src_sr, target_sr)
+
+            if idx == 0:
+                pcm = _trim_leading_pcm(pcm, target_sr)
+                pcm = _drop_initial_artifact(pcm, target_sr)
+            else:
+                pcm = _trim_leading_pcm(pcm, target_sr, threshold=350)
+
+            if idx < len(chunks) - 1:
+                pcm = _trim_trailing_pcm(pcm, target_sr)
+                pcm += _silence_bytes(_CHUNK_GAP_MS, target_sr)
+
+            chunk_duration = _emit_pcm(pcm, target_sr, output_emitter, frame_bytes)
+            total_duration += chunk_duration
+            logger.debug(
+                f"Moss TTS chunk {idx + 1}/{len(chunks)}: "
+                f"{len(chunk)} chars -> {chunk_duration:.1f}s (src {src_sr}Hz)"
+            )
+        return total_duration
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
-        rid = f"omnivoice-{uuid.uuid4().hex[:12]}"
-        text = sanitize_text(self.input_text)
+        rid = f"moss-tts-{uuid.uuid4().hex[:12]}"
+        text = await normalize_for_tts(self.input_text)
         if not text:
             output_emitter.flush()
             return
@@ -176,43 +236,49 @@ class _Stream(tts.ChunkedStream):
         chunks = split_for_tts_synthesis(text)
         target_sr = self._impl.sample_rate
         frame_bytes = int(target_sr * _FRAME_MS / 1000) * _BYTES_PER_SAMPLE
-        logger.info(f"OmniVoice TTS: {len(text)} chars -> {len(chunks)} chunk(s) @ {target_sr}Hz")
+        logger.info(f"Moss TTS: {len(text)} chars -> {len(chunks)} chunk(s) @ {target_sr}Hz")
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
-                output_emitter.initialize(
-                    request_id=rid,
-                    sample_rate=target_sr,
-                    num_channels=1,
-                    mime_type="audio/pcm",
-                )
-
-                total_duration = 0.0
-                for idx, chunk in enumerate(chunks):
-                    pcm, src_sr = await self._synthesize_chunk(client, chunk, rid)
-                    pcm = _resample_pcm(pcm, src_sr, target_sr)
-
-                    if idx == 0:
-                        pcm = _trim_leading_pcm(pcm, target_sr)
-                        pcm = _drop_initial_artifact(pcm, target_sr)
-                    else:
-                        pcm = _trim_leading_pcm(pcm, target_sr, threshold=350)
-
-                    if idx < len(chunks) - 1:
-                        pcm = _trim_trailing_pcm(pcm, target_sr)
-                        pcm += _silence_bytes(_CHUNK_GAP_MS, target_sr)
-
-                    chunk_duration = _emit_pcm(pcm, target_sr, output_emitter, frame_bytes)
-                    total_duration += chunk_duration
-                    logger.debug(
-                        f"OmniVoice chunk {idx + 1}/{len(chunks)}: "
-                        f"{len(chunk)} chars -> {chunk_duration:.1f}s (src {src_sr}Hz)"
+            async with _tts_lock:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+                    output_emitter.initialize(
+                        request_id=rid,
+                        sample_rate=target_sr,
+                        num_channels=1,
+                        mime_type="audio/pcm",
                     )
 
-                logger.info(
-                    f"OmniVoice TTS done: {total_duration:.1f}s audio from {len(chunks)} chunk(s)"
-                )
-                output_emitter.flush()
+                    try:
+                        total_duration = await self._emit_chunks(
+                            client, chunks, rid, output_emitter, target_sr, frame_bytes
+                        )
+                    except APIStatusError as err:
+                        is_oom = (
+                            err.status_code == 500
+                            and "out of memory" in (str(err) or "").lower()
+                        )
+                        if not is_oom or not _OOM_FALLBACK:
+                            raise
+                        # Don't hammer LiveKit retries with the full long text again.
+                        logger.error(
+                            "Moss TTS CUDA OOM after retries — speaking short fallback."
+                        )
+                        await asyncio.sleep(_OOM_RETRY_WAIT_S)
+                        fallback_chunks = split_for_tts_synthesis(_OOM_FALLBACK)
+                        total_duration = await self._emit_chunks(
+                            client,
+                            fallback_chunks,
+                            rid,
+                            output_emitter,
+                            target_sr,
+                            frame_bytes,
+                        )
+
+                    logger.info(
+                        f"Moss TTS done: {total_duration:.1f}s audio from "
+                        f"{len(chunks)} chunk(s)"
+                    )
+                    output_emitter.flush()
 
         except httpx.TimeoutException:
             raise APITimeoutError() from None
@@ -245,6 +311,15 @@ class OpenAITTSWithSpeechExtraBody(tts.TTS):
         self._voice = voice
         self._response_format = str(response_format).lower()
         self._extra_body = dict(speech_extra_body) if speech_extra_body else {}
+        self._api_key = api_key or "no-key-needed"
+        self._headers = {"Authorization": f"Bearer {self._api_key}"}
 
     def synthesize(self, text: str, *, conn_options=DEFAULT_API_CONNECT_OPTIONS) -> tts.ChunkedStream:
+        # Keep LiveKit retries low — Moss OOM won't clear by replaying the same long text.
+        if conn_options.max_retry > 1:
+            conn_options = APIConnectOptions(
+                max_retry=1,
+                retry_interval=conn_options.retry_interval,
+                timeout=max(conn_options.timeout, 60.0),
+            )
         return _Stream(tts_impl=self, input_text=text, conn_options=conn_options)
