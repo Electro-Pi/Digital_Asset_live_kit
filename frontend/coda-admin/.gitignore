@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+
+# Secrets must never be committed.
+.env
+.env.local
+.env.*.local
+!.env.example
