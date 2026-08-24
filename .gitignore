@@ -206,3 +206,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ── Un-ignore the admin dashboard's TypeScript lib ──────────────────────────
+# `lib/` near the top of this file comes from the Python .gitignore template
+# (it sits beside lib64/, parts/, sdist/ and is meant for a virtualenv). It has
+# no leading slash, so git applies it at EVERY depth — including
+# frontend/coda-admin/src/lib/.
+#
+# That is why that directory was absent from every branch: nine modules the
+# whole dashboard imports, silently untracked. `next build` failed on a missing
+# ./src/lib/base-path and it looked like someone had forgotten to commit them.
+#
+# The directory itself has to be un-ignored, not just the files: git will not
+# re-include a path whose parent directory is excluded.
+!frontend/coda-admin/src/lib/

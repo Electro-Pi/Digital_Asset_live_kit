@@ -1,3 +1,14 @@
+# SUPERSEDED — not installed on this host.
+#
+# This unit belongs to the older /home/ai2 layout. digital-asset-agent is the
+# same LiveKit worker as coda-agent.service; running both registers two workers
+# against one project and jobs get dealt to whichever answers first.
+# digital-asset-frontend expects frontend/server.mjs, which this checkout does
+# not contain — the frontend is now the Next.js app in
+# frontend/coda-frontend/coda-next (coda-next-frontend.service).
+#
+# Kept for reference only. Use coda-agent.service and coda-next-frontend.service.
+
 [Unit]
 Description=Digital Asset LiveKit voice agent
 After=network-online.target

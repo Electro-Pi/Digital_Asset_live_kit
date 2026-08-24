@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=coda-admin
 Group=coda-admin
-WorkingDirectory=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-admin
+WorkingDirectory=/home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-admin
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
 Environment=PORT=8092
@@ -22,12 +22,20 @@ UMask=0077
 
 # The service needs network access and read access to its production build, but
 # it never needs root privileges or access to other users' home directories.
+#
+# The checkout lives under /home/bassem (mode 0750), which this account cannot
+# traverse by default. Deployment grants it the minimum with setfacl:
+#   setfacl -m u:coda-admin:--x /home/bassem /home/bassem/Coda
+#   setfacl -m u:coda-admin:--x <repo> <repo>/frontend
+#   setfacl -R -m u:coda-admin:rX <repo>/frontend/coda-admin
+# Re-run the recursive one after any rebuild: `next build` writes new files
+# that inherit no ACL, and the service then 500s on missing chunks.
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-admin/.next/cache
+ReadWritePaths=/home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-admin/.next/cache
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

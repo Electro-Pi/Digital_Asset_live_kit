@@ -14,17 +14,19 @@ Audio is 48 kHz, 16-bit, **mono** — the same format the previous MOSS server
 emitted, so the rest of the pipeline is unchanged. Unlike MOSS, VoxCPM2 is mono
 on *both* paths: its non-streaming ``wav`` is mono too, not stereo.
 
-Voices live server-side; ``GET /v1/audio/voices`` currently lists ``default``
-and ``hoda``. ``hoda`` is the precomputed production female voice (measured
-median F0 186 Hz). Per-request cloning still works by sending ``voice=default``
-plus ``ref_audio``/``ref_text``, which is how the male speaker is produced from
-``ref-audio/male.wav`` (measured median F0 115 Hz).
+Voices live server-side; ``GET /v1/audio/voices`` currently lists ``default``,
+``hoda``, ``nawaf`` and ``nouf``. The two production speakers are ``nouf``
+(female / نوف, measured median F0 215 Hz) and ``nawaf`` (male / نواف, measured
+median F0 114 Hz) — both precomputed, so neither needs a reference. Per-request
+cloning is still available by sending ``voice=default`` plus
+``ref_audio``/``ref_text``, but it costs ~45s to first audio against ~0.3s for a
+named voice, so it is an escape hatch and not the live path.
 
 Unknown fields are accepted and ignored rather than rejected, so a stale voice
 name is the only loud failure: an unregistered ``voice`` returns 400 and an
 unknown ``model`` returns 404. That is worth relying on — it means a
 misconfigured voice fails visibly instead of silently falling back to the
-male ``default`` speaker.
+``default`` speaker.
 
 Note this server does NOT take the MOSS/sglang-omni sampling knobs
 (``text_temperature``, ``audio_temperature``, ``audio_top_p``, …). They are not
@@ -52,16 +54,17 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
 SERVER_SAMPLE_RATE = 48000  # raw pcm output rate of the server
 SERVER_CHANNELS = 1  # VoxCPM2 is mono on both the stream and wav paths
-# Expected pitch band for the production `hoda` voice — logged, not gated.
+# Default (female) pitch band — logged, not gated. A male session overrides it
+# with the male band; see voice_profile.py.
 #
-# The point of this check is catching a drift to the male speaker: this server's
-# `default` voice measures ~115Hz, versus ~186Hz for `hoda`.
+# The point of this check is catching a drift to a different speaker: the male
+# voices measure ~115Hz, versus ~215Hz for `nouf`.
 #
 # Both bounds are loose because F0 is estimated from only the first
 # F0_ANALYSIS_SECONDS of the stream, and that onset window is a poor proxy for
-# the utterance — a full-utterance measurement of `hoda` spans 154-289Hz at the
-# 10th/90th percentile around its 186Hz median. Tighter bounds fire on ordinary
-# turns and train you to ignore the log.
+# the utterance — a full-utterance measurement of the female voice spans
+# 154-289Hz at the 10th/90th percentile around its median. Tighter bounds fire
+# on ordinary turns and train you to ignore the log.
 VOICE_MIN_F0 = 135.0
 VOICE_MAX_F0 = 340.0
 F0_ANALYSIS_SECONDS = 1.5
@@ -80,8 +83,9 @@ F0_ANALYSIS_SECONDS = 1.5
 MIN_SPEED = 0.5
 MAX_SPEED = 2.0
 STRETCH_FRAME_MS = 30.0
-# Half a pitch period is the minimum useful search range; at the ~186Hz of
-# hoda that is 2.7ms, and 6ms covers voices down to ~85Hz.
+# Half a pitch period is the minimum useful search range; at the ~215Hz of
+# nouf that is 2.3ms, and 6ms covers voices down to ~85Hz — nawaf's ~114Hz
+# included.
 STRETCH_SEARCH_MS = 6.0
 
 # Text normalization before synthesis.
@@ -359,12 +363,12 @@ class VoxCPMTTSPlugin(tts.TTS):
         *,
         server_url: str = "http://localhost:16326",
         model: str = "VoxCPM2",
-        voice: str = "hoda",
+        voice: str = "nouf",
         ref_audio: str | None = None,
         ref_text: str | None = None,
         seed: int | None = None,
         speed: float = 1.0,
-        expected_voice: str = "hoda",
+        expected_voice: str = "nouf",
         voice_min_f0: float = VOICE_MIN_F0,
         voice_max_f0: float = VOICE_MAX_F0,
         http_session: aiohttp.ClientSession | None = None,
@@ -374,9 +378,10 @@ class VoxCPMTTSPlugin(tts.TTS):
             server_url: VoxCPM2 server base URL, WITHOUT the /v1 suffix — the
                 endpoint path is appended here.
             model: model id served (see GET /v1/models); an unknown id is a 404.
-            voice: server-side voice name (see GET /v1/audio/voices). Currently
-                "hoda" (precomputed female) or "default" (male). An unregistered
-                name is a 400, so this fails loudly rather than falling back.
+            voice: server-side voice name (see GET /v1/audio/voices). The
+                production speakers are "nouf" (female) and "nawaf" (male), both
+                precomputed. An unregistered name is a 400, so this fails loudly
+                rather than falling back.
             expected_voice: the voice this deployment is supposed to use. Any
                 other value is logged as a warning, since a silently swapped
                 voice is the most common cause of "the agent sounds wrong".
@@ -392,7 +397,7 @@ class VoxCPMTTSPlugin(tts.TTS):
                 deliberately not the server's `speed`, which resamples and so
                 changes the speaker. 1.0 disables the stretch entirely.
             voice_min_f0 / voice_max_f0: diagnostic pitch band for this speaker
-                (female hoda ≈ 135-340 Hz, male clone ≈ 70-180 Hz).
+                (female nouf ≈ 135-340 Hz, male nawaf ≈ 70-180 Hz).
         """
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),

@@ -63,7 +63,9 @@ class SupabaseBilling:
             logger.warning("live_remaining failed user={} err={}", user_id, exc)
             return None
 
-    async def consume_live_seconds(self, user_id: str, seconds: int) -> Optional[int]:
+    async def consume_live_seconds(
+        self, user_id: str, seconds: int, api_key_id: Optional[str] = None
+    ) -> Optional[int]:
         """Record consumed live seconds (additive) and return the seconds LEFT.
 
         ``consume_quota`` is all-or-nothing: asked for more than the budget has
@@ -77,13 +79,32 @@ class SupabaseBilling:
         Returns the remaining seconds as reported by the server, or None when
         billing is disabled or the call failed (caller must fail open, since
         accounting must never take down a live call).
+
+        ``api_key_id`` attributes the usage to the API key that opened the
+        session, which is what makes per-key minutes reportable. Website
+        sessions have no key and pass nothing; the row is then attributed to
+        the user only, exactly as before.
         """
         if seconds <= 0:
             return await self.live_remaining(user_id)
+
+        def _payload(amount: int) -> dict[str, Any]:
+            body: dict[str, Any] = {
+                "p_user": user_id,
+                "p_kind": "live",
+                "p_amount": int(amount),
+            }
+            # Sent only when there is a key. Omitting it keeps website
+            # sessions on the exact three-parameter call they have always
+            # made, so this change cannot alter their behaviour.
+            if api_key_id:
+                body["p_api_key"] = api_key_id
+            return body
+
         try:
             result = await self._rpc(
                 "consume_quota",
-                {"p_user": user_id, "p_kind": "live", "p_amount": int(seconds)},
+                _payload(seconds),
             )
             if isinstance(result, dict) and result.get("allowed") is False:
                 left = int(result.get("remaining") or 0)
@@ -95,7 +116,7 @@ class SupabaseBilling:
                 # Charge the stub that actually fits, so `used` reaches the limit.
                 result = await self._rpc(
                     "consume_quota",
-                    {"p_user": user_id, "p_kind": "live", "p_amount": left},
+                    _payload(left),
                 )
                 logger.info(
                     "Billed partial live seconds user={} requested={}s charged={}s",
@@ -172,3 +193,38 @@ def parse_participant_budget(
             pass
 
     return user_id, remaining
+
+
+def parse_participant_api_key(metadata: Optional[str]) -> Optional[str]:
+    """Extract the issuing API key id from a joined participant's metadata.
+
+    Only the realtime gateway stamps ``apiKeyId``; sessions started from the
+    website carry no key and yield None, which keeps their usage attributed to
+    the user alone.
+
+    Unlike the user id there is no identity field to cross-check this against —
+    it travels only in metadata. That is still inside the signed LiveKit JWT, so
+    it is as trustworthy as whoever minted the token, but the value is validated
+    as a UUID before it is ever sent to Postgres: a malformed one would make
+    ``consume_quota`` raise, and a raising meter would take down a live call
+    that should have been billed and allowed to continue.
+    """
+    import json
+    import uuid
+
+    if not metadata:
+        return None
+    try:
+        meta = json.loads(metadata)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(meta, dict):
+        return None
+
+    raw = meta.get("apiKeyId")
+    if not raw:
+        return None
+    try:
+        return str(uuid.UUID(str(raw)))
+    except (ValueError, AttributeError, TypeError):
+        return None

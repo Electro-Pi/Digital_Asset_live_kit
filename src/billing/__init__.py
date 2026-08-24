@@ -10,11 +10,13 @@ consumed seconds.
 from .supabase_billing import (
     SupabaseBilling,
     billing_from_env,
+    parse_participant_api_key,
     parse_participant_budget,
 )
 
 __all__ = [
     "SupabaseBilling",
     "billing_from_env",
+    "parse_participant_api_key",
     "parse_participant_budget",
 ]

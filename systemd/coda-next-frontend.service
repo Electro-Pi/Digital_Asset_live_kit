@@ -5,13 +5,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-frontend/coda-next
+User=bassem
+Group=bassem
+WorkingDirectory=/home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-frontend/coda-next
 Environment=NODE_ENV=production
-# Loads LIVEKIT_* (token route, runtime) and PORT. NEXT_PUBLIC_LIVEKIT_URL is
-# baked in at build time, so rebuild after changing it.
-EnvironmentFile=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-frontend/coda-next/.env.local
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -p 8090
+# Loads LIVEKIT_* (token route, runtime), the Supabase and Moyasar secrets, and
+# PORT. NEXT_PUBLIC_* values are baked in at build time, so rebuild after
+# changing NEXT_PUBLIC_LIVEKIT_URL or NEXT_PUBLIC_SUPABASE_*.
+EnvironmentFile=/home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-frontend/coda-next/.env.local
+# Node 22 from /opt/coda-node22 — this host has no /usr/bin/node.
+# --hostname 127.0.0.1 keeps 8090 off the public interface; nginx fronts it.
+ExecStart=/opt/coda-node22/bin/node node_modules/next/dist/bin/next start --hostname 127.0.0.1 -p 8090
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15

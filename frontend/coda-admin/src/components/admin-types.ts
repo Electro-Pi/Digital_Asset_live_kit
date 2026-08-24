@@ -179,3 +179,40 @@ export interface AdminIdentity {
   email: string;
   role: AdminRole;
 }
+
+export type ApiKeyScope = 'tts' | 'agent' | 'stt' | 'llm';
+export type ApiKeyStatus = 'active' | 'revoked' | 'expired';
+
+export interface ApiKey {
+  id: string;
+  ownerEmail: string;
+  ownerId: string;
+  label: string;
+  /** coda_sk_live_ab•••••••• — the raw value is never returned by a list. */
+  masked: string;
+  scopes: ApiKeyScope[];
+  maxConcurrent: number;
+  status: ApiKeyStatus;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  /** Agent minutes inside the selected window, and for all time. */
+  liveMinutes: number;
+  liveMinutesLifetime: number;
+  ttsCharacters: number;
+}
+
+/** POST /api/keys — `key` is present exactly once and is never retrievable again. */
+export interface CreatedApiKey {
+  id: string;
+  label: string;
+  prefix: string;
+  scopes: ApiKeyScope[];
+  maxConcurrent: number;
+  expiresAt: string | null;
+  createdAt: string;
+  ownerId: string;
+  ownerEmail: string;
+  key: string;
+}

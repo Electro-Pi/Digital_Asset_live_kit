@@ -43,21 +43,31 @@ from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
 from src.arabic_text import strip_tashkeel
 from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
-from src.billing import billing_from_env, parse_participant_budget
-from src.voice_profile import parse_voice_from_metadata, voice_profile
+from src.billing import (
+    billing_from_env,
+    parse_participant_api_key,
+    parse_participant_budget,
+)
+from src.voice_profile import (
+    DEFAULT_FEMALE_VOICE,
+    DEFAULT_MALE_VOICE,
+    parse_voice_from_metadata,
+    voice_profile,
+)
 
 
 load_dotenv(".env.local")
 
 TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:16326")
 TTS_MODEL = os.getenv("TTS_MODEL", "VoxCPM2")
-TTS_VOICE = os.getenv("TTS_VOICE", "hoda")
-# The voice this deployment is supposed to be speaking with. The VoxCPM2 server
-# serves "hoda" (precomputed female) and "default" (male), so this is config,
-# not a constant — see GET /v1/audio/voices.
-TTS_EXPECTED_VOICE = os.getenv("TTS_EXPECTED_VOICE", TTS_VOICE)
-# Prefer the TTS server's precomputed ``hoda`` voice. A reference path is only
-# valid when that exact file exists inside the TTS server's filesystem.
+# Server-side voice names — see GET /v1/audio/voices. Both speakers are
+# precomputed upstream ("nouf" female / نوف, "nawaf" male / نواف); which one a
+# session gets is chosen per participant, so these are the names, not the pick.
+TTS_VOICE = os.getenv("TTS_VOICE", DEFAULT_FEMALE_VOICE)
+TTS_VOICE_MALE = os.getenv("TTS_VOICE_MALE", DEFAULT_MALE_VOICE)
+# Prefer those precomputed voices. A reference is only worth setting to override
+# both of them with a clone, and only for audio the TTS server can actually read
+# (a path inside its filesystem, a URL, or a data URI).
 TTS_REF_AUDIO = os.getenv("TTS_REF_AUDIO", "").strip() or None
 TTS_SEED = int(os.getenv("TTS_SEED", "1234"))
 # Delivery pace, applied client-side and pitch-preserving. Below 1.0 is slower.
@@ -290,8 +300,8 @@ async def my_agent(ctx: agents.JobContext):
     )
 
     # Voice selection is stamped into participant metadata by /api/connection-details.
-    # Resolve the caller first so female (coda-2) vs male (ref-audio clone) is known
-    # before the TTS plugin and persona prompt are built.
+    # Resolve the caller first so female (نوف) vs male (نواف) is known before the
+    # TTS plugin and persona prompt are built.
     _part = None
     try:
         _part = await asyncio.wait_for(ctx.wait_for_participant(), timeout=15)
@@ -306,15 +316,18 @@ async def my_agent(ctx: agents.JobContext):
     selected_voice = parse_voice_from_metadata(
         getattr(_part, "metadata", None) if _part else None
     )
-    profile = voice_profile(selected_voice, female_tts_voice=TTS_VOICE)
+    profile = voice_profile(
+        selected_voice,
+        female_tts_voice=TTS_VOICE,
+        male_tts_voice=TTS_VOICE_MALE,
+    )
     logger.info(
         "Voice profile selected key={} name_ar={} tts_voice={} has_ref_audio={} "
-        "ref_text_chars={} participant={}",
+        "participant={}",
         profile.key,
         profile.display_name_ar,
         profile.tts_voice,
-        bool(profile.ref_audio) or bool(TTS_REF_AUDIO and profile.key == "female"),
-        len(profile.ref_text or ""),
+        bool(TTS_REF_AUDIO),
         getattr(_part, "identity", None),
     )
 
@@ -322,12 +335,9 @@ async def my_agent(ctx: agents.JobContext):
         server_url=TTS_SERVER_URL,
         model=TTS_MODEL,
         voice=profile.tts_voice,
-        ref_audio=(
-            TTS_REF_AUDIO
-            if profile.key == "female" and TTS_REF_AUDIO
-            else profile.ref_audio
-        ),
-        ref_text=profile.ref_text,
+        # Normally None: both speakers are named voices on the server. Setting
+        # TTS_REF_AUDIO overrides whichever one this session picked.
+        ref_audio=TTS_REF_AUDIO,
         seed=TTS_SEED,
         speed=TTS_SPEED,
         expected_voice=profile.expected_voice,
@@ -548,10 +558,14 @@ async def my_agent(ctx: agents.JobContext):
     billing_user_id, billing_remaining = parse_participant_budget(
         getattr(_part, "identity", None), getattr(_part, "metadata", None)
     )
+    # Set only for sessions opened with an API key through the realtime gateway;
+    # None for the website, whose usage stays attributed to the user alone.
+    billing_api_key_id = parse_participant_api_key(getattr(_part, "metadata", None))
     logger.info(
-        "Live budget resolved user={} remaining={}s billing_enabled={}",
+        "Live budget resolved user={} remaining={}s api_key={} billing_enabled={}",
         billing_user_id,
         billing_remaining,
+        billing_api_key_id,
         billing.enabled,
     )
 
@@ -609,7 +623,9 @@ async def my_agent(ctx: agents.JobContext):
         delta = target_elapsed - _billed_seconds
         if not (billing_user_id and delta > 0):
             return None
-        remaining = await billing.consume_live_seconds(billing_user_id, delta)
+        remaining = await billing.consume_live_seconds(
+            billing_user_id, delta, billing_api_key_id
+        )
         _billed_seconds += delta
         return remaining
 

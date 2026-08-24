@@ -79,7 +79,7 @@ creates the Supabase email/password user and the private owner allowlist row.
 `read -s` keeps the password off the screen and out of shell history:
 
 ```bash
-cd /home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-admin
+cd /home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-admin
 set -a
 . /etc/coda-admin/admin.env
 set +a
@@ -140,15 +140,59 @@ path never answers `502`.
 
 ## Current state
 
-Live and signable-in as of 2026-08-18. The includes are in
-`/etc/nginx/sites-available/coda-front.conf` (previous version kept alongside as
-`coda-front.conf.bak-20260818225347`), nginx is reloaded, the service is enabled
-and running, `/etc/coda-admin/admin.env` holds real values, and the owner
-(`mohamed.rabee@electropi.ai`) is provisioned. Verified end to end: login →
-authenticated read of `/api/overview` → logout, with the session revoked
-afterwards and both attempts recorded in `private.admin_login_attempts`.
+Live as of 2026-08-23. `src/lib/` was recovered, the app builds
+(typecheck clean, 45 tests passing), `coda-admin-frontend.service` is enabled and
+healthy on `127.0.0.1:8092`, and the `/admin` mount is uncommented in
+`sites-available/coda-front.conf` and reloaded. Verified through nginx: the
+login page returns `200`, `/admin/_next/static/**` resolves, exactly one
+`Content-Security-Policy` header is present, `/admin/api/*` returns `401`
+unauthenticated, and `/administration` still reaches the public site.
 
-Two things are deliberately still outstanding:
+`/admin/keys` issues scoped API keys — see `AGENT_API.md`.
+
+Public over TLS since 2026-08-23 at <https://www.coda.eracoda.ai/admin>, which
+is what `ADMIN_ORIGIN` is set to, so the app's exact-Origin check and its
+`__Secure-` cookies both line up with reality. `/admin` `308`s to that name from
+`coda.eracoda.ai`, `www.coda.eracoda.com` and `coda.eracoda.com`.
+
+### Why src/lib went missing, and why it can't again
+
+It was never forgotten — it was **ignored**. Line 17 of the repo-root
+`.gitignore` is `lib/`, inherited from the Python template (it sits beside
+`lib64/`, `parts/`, `sdist/` and is meant for a virtualenv). With no leading
+slash git applies it at every depth, so it silently swallowed
+`frontend/coda-admin/src/lib/` — nine modules the entire dashboard imports.
+`next build` then failed on a missing `./src/lib/base-path`.
+
+`.gitignore` now ends with `!frontend/coda-admin/src/lib/`, which un-ignores the
+directory (the directory itself, because git will not re-include a path whose
+parent is excluded). Verify after any `.gitignore` edit:
+
+```bash
+git check-ignore -v frontend/coda-admin/src/lib/auth.ts   # must print nothing
+```
+
+### Rebuilding
+
+The checkout belongs to `bassem`; the service runs as `coda-admin`. Two ACLs
+keep both working, and both must survive a rebuild:
+
+```bash
+# The service must read the build output. `next build` writes files that
+# inherit no ACL, so re-apply after every build (deploy-coda-admin.sh does).
+sudo setfacl -R -m u:coda-admin:rX frontend/coda-admin
+
+# .next/cache is written by the service at runtime AND by the build. The
+# default entries matter: the unit sets UMask=0077, and named ACL entries are
+# the only thing that survives it for files the other account creates.
+sudo setfacl -R -m u:bassem:rwX -m d:u:bassem:rwX frontend/coda-admin/.next/cache
+sudo setfacl -R -m u:coda-admin:rwX -m d:u:coda-admin:rwX frontend/coda-admin/.next/cache
+```
+
+Without the second pair, a rebuild as `bassem` fails with
+`EACCES ... .next/cache/.rscinfo`.
+
+### Outstanding
 
 1. **`SUPABASE_SERVICE_ROLE_KEY` is the shared project key**, the same one the
    LiveKit agent and the public frontend use, not a dedicated secret. Revoking or
@@ -156,23 +200,21 @@ Two things are deliberately still outstanding:
    editing that one line and restarting the service.
 2. **Leaked-password protection is still off.** It is an Auth setting, reachable
    only through the Supabase Dashboard — not SQL, not the MCP.
-3. **The owner password is stored in `/etc/coda-admin/admin.env`**, at the
-   owner's request, rather than living only in a password manager. `systemd`
-   loads that file wholesale, so after the next restart the plaintext is
-   readable from `/proc/<pid>/environ` by the `coda-admin` user. The app never
-   reads `ADMIN_OWNER_PASSWORD`; only `npm run admin:provision` does. Deleting
-   the line costs nothing once the password is in a manager.
-
-`private.admin_audit_log` is empty and should be: it records data mutations
-(quota changes, booking transitions), not sign-ins. Logins live in
-`private.admin_login_attempts`.
+3. **The owner account carried over from the previous deployment.** One active
+   `owner` row exists in `private.admin_users`; its password is not held on this
+   host. If it is unknown, reset it out of band in Supabase and run
+   `npm run admin:invalidate-sessions` before bringing the dashboard back up — a
+   password change alone does not invalidate the opaque sessions.
+4. **`API_KEY_PEPPER` is now also in `/etc/coda-admin/admin.env`**, byte-identical
+   to `coda-next/.env.local` and `TTS-Endpoint-api/.env`. Rotating it invalidates
+   every issued key everywhere, so all three must change together.
 
 ## Build and activation
 
 ```bash
 sudo chmod 0600 \
-  /home/Coda-digital-asset/Digital_Asset_live_kit/.env.local \
-  /home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-frontend/coda-next/.env.local
+  /home/bassem/Coda/Digital_Asset_live_kit/.env.local \
+  /home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-frontend/coda-next/.env.local
 sudo ./scripts/deploy-coda-admin.sh
 sudo systemctl enable coda-admin-frontend.service
 ```

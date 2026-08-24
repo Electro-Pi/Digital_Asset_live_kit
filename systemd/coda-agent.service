@@ -1,16 +1,21 @@
 [Unit]
-Description=CODA LiveKit voice agent (Coda-digital-asset checkout)
+Description=CODA LiveKit voice agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/home/Coda-digital-asset/Digital_Asset_live_kit
+User=bassem
+Group=bassem
+WorkingDirectory=/home/bassem/Coda/Digital_Asset_live_kit
 Environment=PYTHONUNBUFFERED=1
-# Loads LIVEKIT_* (new project creds) and AGENT_PORT (free health port).
-EnvironmentFile=/home/Coda-digital-asset/Digital_Asset_live_kit/.env.local
-ExecStart=/root/.local/bin/uv run agent.py start
+# Loads LIVEKIT_* (project creds), the model backends, and AGENT_PORT (2953,
+# the local health/debug port — not proxied, not public).
+EnvironmentFile=/home/bassem/Coda/Digital_Asset_live_kit/.env.local
+# The interpreter from `uv sync`, invoked directly rather than through
+# `uv run`: uv would re-resolve the lock on every start, which turns a boot
+# into a network dependency for no benefit once .venv is in place.
+ExecStart=/home/bassem/Coda/Digital_Asset_live_kit/.venv/bin/python agent.py start
 Restart=always
 RestartSec=5
 TimeoutStopSec=90

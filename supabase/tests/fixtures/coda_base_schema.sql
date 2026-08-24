@@ -104,6 +104,17 @@ create table public.usage_events (
   created_at timestamptz not null default now()
 );
 
+create table public.api_keys (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id),
+  label text not null default 'API key',
+  key_hash text not null unique,
+  key_prefix text not null,
+  last_used_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table public.credit_balances (
   user_id uuid primary key references auth.users(id),
   balance bigint not null default 0 check (balance >= 0),
@@ -179,5 +190,10 @@ create or replace function public.spend_credits(uuid, bigint, text, uuid, jsonb)
 returns jsonb language sql security definer set search_path = public as $$ select '{}'::jsonb; $$;
 create or replace function public.credit_balance(uuid)
 returns bigint language sql security definer set search_path = public as $$ select 0::bigint; $$;
-create or replace function public.resolve_api_key_full(text)
+create or replace function public.resolve_api_key_full(p_hash text)
 returns jsonb language sql security definer set search_path = public as $$ select null::jsonb; $$;
+-- Named parameters, matching production: `create or replace` refuses to change
+-- the name of an input parameter, so an unnamed stub blocks every later
+-- migration that redefines these.
+create or replace function public.consume_quota(p_user uuid, p_kind text, p_amount integer)
+returns jsonb language sql security definer set search_path = public as $$ select '{}'::jsonb; $$;

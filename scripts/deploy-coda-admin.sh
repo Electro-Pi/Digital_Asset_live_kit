@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly APP_DIR="/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-admin"
+readonly APP_DIR="/home/bassem/Coda/Digital_Asset_live_kit/frontend/coda-admin"
 readonly NODE_DIR="/opt/coda-node22/bin"
 readonly SERVICE="coda-admin-frontend.service"
 readonly ENV_FILE="/etc/coda-admin/admin.env"
@@ -28,6 +28,12 @@ cd "${APP_DIR}"
 "${NODE_DIR}/npm" run build
 install -d -m 0700 -o coda-admin -g coda-admin "${APP_DIR}/.next/cache"
 chown -R coda-admin:coda-admin "${APP_DIR}/.next/cache"
+
+# The checkout sits under another user's home, so the service account reaches
+# it through an ACL rather than through directory modes. `next build` writes
+# fresh files that inherit nothing, so re-apply it here or the dashboard 500s
+# on chunks it cannot read.
+setfacl -R -m u:coda-admin:rX "${APP_DIR}"
 
 sudo systemctl restart "${SERVICE}"
 sudo systemctl --no-pager --full status "${SERVICE}"

@@ -15,6 +15,7 @@ const navigation: Array<{
   { href: '/', label: 'Overview', description: 'Business health', icon: 'gauge' },
   { href: '/users', label: 'Users', description: 'Accounts & usage', icon: 'users' },
   { href: '/limits', label: 'Limits', description: 'Plan defaults', icon: 'settings' },
+  { href: '/keys', label: 'API keys', description: 'Programmatic access', icon: 'shield' },
   { href: '/bookings', label: 'Demo bookings', description: 'Sales pipeline', icon: 'calendar' },
   { href: '/audit', label: 'Audit log', description: 'Admin activity', icon: 'file' },
 ];
