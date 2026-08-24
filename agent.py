@@ -248,7 +248,8 @@ class Assistant(Agent):
 # running agent, so a second agent on the same host (e.g. this checkout running
 # alongside another deployment) needs a free port set in .env.local.
 AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
-server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
+AGENT_IDLE_PROCESSES = max(1, int(os.getenv("AGENT_IDLE_PROCESSES", "3")))
+server = AgentServer(port=AGENT_PORT, num_idle_processes=AGENT_IDLE_PROCESSES)
 
 # Authoritative per-user live-minutes meter. Talks to Supabase with the
 # service-role key (server-only). No-op if Supabase env is unset — in that case

@@ -1,0 +1,22 @@
+[Unit]
+Description=LEAP Map Navigator LiveKit Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/projects/map-navigator /Digital_Asset_live_kit
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/ubuntu/projects/map-navigator /Digital_Asset_live_kit/.env.navigator
+ExecStart=/usr/bin/env ./.venv/bin/python agent.py start
+Restart=always
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
