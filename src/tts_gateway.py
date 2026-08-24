@@ -36,7 +36,7 @@ UPSTREAM_URL = "http://localhost:8088"
 LISTEN_PORT = 8089
 SAMPLE_RATE = 48000
 
-# hoda speaks at ~180-215 Hz median F0; wrong rolls land well outside
+# nouf speaks at ~195-245 Hz (median ~210); wrong rolls land well outside
 # (male ~90-140 Hz, squeaky ~300-440 Hz).
 GATE_MIN_F0 = 150.0
 GATE_MAX_F0 = 280.0

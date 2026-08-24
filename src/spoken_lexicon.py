@@ -318,7 +318,9 @@ WORD_FIXES: dict[str, str] = {
     "مقلي": "مَقْلِي",
     "مقليه": "مَقْلِيَّة",
     "مشكل": "مُشَكَّل",
-    "مشكله": "مُشَكَّلَة",
+    # Do NOT map مشكله/مشكلة here. normalize_key folds ة→ه, so the ordinary
+    # word "مشكلة" (problem) would become the food adjective "مُشَكَّلَة".
+    # Feminine dish forms are covered by SPOKEN_PHRASES ("بقلاوه مشكله").
     "محمص": "مُحَمَّص",
     "متبل": "مُتَبَّل",
     "مدخن": "مُدَخَّن",
@@ -602,6 +604,9 @@ _STALL_FOLDED_RE = re.compile(
     r"(?:ارجع|ارد)\s+لك|"
     r"انتظرني|"
     r"لحظ(?:ه|ات)\s+و|"
+    r"لحظ(?:ه|ة)\s+اشوف|"
+    r"اشوف\s+لك|"
+    r"ادور\s+لك|"
     r"ممنوع\s+الوعد|"
     r"الوعد\s+المؤجل|"
     r"انا\s+بدور\s+لك|"
@@ -627,6 +632,23 @@ _WEIRD_SPOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 _BRACE_JUNK_RE = re.compile(r"[{}|<>]+")
+# Live 2026-08-16: the model spoke the tool field wrapper itself —
+# `{ "say_to_user_ar": "شِلْت لَك …" }` — instead of the Arabic alone.
+_SAY_TO_USER_JSON_RE = re.compile(
+    r"""\{\s*["']?say_to_user_ar["']?\s*:\s*["']([^"']+)["']\s*,?\s*\}""",
+    re.IGNORECASE,
+)
+_JSON_KEY_NOISE_RE = re.compile(
+    r"""["']?(?:say_to_user_ar|on_success|message|ok)["']?\s*:\s*""",
+    re.IGNORECASE,
+)
+# Live 2026-08-17: Gemma leaked "thought 思考完毕" into the spoken turn.
+_CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
+_THOUGHT_LEAK_RE = re.compile(
+    r"\b(?:thought|analysis|commentary|final|channel|assistant|system)\b"
+    r"|思考完毕|思考中|思考",
+    re.IGNORECASE,
+)
 
 
 def strip_speech_artifacts(text: str) -> str:
@@ -639,6 +661,13 @@ def strip_speech_artifacts(text: str) -> str:
     raw = " ".join(str(text or "").split())
     if not raw:
         return ""
+    # Prefer the Arabic payload if the whole turn is a tool-field JSON blob.
+    say_match = _SAY_TO_USER_JSON_RE.search(raw)
+    if say_match:
+        raw = say_match.group(1).strip()
+    raw = _JSON_KEY_NOISE_RE.sub(" ", raw)
+    raw = _CJK_RE.sub(" ", raw)
+    raw = _THOUGHT_LEAK_RE.sub(" ", raw)
     raw = _WEIRD_SPOKEN_RE.sub(" ", raw)
     raw = _BRACE_JUNK_RE.sub(" ", raw)
     raw = " ".join(raw.split())

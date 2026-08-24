@@ -18,13 +18,13 @@ REF_AUDIO_DIR = REPO_ROOT / "ref-audio"
 # Male is not a server-side voice — it is produced by sending a 4.5MB
 # ref-audio/male.wav clone with every request. On the VoxCPM2 server that path
 # measures ~45s to first audio (reproduced across requests) versus ~0.16s for
-# the precomputed `hoda` voice, which is unusable for a live conversation.
+# a precomputed server-side voice, which is unusable for a live conversation.
 #
 # Nothing about the male path is deleted, so re-enabling is this one flag plus a
 # fix for the clone latency (a server-side registered voice would be the fix).
 MALE_VOICE_ENABLED = False
 
-# Female uses the TTS server's precomputed `hoda` voice (no per-request ref).
+# Female uses the TTS server's precomputed `nouf` voice (no per-request ref).
 # Male clones from local ref-audio/male.wav + male-ref-text each request.
 MALE_WAV_PATH = REF_AUDIO_DIR / "male.wav"
 MALE_REF_TEXT_PATH = REF_AUDIO_DIR / "male-ref-text"
@@ -93,7 +93,7 @@ def _male_ref_text() -> str:
 def voice_profile(
     raw: Optional[str] = None,
     *,
-    female_tts_voice: str = "hoda",
+    female_tts_voice: str = "nouf",
 ) -> VoiceProfile:
     key = normalize_voice(raw)
     if key == "male":

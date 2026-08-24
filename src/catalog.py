@@ -134,6 +134,8 @@ HIGH_PROTEIN_MIN = 30
 RICH_CALORIES_MIN = 650
 RICH_FAT_MIN = 30
 FAMILY_KEYWORDS = ("عائلي", "عائليه", "يكفي", "كبير")
+CRISPY_KEYWORDS = ("مقرمش", "كرسبي", "كريسبي", "crispy")
+KETO_CARBS_MAX = 20
 
 _ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
@@ -213,6 +215,39 @@ _ASR_PHRASE_FIXES: tuple[tuple[str, str], ...] = (
     # Live failure 2026-08-13: "مليانة دهون" arrived as "مديانة دهون".
     ("مديانه", "مليانه"),
     ("مديانة", "مليانة"),
+    # Live 2026-08-16 tester: كومبو arrived as قنبو / قمبو / سومبو / قنبوع.
+    ("قنبو", "كومبو"),
+    ("قمبو", "كومبو"),
+    ("سومبو", "كومبو"),
+    ("قنبوع", "كومبو"),
+    ("كمبو", "كومبو"),
+    ("combo", "كومبو"),
+    ("كرسبي", "مقرمش"),
+    ("كريسبي", "مقرمش"),
+    ("crispy", "مقرمش"),
+    ("كيتو", "كيتو"),
+    ("keto", "كيتو"),
+    ("cashback", "كاش باك"),
+    ("cash back", "كاش باك"),
+    ("كاشباك", "كاش باك"),
+    ("اكله شوكليت", "اتولييه الشوكولاته"),
+    ("اكلة شوكليت", "أتولييه الشوكولاتة"),
+    ("اكلين شوكليت", "أتولييه الشوكولاتة"),
+    ("اتليه الشوكولاته", "اتولييه الشوكولاته"),
+    ("اتيليه الشوكولاته", "اتولييه الشوكولاته"),
+    ("ونفد المانجا", "وافل مانجا"),
+    # Live 2026-08-17: جنيه for ريال; ورقاني for وريني.
+    ("الجنيه", "الريال"),
+    ("جنيه", "ريال"),
+    ("ورقاني", "وريني"),
+    ("وركاني", "وريني"),
+    ("للسنة", "للسلة"),
+    ("للسنه", "للسلة"),
+    ("للسلامة", "للسلة"),
+    ("للسلامه", "للسلة"),
+    ("السالب", "السله"),
+    ("تلات اصوات", "تلات اشخاص"),
+    ("ثلاث اصوات", "ثلاث اشخاص"),
 )
 
 # Whole-utterance ASR repairs for navigation. Applied to the transcript the
@@ -235,6 +270,40 @@ _ASR_UTTERANCE_FIXES: tuple[tuple[str, str], ...] = (
     ("to cart", "السلة"),
     ("مديانة", "مليانة"),
     ("مديانه", "مليانه"),
+    ("قنبو", "كومبو"),
+    ("قمبو", "كومبو"),
+    ("سومبو", "كومبو"),
+    ("قنبوع", "كومبو"),
+    ("صحة المطاعم", "صفحة المطاعم"),
+    ("على المطبخ", "على المطاعم"),
+    ("صفحة المطبخ", "صفحة المطاعم"),
+    ("ادخل على المطبخ", "ادخل على المطاعم"),
+    # Live 2026-08-16: "أتولييه الشوكولاتة" arrived as أكلة / أكلين شوكليت
+    ("اكله شوكليت", "اتولييه الشوكولاته"),
+    ("اكلة شوكليت", "أتولييه الشوكولاتة"),
+    ("اكلين شوكليت", "أتولييه الشوكولاتة"),
+    ("مطعم اكلين شوكليت", "أتولييه الشوكولاتة"),
+    ("مطعم اكله شوكليت", "أتولييه الشوكولاتة"),
+    ("اتليه الشوكولاته", "اتولييه الشوكولاته"),
+    ("اتيليه الشوكولاته", "اتولييه الشوكولاته"),
+    # Live 2026-08-16: waffle mango arrived as ونفد المانجا
+    ("ونفد المانجا", "وافل مانجا"),
+    ("ونفد مانجا", "وافل مانجا"),
+    # Live 2026-08-17: "ضيفه للسلة" arrived as للسنة / للسلامة.
+    ("للسنة", "للسلة"),
+    ("للسنه", "للسلة"),
+    ("للسلامة", "للسلة"),
+    ("للسلامه", "للسلة"),
+    ("ورقاني", "وريني"),
+    ("وركاني", "وريني"),
+    ("الجنيه", "الريال"),
+    ("جنيه", "ريال"),
+    ("السالب", "السلة"),
+    ("هذا السالب", "هذا السلة"),
+    ("لتلات اصوات", "لتلات اشخاص"),
+    ("لثلاث اصوات", "لثلاث اشخاص"),
+    ("تلات اصوات", "تلات اشخاص"),
+    ("ثلاث اصوات", "ثلاث اشخاص"),
 )
 
 
@@ -505,6 +574,11 @@ def _derive_diet_tags(meal_json: dict[str, Any], cuisine: str, meal_blob: str) -
         tags.add("high_protein")
     if meal_json.get("isOffer"):
         tags.add("offer")
+    kind = str(meal_json.get("offerKind") or "")
+    if kind == "combo" or meal_json.get("isCombo"):
+        tags.add("combo")
+    if kind == "family":
+        tags.add("family")
     if meal_json.get("isPopular"):
         tags.add("popular")
     if meal_json.get("spicyOption"):
@@ -529,6 +603,18 @@ def _derive_diet_tags(meal_json: dict[str, Any], cuisine: str, meal_blob: str) -
         and not _has_keyword(name_norm, _SAVOURY_KEYWORDS)
     ):
         tags.add("dessert")
+    if _has_keyword(meal_blob, CRISPY_KEYWORDS):
+        tags.add("crispy")
+    carbs = int(meal_json.get("carbs") or 0)
+    if (
+        0 < carbs <= KETO_CARBS_MAX
+        and "dessert" not in tags
+        and "drink" not in tags
+        and "grocery" not in tags
+    ):
+        tags.add("keto")
+    if float(meal_json.get("cashbackPercent") or 0) > 0:
+        tags.add("cashback")
     return frozenset(tags)
 
 
@@ -677,20 +763,36 @@ _QUERY_HINTS: dict[str, tuple[str, ...]] = {
         "هاي بروتين", "high protein",
     ),
     "spicy_available": ("حار", "حاره", "سبايسي", "حريف"),
-    "offer": ("عرض", "عروض", "خصم", "رخيص", "ارخص"),
+    "offer": ("عرض", "عروض", "خصم"),
+    "cheap": ("ارخص", "رخيص", "رخيصه", "اوفر سعر", "ارخص شي", "اقل سعر"),
+    "expensive": ("اغلى", "غالي", "غاليه", "افخم", "اغلى شي", "اعلى سعر"),
     "family": ("عائله", "عائلي", "عائليه", "عزيمه", "ضيوف", "جماعه"),
     "dessert": ("حلا", "حلو", "حلي", "حلويات", "تحليه", "ديزرت", "سكر", "حادق"),
     "drink": ("مشروب", "عصير", "شراب", "بارد"),
+    "crispy": ("مقرمش", "كرسبي", "كريسبي", "crispy"),
+    "keto": ("كيتو", "keto", "keto diet"),
+    "combo": ("كومبو", "كمبو", "combo"),
+    "deal": ("ديل", "deal"),
+    "cashback": (
+        "كاش باك", "كاشباك", "الكاش باك", "كاش", "باك",
+        "cashback", "cash back",
+    ),
 }
 
 # Hints that name a kind of food rather than a property of one. These narrow
 # the result set; the rest (light, rich, high_protein, offer, family) only re-rank.
-_CATEGORY_HINTS = frozenset({"dessert", "drink"})
+# crispy/keto/combo/deal are tester filters (Bug-002): ranking-only left the UI on "all".
+# cashback (Bug-010): "عروض الكاش باك" must not be treated as a missing dish name.
+# "عرض" stays on the ranking-only `offer` tag so "عرض شاورما" is not deal-only.
+_CATEGORY_HINTS = frozenset({
+    "dessert", "drink", "crispy", "keto", "combo", "deal", "cashback",
+})
 
 _STOPWORDS = {
     "ابغى", "ابي", "اريد", "وجبه", "اكل", "اكله", "حاجه", "طعام",
     "شي", "شيء", "من", "في", "على", "مع",
     "او", "و", "لي", "لك", "الي", "هذا", "هذي", "بس", "كثير", "مره", "زين",
+    "عليا", "عليها", "عليها", "عايز", "عاوز",
 }
 
 # Adjectives that ride next to a hint ("بروتين عالي") and must not be treated
@@ -701,6 +803,136 @@ _HINT_MODIFIERS = frozenset({
     "عالي", "عاليه", "منخفض", "منخفضه", "قليل", "قليله", "مرتفع", "مرتفعه",
     "كثير", "كثيره", "مليان", "مليانه", "مديان", "مديانه",
 })
+
+# protein_type / cuisine must be grounded in the user's words. Live failure:
+# asked for حلا → model passed protein_type=vegetarian and wiped dessert offers.
+_PROTEIN_QUERY_CUES: dict[str, tuple[str, ...]] = {
+    "meat": (
+        "لحم", "لحمه", "لحوم", "مشاوي", "ريش", "كباب", "كفته", "مندي لحم",
+        "كبسه لحم", "meat", "beef", "lamb",
+    ),
+    "chicken": (
+        "دجاج", "دجاجه", "فراخ", "تشيكن", "شيكن", "ستربس", "ستريبس",
+        "chicken", "shawarma chicken",
+    ),
+    "seafood": (
+        "سمك", "سمكه", "بحري", "روبيان", "جمبري", "سلمون", "تونه",
+        "seafood", "fish", "shrimp",
+    ),
+    "vegetarian": (
+        "نباتي", "نباتيه", "بدون لحم", "من غير لحم", "فيجان", "فيجتيريان",
+        "vegetarian", "vegan",
+    ),
+}
+
+# Cuisine is kept only when the query names that kitchen (or a clear alias).
+# "حلا" → حلويات is grounded; "سعودي" on a bare "أكل" is a guess.
+_CUISINE_QUERY_CUES: dict[str, tuple[str, ...]] = {
+    "حلويات": (
+        "حلا", "حلو", "حلي", "حلويات", "تحليه", "ديزرت", "كنافه", "بقلاوه",
+        "بسبوسه", "شوكولاته", "كيك",
+    ),
+    "مشاوي": ("مشاوي", "شوايه", "مشوي", "فحم", "ريش", "كباب"),
+    "شامي": ("شامي", "شاورما", "فلافل", "حمص", "مناقيش", "فتوش"),
+    "سعودي": ("سعودي", "كبسه", "مندي", "مظبي", "سليق", "جريش", "هريس", "مرقوق"),
+    "بحري": ("بحري", "سمك", "روبيان", "صياديه"),
+    "برجر": ("برجر", "برغر", "burger"),
+    "ياباني": ("ياباني", "سوشي", "رامن", "تمبورا", "ساشيمي"),
+    "ايطالي": ("ايطالي", "بيتزا", "باستا", "لازانيا"),
+    "هندي": ("هندي", "برياني", "تكا", "ماسالا", "كاري"),
+    "صحي": ("صحي", "دايت", "لايت", "رجيم"),
+    "فرايد تشيكن": ("فرايد", "ستربس", "ستريبس", "باكت", "فرايد تشيكن"),
+}
+
+# Words that are not a kitchen — if the query is only these, a cuisine
+# argument is the user's request (live: query='' cuisine=حلويات was dropped).
+_GENERIC_QUERY_WORDS = frozenset({
+    "عرض", "عروض", "اكل", "اكله", "وجبه", "شي", "حاجه", "طعام",
+})
+
+
+def _query_words(query_norm: str) -> set[str]:
+    words = {w for w in re.split(r"[^\w؀-ۿ]+", query_norm or "") if w}
+    for word in list(words):
+        stripped = re.sub(r"^[وف]?[بلك]?(?:ال)?", "", word)
+        if len(stripped) >= 2:
+            words.add(stripped)
+    return words
+
+
+def _cue_in_query(query_norm: str, cues: Iterable[str]) -> bool:
+    if not query_norm:
+        return False
+    words = _query_words(query_norm)
+    for cue in cues:
+        cue_n = normalize_ar(cue)
+        if not cue_n:
+            continue
+        if " " in cue_n:
+            if cue_n in query_norm:
+                return True
+        elif cue_n in words or cue_n in query_norm:
+            return True
+    return False
+
+
+def protein_explicit_in_query(query: str, protein_type: str) -> bool:
+    """True only when the user words justify this protein_type filter."""
+    protein = (protein_type or "").strip().lower()
+    cues = _PROTEIN_QUERY_CUES.get(protein)
+    if not cues:
+        return False
+    return _cue_in_query(normalize_ar(query), cues)
+
+
+def cuisine_explicit_in_query(query: str, cuisine: str) -> bool:
+    """True only when the user words justify this cuisine filter."""
+    cuisine_n = normalize_ar(cuisine)
+    query_n = normalize_ar(query)
+    if not cuisine_n:
+        return False
+    if cuisine_n in query_n:
+        return True
+    cues = _CUISINE_QUERY_CUES.get(cuisine_n)
+    if cues and _cue_in_query(query_n, cues):
+        return True
+    # Live 2026-08-17: "عروض حلويات لتلات أشخاص" arrived as query='' +
+    # cuisine=حلويات. Treating that as a guess dropped the kitchen and
+    # returned pizza family meals, then she said there were no desserts.
+    if not query_n:
+        return True
+    words = _query_words(query_n)
+    if words and words <= _GENERIC_QUERY_WORDS:
+        return True
+    return False
+
+
+_MEAL_QUERY_FOOD = (
+    "شاورما", "برجر", "بيتزا", "كبسه", "مندي", "مشاوي", "حلا", "كومبو",
+    "وجبه", "عرض", "دجاج", "لحم", "سمك", "فلافل", "بروتين", "كيتو",
+    "مقرمش", "عائلي",
+)
+
+
+def looks_like_meal_query(text: str) -> bool:
+    """True when the utterance is a dish/offer search, not a restaurant name.
+
+    Live 2026-08-16: "عرض شاورما لحمة لـ 5 أفراد" was passed to
+    show_restaurant, which failed, and she said "ما عندنا مطعم بهذا الاسم".
+    """
+    n = normalize_ar(text)
+    if not n:
+        return False
+    if n.lower() in {"none", "null", "nil"}:
+        return False
+    has_people = bool(
+        _QUERY_HEADCOUNT_RE.search(n)
+        or _QUERY_DUAL_RE.search(n)
+        or "افراد" in n
+        or "اشخاص" in n
+    )
+    food = _cue_in_query(n, _MEAL_QUERY_FOOD)
+    return has_people or food
 
 
 def resolve_restaurant(value: Optional[str], catalog: Optional[Catalog] = None) -> Optional[str]:
@@ -770,6 +1002,7 @@ class SearchFilters:
     max_calories: Optional[int] = None
     min_protein: Optional[int] = None
     max_price: Optional[float] = None
+    min_price: Optional[float] = None
     spicy: Optional[bool] = None
     only_offers: bool = False
     restaurant_id: Optional[str] = None
@@ -779,6 +1012,7 @@ class SearchFilters:
     prefer_restaurant_id: Optional[str] = None
     include_grocery: bool = False
     implied: frozenset[str] = frozenset()
+    offer_kinds: Optional[frozenset[str]] = None
 
     @property
     def is_empty(self) -> bool:
@@ -790,9 +1024,11 @@ class SearchFilters:
                 self.max_calories,
                 self.min_protein,
                 self.max_price,
+                self.min_price,
                 self.spicy is not None,
                 self.only_offers,
                 self.restaurant_id,
+                self.offer_kinds,
             ]
         )
 
@@ -880,6 +1116,8 @@ def _score(
     for tag in implied:
         if tag in meal.diet_tags:
             score += 1.5
+    if "cashback" in implied and meal.cashback_percent:
+        score += meal.cashback_percent / 4.0
 
     if meal.is_popular:
         score += 0.4
@@ -919,10 +1157,16 @@ def _matches(meal: Meal, f: SearchFilters) -> bool:
         return False
     if f.max_price is not None and meal.effective_price > f.max_price:
         return False
+    if f.min_price is not None and meal.effective_price < f.min_price:
+        return False
     if f.spicy is True and not meal.spicy_option:
         return False
     if f.only_offers and not meal.is_offer:
         return False
+    if f.offer_kinds:
+        kind = (meal.offer_kind or "").strip() or ("combo" if meal.is_combo else "")
+        if kind not in f.offer_kinds:
+            return False
     # A category word is a filter, not a preference: asking for حلا and being
     # offered a burger ranked second is not a worse answer, it is a wrong one.
     for category in _CATEGORY_HINTS & f.implied:
@@ -966,6 +1210,8 @@ def _why(meal: Meal, f: SearchFilters) -> list[str]:
         reasons.append("عليه عرض")
     if f.spicy and meal.spicy_option:
         reasons.append("يتوفر حار")
+    if "cashback" in f.implied and meal.cashback_percent:
+        reasons.append(f"كاش باك {int(meal.cashback_percent)} بالمية")
 
     # Fall back to the meal's own strengths when no filter drove the pick.
     if not reasons:
@@ -1073,9 +1319,9 @@ def number_to_arabic_words(value: float) -> str:
     cannot let the LLM improvise — a wrong price is a wrong order. The tools
     hand it the finished words and the prompt tells it to read them verbatim.
     """
-    n = int(round(value))
+    n = int(round(float(value)))
     if n < 0:
-        return str(n)
+        return f"سالب {number_to_arabic_words(-n)}"
     if n < 20:
         return _ONES[n]
     if n < 100:
@@ -1085,13 +1331,27 @@ def number_to_arabic_words(value: float) -> str:
         hundreds, rest = divmod(n, 100)
         head = _HUNDREDS[hundreds]
         return head if rest == 0 else f"{head} و{number_to_arabic_words(rest)}"
-    thousands, rest = divmod(n, 1000)
-    if thousands == 1:
-        head = "ألف"
-    elif thousands == 2:
-        head = "ألفين"
+    if n < 1_000_000:
+        thousands, rest = divmod(n, 1000)
+        if thousands == 1:
+            head = "ألف"
+        elif thousands == 2:
+            head = "ألفين"
+        elif thousands < 11:
+            # 3–10: ثلاثة آلاف … عشرة آلاف
+            head = f"{_ONES[thousands]} آلاف"
+        else:
+            # Live crash 2026-08-16: 560×88=49280 → thousands=49 and
+            # _ONES[49] IndexError, so add_to_cart/get_cart died mid-turn.
+            head = f"{number_to_arabic_words(thousands)} ألف"
+        return head if rest == 0 else f"{head} و{number_to_arabic_words(rest)}"
+    millions, rest = divmod(n, 1_000_000)
+    if millions == 1:
+        head = "مليون"
+    elif millions == 2:
+        head = "مليونين"
     else:
-        head = f"{_ONES[thousands]} آلاف"
+        head = f"{number_to_arabic_words(millions)} مليون"
     return head if rest == 0 else f"{head} و{number_to_arabic_words(rest)}"
 
 
@@ -1251,12 +1511,15 @@ def search_meals(
     max_calories: Optional[int] = None,
     min_protein: Optional[int] = None,
     max_price: Optional[float] = None,
+    min_price: Optional[float] = None,
     spicy: Optional[bool] = None,
     only_offers: bool = False,
     restaurant_id: Optional[str] = None,
     prefer_restaurant_id: Optional[str] = None,
     serves: Optional[int] = None,
     include_grocery: bool = False,
+    offer_kind: Optional[str] = None,
+    cashback: Optional[bool] = None,
     sort: str = "relevance",
     limit: int = 3,
     catalog: Optional[Catalog] = None,
@@ -1281,6 +1544,8 @@ def search_meals(
     query_norm, query_serves = _extract_headcount(query_norm)
     serves_wanted = serves or query_serves
     implied = _implied_tags(query_norm)
+    if cashback:
+        implied = frozenset(set(implied) | {"cashback"})
     # "بروتين عالي" is a ranking+filter request, not a dish name. Honour it even
     # when the model forgot to pass min_protein / sort.
     if "high_protein" in implied:
@@ -1292,6 +1557,42 @@ def search_meals(
     # instead of returning query_not_found.
     if "rich" in implied and (sort or "relevance") == "relevance":
         sort = "fat_desc"
+    # "أرخص" / "أغلى" must re-rank by price even when the model keeps
+    # sort=relevance and over-tightens max_price.
+    if "cheap" in implied and (sort or "relevance") == "relevance":
+        sort = "price_asc"
+    if "expensive" in implied and (sort or "relevance") == "relevance":
+        sort = "price_desc"
+
+    offer_kinds: Optional[frozenset[str]] = None
+    raw_kinds = [
+        k.strip().lower()
+        for k in re.split(r"[,+|/\s]+", str(offer_kind or ""))
+        if k.strip()
+    ]
+    valid_kinds = {"combo", "family", "deal"}
+    parsed_kinds = {k for k in raw_kinds if k in valid_kinds}
+    if "combo" in implied:
+        parsed_kinds.add("combo")
+    if "family" in implied:
+        parsed_kinds.add("family")
+    if "deal" in implied:
+        parsed_kinds.add("deal")
+    if parsed_kinds:
+        offer_kinds = frozenset(parsed_kinds)
+        only_offers = True
+
+    # Drop model-invented filters. Live: حلا → protein_type=vegetarian wiped
+    # every dessert offer. Cuisine/protein stay only when the query supports them.
+    dropped_unguessed: list[str] = []
+    if protein_type and not protein_explicit_in_query(query_norm, protein_type):
+        dropped_unguessed.append("protein_type")
+        protein_type = None
+    if cuisine and not cuisine_explicit_in_query(query_norm, cuisine):
+        dropped_unguessed.append("cuisine")
+        cuisine = None
+    if cuisine:
+        implied = frozenset(set(implied) | _implied_tags(normalize_ar(cuisine)))
 
     # An unrecognised restaurant must never silently empty the result set — that
     # is exactly how "there is a burger but I cannot open it" happened. Drop the
@@ -1314,15 +1615,99 @@ def search_meals(
         max_calories=max_calories,
         min_protein=min_protein,
         max_price=max_price,
+        min_price=min_price,
         spicy=spicy,
         only_offers=bool(only_offers),
         restaurant_id=restaurant_id or None,
         prefer_restaurant_id=prefer_restaurant,
         include_grocery=bool(include_grocery),
         implied=implied,
+        offer_kinds=offer_kinds,
     )
 
     matched = [m for m in cat.meals if _matches(m, filters)]
+    price_ceiling_hit = False
+    price_floor_hit = False
+    dropped_guessed_filters_early: list[str] = list(dropped_unguessed)
+
+    # Live 2026-08-16: desserts/offers often have empty protein_tags, so a
+    # guessed protein_type=vegetarian wiped every حلويات offer. Only relax
+    # protein for offer/dessert browses — never for a hard "seafood under 100".
+    if (
+        not matched
+        and filters.protein_type
+        and (
+            filters.only_offers
+            or "dessert" in filters.implied
+            or normalize_ar(filters.cuisine or "") in {"حلويات", "حلا", "dessert"}
+        )
+    ):
+        relaxed = replace(filters, protein_type=None)
+        rescued = [m for m in cat.meals if _matches(m, relaxed)]
+        if rescued:
+            dropped_guessed_filters_early.append("protein_type")
+            filters = relaxed
+            matched = rescued
+
+    if (
+        not matched
+        and filters.max_price is not None
+        and (
+            "cheap" in implied
+            or (sort or "") == "price_asc"
+            or "ارخص" in (query_norm or "")
+            or "رخيص" in (query_norm or "")
+        )
+    ):
+        # "أرخص من ٢٢" when every dessert is ٢٢ → empty. Show the cheapest in
+        # the same category and tell the model nothing cheaper exists.
+        relaxed = replace(filters, max_price=None)
+        rescued = [m for m in cat.meals if _matches(m, relaxed)]
+        if rescued:
+            price_ceiling_hit = True
+            filters = relaxed
+            matched = rescued
+            if (sort or "relevance") == "relevance":
+                sort = "price_asc"
+
+    if (
+        not matched
+        and filters.min_price is not None
+        and (
+            "expensive" in implied
+            or (sort or "") == "price_desc"
+            or "اغلى" in (query_norm or "")
+            or "غالي" in (query_norm or "")
+        )
+    ):
+        relaxed = replace(filters, min_price=None)
+        rescued = [m for m in cat.meals if _matches(m, relaxed)]
+        if rescued:
+            price_floor_hit = True
+            filters = relaxed
+            matched = rescued
+            if (sort or "relevance") == "relevance":
+                sort = "price_desc"
+
+    if not matched and filters.only_offers and (filters.cuisine or filters.protein_type):
+        # Offer browse must never die because cuisine/protein were carried over
+        # from the previous turn (sweets → family offers for 3).
+        had = [
+            label
+            for label, value in (
+                ("cuisine", filters.cuisine),
+                ("protein_type", filters.protein_type),
+            )
+            if value
+        ]
+        relaxed = replace(filters, cuisine=None, protein_type=None)
+        rescued = [m for m in cat.meals if _matches(m, relaxed)]
+        if rescued:
+            dropped_guessed_filters_early = list(
+                dict.fromkeys(dropped_guessed_filters_early + had)
+            )
+            filters = relaxed
+            matched = rescued
 
     raw_tokens = _tokens(query_norm)
     # Hint words and their modifiers are filters, not dish names. Leaving
@@ -1340,18 +1725,27 @@ def search_meals(
     # filtered out; the next-best row ("اشتري كباب واحصل على الثاني مجاناً") was
     # read out as if it were the requested meal. The user's words outrank the
     # model's inference about their category.
-    dropped_guessed_filters: list[str] = []
+    dropped_guessed_filters: list[str] = list(dropped_guessed_filters_early)
     if tokens and not _name_matches(matched, tokens):
         relaxed = replace(
             filters, cuisine=None, protein_type=None, implied=filters.implied - _CATEGORY_HINTS
         )
         rescued = _name_matches([m for m in cat.meals if _matches(m, relaxed)], tokens)
         if rescued:
-            dropped_guessed_filters = [
-                label
-                for label, value in (("cuisine", filters.cuisine), ("protein_type", filters.protein_type))
-                if value
-            ] or ["category"]
+            dropped_guessed_filters = list(
+                dict.fromkeys(
+                    dropped_guessed_filters
+                    + [
+                        label
+                        for label, value in (
+                            ("cuisine", filters.cuisine),
+                            ("protein_type", filters.protein_type),
+                        )
+                        if value
+                    ]
+                    or ["category"]
+                )
+            )
             filters = relaxed
             matched = [m for m in cat.meals if _matches(m, relaxed)]
     unmatched_query = ""
@@ -1429,6 +1823,7 @@ def search_meals(
         "relevance": lambda pair: (-pair[1], pair[0].id),
         "calories_asc": lambda pair: (pair[0].calories or 10**6, pair[0].id),
         "price_asc": lambda pair: (pair[0].effective_price, pair[0].id),
+        "price_desc": lambda pair: (-pair[0].effective_price, pair[0].id),
         "rating_desc": lambda pair: (-pair[0].rating, pair[0].id),
         "protein_desc": lambda pair: (-pair[0].protein, pair[0].id),
         "fat_desc": lambda pair: (-pair[0].fat, pair[0].id),
@@ -1494,6 +1889,33 @@ def search_meals(
         result["note_ar"] = (
             "الصنف اللي سماه المستخدم موجود، بس تصنيفك له كان غلط، فتجاهلت "
             "الفلتر وجبت الصنف نفسه. رشحي أول نتيجة."
+        )
+
+    if price_ceiling_hit:
+        cheapest = min(matched, key=lambda m: m.effective_price)
+        result["no_cheaper_available"] = True
+        result["sort_used"] = sort
+        result["say_to_user_ar"] = (
+            f"ما فيه أرخص من كذا بهالفئة الحين، أرخص شي عندنا "
+            f"{speakable_name(cheapest.name)} بـ {sar_words(cheapest.effective_price)}"
+        )
+        result["price_advice_ar"] = (
+            "المستخدم طلب أرخص، بس الفلتر max_price صفّر النتائج. رجّعت أرخص "
+            "النتائج المتاحة. قولي say_to_user_ar واعرضي أول نتيجة. ممنوع تقولين "
+            "ما عندنا."
+        )
+
+    if price_floor_hit:
+        priciest = max(matched, key=lambda m: m.effective_price)
+        result["no_pricier_available"] = True
+        result["sort_used"] = sort
+        result["say_to_user_ar"] = (
+            f"ما فيه أغلى من كذا بهالفئة الحين، أغلى شي عندنا "
+            f"{speakable_name(priciest.name)} بـ {sar_words(priciest.effective_price)}"
+        )
+        result["price_advice_ar"] = (
+            "المستخدم طلب أغلى، بس الفلتر min_price صفّر النتائج. رجّعت أغلى "
+            "النتائج المتاحة. قولي say_to_user_ar واعرضي أول نتيجة."
         )
 
     if total == 0:
@@ -1637,10 +2059,13 @@ def restaurant_details(
 
     meals = [m for m in cat.meals if m.restaurant_id == restaurant_id]
     popular = sorted(meals, key=lambda m: (not m.is_popular, -m.rating, m.id))[:3]
-    # Full menu rides along so سلمى can answer "وش عندهم؟" / "فيه مناقيش؟"
-    # from the restaurant open itself. popular_meals alone hid مناقيش زعتر
-    # and she told the user it did not exist while the page showed it.
+    # Names of every dish ride along so سلمى can answer "فيه مناقيش؟" from the
+    # restaurant open itself. popular_meals alone hid مناقيش زعتر. Spoken
+    # tashkeel (`name_say_ar`) is NOT copied onto the full menu — that field
+    # 3–4×s every name and blew Gemma's 32k context after a few restaurant
+    # opens (2026-08-16: prompt ≥32769, 0 output tokens, silent turn).
     menu = sorted(meals, key=lambda m: (not m.is_popular, -m.rating, m.id))
+    menu_preview_cap = 25
 
     return {
         "restaurant_id": restaurant_id,
@@ -1664,15 +2089,14 @@ def restaurant_details(
             }
             for m in popular
         ],
+        "menu_names": [m.name for m in menu],
         "menu": [
             {
                 "meal_id": m.id,
                 "name": m.name,
-                "name_say_ar": speakable_name(m.name),
                 "price_sar": round(m.effective_price, 2),
-                "price_say_ar": sar_words(m.effective_price),
             }
-            for m in menu
+            for m in menu[:menu_preview_cap]
         ],
         "page_path": f"/restaurants/{restaurant_id}",
     }
@@ -1685,19 +2109,23 @@ def restaurant_details(
 
 
 def catalog_index(catalog: Optional[Catalog] = None) -> str:
-    """A ~1KB "what exists" summary for the system prompt.
+    """A compact "what exists" summary for the system prompt.
 
-    Without it the model guesses restaurant names before its first search. With
-    the whole 128KB catalog inlined instead, every turn would carry ~40k tokens
-    and it would *still* invent meal ids — the search tool is what grounds it.
+    Restaurant names stop the model inventing venues. Grouping by cuisine and
+    dropping per-row delivery/count keeps this well under a kilobyte of tokens
+    instead of 127 tashkeel-heavy lines on every turn (the 32k overflow).
+    Meal names and prices still come from search_meals, never from this block.
     """
     cat = catalog or load_catalog()
-    lines = []
+    by_cuisine: dict[str, list[str]] = {}
     for restaurant in cat.restaurants:
-        meals = restaurant.get("meals") or []
-        cuisine = restaurant.get("cuisine")
-        lines.append(
-            f"- {restaurant.get('name')} ({cuisine}) — {len(meals)} صنف، "
-            f"توصيل {restaurant.get('deliveryTime')}"
-        )
+        name = str(restaurant.get("name") or "").strip()
+        if not name:
+            continue
+        cuisine = str(restaurant.get("cuisine") or "أخرى").strip() or "أخرى"
+        by_cuisine.setdefault(cuisine, []).append(name)
+    lines = [
+        f"{cuisine}: {', '.join(names)}"
+        for cuisine, names in sorted(by_cuisine.items(), key=lambda kv: kv[0])
+    ]
     return "\n".join(lines)

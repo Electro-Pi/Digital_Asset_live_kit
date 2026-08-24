@@ -21,6 +21,7 @@ from src.catalog import (  # noqa: E402
     fix_pronunciation,
     load_catalog,
     meal_details,
+    looks_like_meal_query,
     repair_asr_query,
     repair_user_transcript,
     restaurant_details,
@@ -30,6 +31,7 @@ from src.catalog import (  # noqa: E402
     sar_words,
     search_meals,
     speakable_name,
+    catalog_index,
 )
 
 failures: list[str] = []
@@ -86,6 +88,16 @@ check("bayt_alshawaya_id", resolve_restaurant("bayt_alshawaya_id", cat), "bayt-a
 check("Arabic name", resolve_restaurant("أصيل برجر", cat), "aseel-burger")
 check("real id passes through", resolve_restaurant("aseel-burger", cat), "aseel-burger")
 check("nonsense resolves to None", resolve_restaurant("مطعم غير موجود أبدا", cat), None)
+check(
+    "أكلين شوكليت ASR → أتولييه الشوكولاتة",
+    resolve_restaurant("افتحي مطعم أكلين شوكليت", cat),
+    "choc-atelier",
+)
+check(
+    "ونفد المانجا ASR → وافل مانجا query",
+    "وافل" in repair_asr_query("ونفد المانجا") and "مانجا" in repair_asr_query("ونفد المانجا"),
+    True,
+)
 
 print("\n── the live failure: burger search must not come back empty ──")
 burger = search_meals(query="برجر", cuisine="برجر", protein_type="meat",
@@ -100,7 +112,7 @@ check_true("unknown restaurant degrades instead of zeroing",
            unknown["total_matches"] > 0 and unknown.get("ignored_restaurant") is not None)
 
 print("\n── search basics ──")
-low_meat = search_meals(protein_type="meat", max_calories=500)
+low_meat = search_meals(query="لحم", protein_type="meat", max_calories=500)
 check_true("low-calorie meat search returns only meat under 500 cal",
            all("meat" in r["kind"] and 0 < r["calories"] <= 500 for r in low_meat["results"]))
 
@@ -111,7 +123,7 @@ groceries = search_meals(query="حليب")
 check_true("groceries hidden by default",
            all("ماركت" not in r["restaurant"] for r in groceries["results"]))
 
-impossible = search_meals(protein_type="seafood", max_calories=100, max_price=10)
+impossible = search_meals(query="سمك", protein_type="seafood", max_calories=100, max_price=10)
 check_true("impossible search advises what to relax",
            impossible["total_matches"] == 0 and "no_results_advice" in impossible)
 
@@ -308,6 +320,12 @@ check("32", number_to_arabic_words(32), "اثنين وثلاثين")
 check("46", number_to_arabic_words(46), "ستة وأربعين")
 check("780", number_to_arabic_words(780), "سبع مئة وثمانين")
 check("2200", number_to_arabic_words(2200), "ألفين ومئتين")
+check("10000", number_to_arabic_words(10000), "عشرة آلاف")
+# Live crash 2026-08-16: 560×88 SAR → IndexError on _ONES[49]
+check("49280", number_to_arabic_words(49280),
+      "تسعة وأربعين ألف ومئتين وثمانين")
+check("sar large", sar_words(49280),
+      "تسعة وأربعين ألف ومئتين وثمانين ريال")
 check("sar", sar_words(8), "ثمانية ريال")
 
 print("\n── restaurant pages ──")
@@ -320,6 +338,16 @@ check_true("popular dishes ride along so the follow-up needs no second call",
            and all(m["meal_id"] and m["price_say_ar"] for m in bayt["popular_meals"]))
 check("unknown restaurant returns None", restaurant_details("مطعم ما له وجود أبدا"), None)
 check_true("spoken min order", bayt["min_order_say_ar"].endswith("ريال"))
+check_true("full menu names ride along without spoken tashkeel",
+           "menu_names" in bayt and len(bayt["menu_names"]) >= 3)
+check_true("menu preview has ids but not name_say_ar",
+           bayt["menu"] and "meal_id" in bayt["menu"][0]
+           and "name_say_ar" not in bayt["menu"][0])
+index = catalog_index()
+check_true("catalog index lists restaurants by cuisine, not 127 padded lines",
+           "شامي:" in index or "سعودي:" in index)
+check_true("catalog index stays compact",
+           len(index) < 8000)
 
 print("\n── details carry what the addon flow needs ──")
 details = meal_details("aseel-burger-classic")
@@ -478,6 +506,7 @@ check_true("but words we latinise on purpose stay Latin",
 
 print("\n── stall phrases and prompt leaks never reach TTS ──")
 check("bare thought is silent", clean_for_speech("thought"), "")
+check("thought 思考完毕 is silent", clean_for_speech("thought 思考完毕"), "")
 check_true("stall promise stripped",
            "ثوان" not in clean_for_speech("أَبْشِر، ثَمَانِي ثَوَانِي وَأَرْجِع لَك."))
 check_true("prompt rule never spoken",
@@ -517,6 +546,24 @@ check("السالفة → السلة",
 check("الكارت → السلة",
       repair_user_transcript("افتح الكارت"),
       "افتح السلة")
+check("للسنة → للسلة",
+      repair_user_transcript("عايزك تضيفه لي للسنة"),
+      "عايزك تضيفه لي للسلة")
+check("للسلامة → للسلة",
+      repair_user_transcript("ضيفه للسلامة"),
+      "ضيفه للسلة")
+check("ورقاني → وريني",
+      repair_user_transcript("ورقاني الصفحة"),
+      "وريني الصفحة")
+check("جنيه → ريال",
+      repair_user_transcript("بواحد وسبعين جنيه"),
+      "بواحد وسبعين ريال")
+check("السالب → السلة",
+      repair_user_transcript("في هذا السالب ده ماشي"),
+      "في هذا السلة ده ماشي")
+check("لتلات اصوات → لتلات اشخاص",
+      repair_user_transcript("كنت عايز عرض لتلات اصوات"),
+      "كنت عايز عرض لتلات اشخاص")
 
 print("\n── high-protein query is a filter, not a missing dish ──")
 r = search_meals(query="أكل بروتين عالي")
@@ -550,6 +597,95 @@ check("مديانة ASR → مليانة",
       repair_user_transcript("مديانة دهون"),
       "مليانة دهون")
 
+print("\n── أرخص / أغلى / عروض must not return empty lies ──")
+# Live 2026-08-16: after a 22 SAR kunafa, "أرخص شوية" with max_price=20 → 0
+# because protein_type=vegetarian wiped dessert offers (empty protein_tags).
+cheap = search_meals(
+    query="حلا أرخص", cuisine="حلويات", protein_type="vegetarian",
+    max_price=20, sort="price_asc",
+)
+check_true("cheaper search returns desserts", cheap["total_matches"] > 0)
+check_true(
+    "cheaper than the 22 SAR kunafa exists after protein drop",
+    cheap["results"][0]["price_sar"] < 22,
+)
+
+# When the ceiling is truly below every item, surface no_cheaper_available.
+floor = search_meals(
+    query="حلا أرخص", cuisine="حلويات", max_price=5, sort="price_asc",
+)
+check_true("impossible cheap ceiling flagged",
+           floor.get("no_cheaper_available") is True)
+check_true("say_to_user ready for أرخص",
+           "أرخص" in (floor.get("say_to_user_ar") or ""))
+
+# Live: offers + حلويات + vegetarian wiped 51 real dessert offers.
+offers = search_meals(
+    query="حلا", cuisine="حلويات", protein_type="vegetarian",
+    only_offers=True, serves=3,
+)
+check_true("dessert offers survive bad vegetarian guess",
+           offers["total_matches"] > 0)
+check("protein_type was dropped",
+      "protein_type" in (offers.get("dropped_filters") or []),
+      True)
+r_cheap_intent = search_meals(query="أرخص")
+check_true("bare أرخص returns meals", r_cheap_intent["total_matches"] > 0)
+
+print("\n── never keep guessed protein/cuisine filters ──")
+# Live: حلا + vegetarian was a model guess and wiped dessert offers.
+guessed = search_meals(
+    query="حلا", cuisine="حلويات", protein_type="vegetarian", only_offers=True,
+)
+check_true("حلا offers work without vegetarian", guessed["total_matches"] > 0)
+check("vegetarian guess dropped",
+      "protein_type" in (guessed.get("dropped_filters") or []), True)
+# cuisine=سعودي on a dessert query with no سعودي word must drop.
+stray = search_meals(query="حلا", cuisine="سعودي", protein_type="meat")
+check("stray سعودي cuisine dropped",
+      "cuisine" in (stray.get("dropped_filters") or []), True)
+check_true("dessert query still finds sweets", stray["total_matches"] > 0)
+# Live 2026-08-17: query='' cuisine=حلويات serves=3 dropped the kitchen and
+# returned pizza family meals, then she said there were no dessert offers.
+empty_q = search_meals(
+    query="", cuisine="حلويات", only_offers=True, serves=3,
+)
+check(
+    "empty query keeps explicit حلويات cuisine",
+    "cuisine" in (empty_q.get("dropped_filters") or []),
+    False,
+)
+check_true("3-person dessert offers exist", empty_q["total_matches"] > 0)
+check_true(
+    "top hit is a 3-person dessert tray, not pizza",
+    "حلا" in (empty_q["results"][0].get("name") or "")
+    and (empty_q["results"][0].get("serves_people") == 3),
+)
+check_true(
+    "pizza family meal is not the dessert answer",
+    "بيتزا" not in (empty_q["results"][0].get("name") or ""),
+)
+# Explicit protein in the query is kept.
+explicit = search_meals(query="شاورما دجاج", protein_type="chicken")
+check_true("explicit دجاج keeps chicken filter",
+           "protein_type" not in (explicit.get("dropped_filters") or []))
+check_true("chicken shawarma found", explicit["total_matches"] > 0)
+
+print("\n── مشكلة is a problem, not مُشَكَّل food ──")
+check("مشكلة stays مشكلة",
+      clean_for_speech("مِشْكِلَة فِي التَّطْبِيق"),
+      "مِشْكِلَة فِي التَّطْبِيق.")
+check_true(
+    "say_to_user_ar JSON wrapper stripped",
+    "say_to_user" not in clean_for_speech(
+        '{ "say_to_user_ar": "شِلْت لَك رِيش غَنَم." }'
+    ).lower(),
+)
+check_true(
+    "Arabic from say_to_user kept",
+    "شِلْت" in clean_for_speech('{ "say_to_user_ar": "شِلْت لَك رِيش غَنَم." }'),
+)
+
 print("\n── cart nutrition is summed in the tool, not by the model ──")
 nut = cart_nutrition([
     {"quantity": 1, "calories": 400, "protein_g": 30, "carbs_g": 20, "fat_g": 10},
@@ -562,10 +698,47 @@ check_true("spoken total is ready", "سعرة" in nut["nutrition_say_ar"])
 print("\n── fried-chicken catalog (8 shops, 104 meals) ──")
 check("مختبر الستربس resolves",
       restaurant_details("مختبر الستربس")["restaurant_id"], "strip-lab")
-fried = search_meals(cuisine="فرايد تشيكن")
+fried = search_meals(query="فرايد تشيكن", cuisine="فرايد تشيكن")
 check("cuisine فرايد تشيكن returns the new shops", fried["total_matches"], 104)
 check_true("family bucket for 6 is findable",
            search_meals(query="باكت", serves=6)["results"][0]["serves_people"] == 6)
+
+print("\n── tester filters: combo / crispy / keto / kitchen-as-restaurants ──")
+check("قنبو repairs to كومبو", repair_asr_query("فلتر قنبو"), "فلتر كومبو")
+check("كرسبي repairs to مقرمش", repair_asr_query("كرسبي"), "مقرمش")
+combo = search_meals(query="كومبو", only_offers=True, offer_kind="combo")
+check_true("combo filter returns matches", combo["total_matches"] > 0)
+check_true(
+    "combo results are combo/family offers",
+    all((r.get("offer_kind") or "") in {"combo", "family", "deal"} or r.get("is_offer")
+        for r in combo["results"]),
+)
+crispy = search_meals(query="كرسبي")
+check_true("crispy/مقرمش search is non-empty", crispy["total_matches"] > 0)
+keto = search_meals(query="كيتو")
+check_true("keto search is non-empty", keto["total_matches"] > 0)
+check_true(
+    "keto meals have low carbs",
+    all(int(r.get("carbs_g") or 0) <= 20 for r in keto["results"] if r.get("carbs_g")),
+)
+check_true("shawarma for 5 is a meal query",
+           looks_like_meal_query("شاورما لخمسة أفراد"))
+check_true("kitchen page is not a meal query",
+           not looks_like_meal_query("ادخل على المطبخ"))
+check_true("plain restaurant name is not a meal query",
+           not looks_like_meal_query("بيت الشواية"))
+
+print("\n── cashback offers are a filter, not a missing dish (Bug-010) ──")
+cb = search_meals(query="كاش باك")
+check_true("كاش باك is not query_not_found", not cb.get("query_not_found"))
+check_true("cashback search returns matches", cb["total_matches"] > 0)
+check_true(
+    "every cashback result has a percent",
+    all(float(r.get("cashback_percent") or 0) > 0 for r in cb["results"]),
+)
+cb_flag = search_meals(query="عايز حاجة عليها كاش باك", cashback=True)
+check_true("cashback=true still returns matches", cb_flag["total_matches"] > 0)
+check("cashback ASR cashback → كاش باك", repair_asr_query("cashback"), "كاش باك")
 
 print("\n" + "=" * 60)
 if failures:

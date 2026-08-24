@@ -124,6 +124,29 @@ room.localParticipant.registerRpcMethod("luqma.getCart", async () => {
     })),
   });
 });
+
+room.localParticipant.registerRpcMethod("luqma.getSaved", async () => {
+  return ok({ mealIds: savedIdsRef.current });
+});
+
+room.localParticipant.registerRpcMethod("luqma.clearSaved", async () => {
+  clearSavedRef.current();
+  return ok({ cleared: true });
+});
+
+room.localParticipant.registerRpcMethod("luqma.setUiFilter", async (data) => {
+  const p = JSON.parse(data.payload) as {
+    page?: string;
+    offersKind?: string;
+    query?: string;
+    restaurantsFilter?: string;
+    cuisine?: string;
+    path?: string;
+  };
+  applyUiFilterRef.current(p);
+  if (p.path) router.push(p.path);
+  return ok({ applied: true });
+});
 ```
 
 ### Two React gotchas
@@ -161,10 +184,12 @@ Open one of the app's main pages.
 ```
 `path` is one of the fixed pages — `/`, `/restaurants`, `/cart`, `/orders`,
 `/offers`, `/search`, `/saved` — **or** a single restaurant's page,
-`/restaurants/<restaurantId>`, when the user asks about one by name. The
-restaurant id is always resolved against the catalog first, so the path always
-points at a restaurant that exists. Your handler needs no change for either:
-it already pushes whatever path arrives.
+`/restaurants/<restaurantId>`, when the user asks about one by name. Query
+strings are allowed on those exact pages: `/offers?cashback=1` opens the
+existing cashback offers view (the handler already strips `?…` before the
+allow-list). The restaurant id is always resolved against the catalog first, so
+the path always points at a restaurant that exists. Your handler needs no
+change for either: it already pushes whatever path arrives.
 
 ### `luqma.showMeal`
 Open a meal's page. This is the one that fires most — سلمى calls it the moment
@@ -281,7 +306,48 @@ is made, matching what `saved-context` stores.
   "items": [{ "mealId": "sushi-noi-gyoza", "quantity": 1, "unitPrice": 42 }] }
 ```
 Called before سلمى says anything about the cart. If it fails, it says it cannot
-see the cart rather than guessing.
+see the cart rather than guessing. Optional: include `addonIds` on each item so
+voice can name extras; `unitPrice` must already include addon surcharges.
+
+### `luqma.getSaved`
+Read the meals currently in المحفوظات. Without this, سلمى opens `/saved` and
+invents "empty".
+```jsonc
+// payload
+{ "v": 1 }
+// response
+{ "ok": true, "mealIds": ["dimashq-kitchen-offer-2"] }
+```
+Register next to `luqma.setSaved`. Read from `useSaved().savedIds` via a ref
+(same stale-closure rule as `getCart`).
+
+### `luqma.clearSaved`
+Remove every saved meal. 0 items is success.
+```jsonc
+// payload
+{ "v": 1 }
+// response
+{ "ok": true, "cleared": 3 }
+```
+
+### `luqma.setUiFilter`
+Flip on-screen chips/tabs that are React state, not URL. Offers Combo / Family
+/ Deal live in local state; `luqma.navigate("/offers")` leaves the chip on الكل.
+```jsonc
+// payload
+{ "page": "offers", "offersKind": "combo,family", "query": "مقرمش",
+  "restaurantsFilter": "", "cuisine": "", "path": "/offers?kind=combo,family",
+  "v": 1 }
+// response
+{ "ok": true }
+```
+- `offersKind`: `all` | `combo` | `family` | `deal` | `combo,family`
+- `query`: optional search-box text (كرسبي / كيتو)
+- `restaurantsFilter`: `all` | `grocery` | `24h` | `fast`
+- Honour `path` if you already route on query params (`/offers?kind=`).
+
+If this handler is missing, the agent still searches the catalog and tells the
+user the filtered results, but the chips on screen will not move.
 
 ---
 

@@ -150,11 +150,10 @@ if __name__ == "__main__":
             None, meal_id=meal_id, addon_ids=["extra-sauce", "parmesan"]
         )
         cart_calls = [p for m, p in ui.calls if m == "luqma.addToCart"]
-        assert len(cart_calls) == 2, cart_calls
-        assert "extra-sauce" in cart_calls[-1]["addonIds"]
-        assert result.get("cart_readded_with_addons") is True
-        assert "duplicate_plain_line_note_ar" in result
-        assert len(ui.cart) == 2, ui.cart
+        assert len(cart_calls) == 1, cart_calls
+        assert result.get("added_to_cart") is False
+        assert "cart_readded_with_addons" not in result
+        assert len(ui.cart) == 1, ui.cart
 
     async def _open_page_arabic_cart() -> None:
         ui = FakeUI()

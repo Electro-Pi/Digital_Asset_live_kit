@@ -103,6 +103,14 @@ class FakeUI:
             return UIResult(ok=True, data={"saved": want, "savedCount": len(self.saved)})
         if method == "luqma.getCart":
             return UIResult(ok=True, data={"items": self.cart, "count": len(self.cart)})
+        if method == "luqma.getSaved":
+            return UIResult(ok=True, data={"mealIds": list(self.saved)})
+        if method == "luqma.clearSaved":
+            n = len(self.saved)
+            self.saved = []
+            return UIResult(ok=True, data={"cleared": n})
+        if method == "luqma.setUiFilter":
+            return UIResult(ok=True, data=dict(payload))
         if method == "luqma.getUiState":
             page = "home"
             if self.current_path.startswith("/meals/"):
@@ -163,6 +171,43 @@ class FakeUI:
 
     async def get_cart(self) -> UIResult:
         return await self.call("luqma.getCart", {})
+
+    async def get_saved(self) -> UIResult:
+        return await self.call("luqma.getSaved", {})
+
+    async def clear_saved(self) -> UIResult:
+        return await self.call("luqma.clearSaved", {})
+
+    async def set_ui_filter(
+        self,
+        *,
+        page: str = "",
+        offers_kind: str = "",
+        query: str = "",
+        restaurants_filter: str = "",
+        cuisine: str = "",
+        cashback: bool = False,
+        menu_tab: str = "",
+        path: str = "",
+    ) -> UIResult:
+        payload: dict[str, Any] = {}
+        if page:
+            payload["page"] = page
+        if offers_kind:
+            payload["offersKind"] = offers_kind
+        if query:
+            payload["query"] = query
+        if restaurants_filter:
+            payload["restaurantsFilter"] = restaurants_filter
+        if cuisine:
+            payload["cuisine"] = cuisine
+        if cashback:
+            payload["cashback"] = True
+        if menu_tab:
+            payload["menuTab"] = menu_tab
+        if path:
+            payload["path"] = path
+        return await self.call("luqma.setUiFilter", payload)
 
     async def get_ui_state(self) -> UIResult:
         return await self.call("luqma.getUiState", {})

@@ -36,6 +36,9 @@ METHOD_SET_SAVED = "luqma.setSaved"
 METHOD_ADD_TO_CART = "luqma.addToCart"
 METHOD_SET_CART_QUANTITY = "luqma.setCartQuantity"
 METHOD_GET_CART = "luqma.getCart"
+METHOD_GET_SAVED = "luqma.getSaved"
+METHOD_CLEAR_SAVED = "luqma.clearSaved"
+METHOD_SET_UI_FILTER = "luqma.setUiFilter"
 METHOD_GET_UI_STATE = "luqma.getUiState"
 METHOD_FILL_CHECKOUT = "luqma.fillCheckout"
 METHOD_COMPLETE_ORDER = "luqma.completeOrder"
@@ -303,6 +306,50 @@ class UIBridge:
 
     async def get_cart(self) -> UIResult:
         return await self.call(METHOD_GET_CART, {})
+
+    async def get_saved(self) -> UIResult:
+        """List meal ids currently in the browser bookmarks.
+
+        Distinct from ``set_saved``: without a read, سلمى invents "empty"
+        after opening /saved (live Bug-004).
+        """
+        return await self.call(METHOD_GET_SAVED, {})
+
+    async def clear_saved(self) -> UIResult:
+        """Remove every saved meal. 0 items is success."""
+        return await self.call(METHOD_CLEAR_SAVED, {})
+
+    async def set_ui_filter(
+        self,
+        *,
+        page: str = "",
+        offers_kind: str = "",
+        query: str = "",
+        restaurants_filter: str = "",
+        cuisine: str = "",
+        cashback: bool = False,
+        menu_tab: str = "",
+        path: str = "",
+    ) -> UIResult:
+        """Flip on-screen chips/tabs the agent cannot reach via navigate alone."""
+        payload: dict[str, Any] = {}
+        if page:
+            payload["page"] = page
+        if offers_kind:
+            payload["offersKind"] = offers_kind
+        if query:
+            payload["query"] = query
+        if restaurants_filter:
+            payload["restaurantsFilter"] = restaurants_filter
+        if cuisine:
+            payload["cuisine"] = cuisine
+        if cashback:
+            payload["cashback"] = True
+        if menu_tab:
+            payload["menuTab"] = menu_tab
+        if path:
+            payload["path"] = path
+        return await self.call(METHOD_SET_UI_FILTER, payload)
 
     async def get_ui_state(self) -> UIResult:
         """Ask the browser which page the user is looking at right now."""
