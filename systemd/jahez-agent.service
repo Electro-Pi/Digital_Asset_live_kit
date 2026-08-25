@@ -5,13 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/projects/jahez-project/coda-jahez-agent-backend
+User=bassem
+Group=bassem
+WorkingDirectory=/home/bassem/projects/jahez-project/coda-jahez-agent-backend
 Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/bassem
 # LIVEKIT_*, AGENT_PORT (6700) and the TTS/STT/LLM backends.
-EnvironmentFile=/home/ubuntu/projects/jahez-project/coda-jahez-agent-backend/.env.local
-ExecStart=/home/ubuntu/projects/jahez-project/coda-jahez-agent-backend/.venv/bin/python agent.py start
+EnvironmentFile=/home/bassem/projects/jahez-project/coda-jahez-agent-backend/.env.local
+ExecStart=/home/bassem/projects/jahez-project/coda-jahez-agent-backend/.venv/bin/python agent.py start
 Restart=always
 RestartSec=5
 TimeoutStopSec=90

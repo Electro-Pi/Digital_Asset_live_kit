@@ -50,24 +50,14 @@ from src.prompts.agent_prompt import compose_instructions, intro_for_voice
 from src.spoken_lexicon import strip_speech_artifacts, written_phone, written_text
 from src.text_tool_calls import (
     CUTOUT_FALLBACK_SAY_AR,
-    STALL_FALLBACK_SAY_AR,
     build_offers_path,
-    claims_stall,
     contains_text_tool_call,
     extract_text_tool_calls,
     last_user_text,
     prepare_chat_ctx_for_llm,
-    recover_implied_add_to_cart,
-    recover_implied_get_cart,
-    recover_implied_get_saved,
-    recover_implied_open_page,
-    recover_implied_search_meals,
-    recover_implied_set_ui_filter,
-    recover_implied_show_meal,
-    recover_stalled_turn,
-    should_run_add_to_cart,
+    recent_user_texts,
     should_speak_cutout_fallback,
-    user_cancels_repeat_add,
+    user_asked_extras,
 )
 from src.ui_bridge import UIBridge
 from src.voice_profile import parse_voice_from_metadata, voice_profile
@@ -245,12 +235,12 @@ class Assistant(Agent):
         return names
 
     def _addons_from_last_user(self, context: RunContext, meal: "catalog.Meal") -> list[str]:
-        """Pick addon ids the last user turn actually named (Bug-005)."""
+        """Pick addon ids the last user turns actually named (Bug-005)."""
         chat = getattr(self, "chat_ctx", None) or getattr(context, "chat_ctx", None)
-        text = last_user_text(chat)
-        if not text or not meal.addons:
+        extras = recent_user_texts(chat, limit=3)
+        if not extras or not meal.addons:
             return []
-        folded = catalog.normalize_ar(text)
+        folded = catalog.normalize_ar(" ".join(extras))
         found: list[str] = []
         for addon in meal.addons:
             addon_id = str(addon.get("id") or "")
@@ -263,7 +253,7 @@ class Assistant(Agent):
             if any(tok in folded for tok in tokens):
                 found.append(addon_id)
                 continue
-            if _match_addon_loose(text, [addon]):
+            if _match_addon_loose(" ".join(extras), [addon]):
                 found.append(addon_id)
         # Dedupe, keep catalog order.
         seen: set[str] = set()
@@ -280,14 +270,11 @@ class Assistant(Agent):
         tools,
         model_settings: ModelSettings,
     ):
-        """Run the LLM, recovering tool calls printed as plain text.
+        """Run the LLM. Only parse leaked ``call:name{…}`` text into real tools.
 
-        Gemma sometimes writes ``call:show_meal{…}`` into the assistant content
-        instead of using the function-calling channel. Those leaks used to
-        become empty TTS (and a hard session error) while the meal page never
-        opened. The whole text turn is held until the stream ends so a call
-        split across chunks is still recovered, then real ``FunctionToolCall``
-        chunks are emitted and only leftover Arabic is spoken.
+        Gemma sometimes writes a tool call as assistant text instead of using
+        the function-calling channel. Converting that leak is a parser, not
+        flow control — which tool to run is the model's job.
         """
         activity = self._get_activity_or_raise()
         assert activity.llm is not None, "llm_node called but no LLM is available"
@@ -299,8 +286,6 @@ class Assistant(Agent):
         last_chunk_id = "recovered"
         pending: list[Any] = []
 
-        # Copy+truncate so a long session cannot fill Gemma's 32768 window
-        # (live: 32769 input tokens, 0 output tokens, silent cutout).
         chat_ctx = prepare_chat_ctx_for_llm(chat_ctx)
 
         try:
@@ -335,138 +320,9 @@ class Assistant(Agent):
         text = "".join(text_parts)
         speech, recovered = extract_text_tool_calls(text, allowed_names=allowed)
         speech = strip_speech_artifacts(speech)
-        user_turn = last_user_text(chat_ctx)
 
-        def _drop_pending_tools(names: set[str]) -> None:
-            nonlocal pending
-            kept: list[Any] = []
-            for chunk in pending:
-                if not isinstance(chunk, ChatChunk) or not chunk.delta:
-                    kept.append(chunk)
-                    continue
-                calls = list(chunk.delta.tool_calls or [])
-                if not calls:
-                    kept.append(chunk)
-                    continue
-                filtered = [
-                    tc for tc in calls if getattr(tc, "name", None) not in names
-                ]
-                if not filtered:
-                    continue
-                chunk.delta.tool_calls = filtered
-                kept.append(chunk)
-            pending = kept
-
-        # Live 2026-08-17: "دي تاني معلش" still called add_to_cart a second time.
-        # Same afternoon: calories / open-cart / reduce-qty / checkout all
-        # recovered or called add_to_cart because تمام/سلة appeared in the turn.
-        if not should_run_add_to_cart(user_turn, chat_ctx):
-            _drop_pending_tools({"add_to_cart"})
-            recovered = [c for c in recovered if c.get("name") != "add_to_cart"]
-            logger.warning("Dropped add_to_cart; this turn is not an add request")
-
-        # Structured tool calls from the provider first.
         for chunk in pending:
             yield chunk
-
-        def _chunks_have_tool(name: str) -> bool:
-            for chunk in pending:
-                if not isinstance(chunk, ChatChunk) or not chunk.delta:
-                    continue
-                for tc in chunk.delta.tool_calls or []:
-                    if getattr(tc, "name", None) == name:
-                        return True
-            return any(c.get("name") == name for c in recovered)
-
-        # Live 2026-08-16: she said "فتحت لك صفحة … أميكو" after search_meals
-        # with zero show_meal — recover it from the last search hit she named.
-        # Live 2026-08-17: "تبي أوريك الصفحة؟" is the same — open, don't ask.
-        if "show_meal" in allowed and not _chunks_have_tool("show_meal"):
-            implied = recover_implied_show_meal(speech, chat_ctx)
-            if implied:
-                recovered = list(recovered) + [implied]
-                logger.warning(
-                    "Recovered implied show_meal after open-claim meal_id={}",
-                    implied["arguments"].get("meal_id"),
-                )
-
-        if (
-            "open_page" in allowed
-            and not _chunks_have_tool("open_page")
-            and not _chunks_have_tool("show_meal")
-            and not _chunks_have_tool("show_restaurant")
-        ):
-            implied_page = recover_implied_open_page(speech, chat_ctx)
-            if implied_page:
-                recovered = list(recovered) + [implied_page]
-                logger.warning(
-                    "Recovered implied open_page after open-claim page={}",
-                    implied_page["arguments"].get("page"),
-                )
-
-        suppress_speech = False
-        if (
-            "get_cart" in allowed
-            and not _chunks_have_tool("get_cart")
-            and speech.strip()
-        ):
-            implied_cart = recover_implied_get_cart(speech, chat_ctx)
-            if implied_cart:
-                recovered = list(recovered) + [implied_cart]
-                suppress_speech = True
-                logger.warning("Recovered implied get_cart; suppressed number hallucination")
-
-        if (
-            "get_saved" in allowed
-            and not _chunks_have_tool("get_saved")
-            and speech.strip()
-        ):
-            implied_saved = recover_implied_get_saved(speech, chat_ctx)
-            if implied_saved:
-                recovered = list(recovered) + [implied_saved]
-                suppress_speech = True
-                logger.warning("Recovered implied get_saved; suppressed empty-bookmark claim")
-
-        if (
-            "search_meals" in allowed
-            and not _chunks_have_tool("search_meals")
-        ):
-            implied_search = recover_implied_search_meals(speech, chat_ctx)
-            if implied_search:
-                recovered = list(recovered) + [implied_search]
-                suppress_speech = True
-                logger.warning(
-                    "Recovered implied search_meals after stall/no-restaurant hallucination"
-                )
-
-        if (
-            "set_ui_filter" in allowed
-            and not _chunks_have_tool("set_ui_filter")
-            and not _chunks_have_tool("show_meal")
-            and not _chunks_have_tool("show_restaurant")
-            and not _chunks_have_tool("add_to_cart")
-        ):
-            implied_filter = recover_implied_set_ui_filter(speech, chat_ctx)
-            if implied_filter:
-                recovered = list(recovered) + [implied_filter]
-                logger.warning(
-                    "Recovered implied set_ui_filter kind={} query={}",
-                    implied_filter["arguments"].get("offers_kind"),
-                    implied_filter["arguments"].get("query"),
-                )
-
-        if (
-            "add_to_cart" in allowed
-            and not _chunks_have_tool("add_to_cart")
-            and should_run_add_to_cart(user_turn, chat_ctx)
-        ):
-            implied_add = recover_implied_add_to_cart(speech, chat_ctx)
-            if implied_add:
-                recovered = list(recovered) + [implied_add]
-                logger.warning(
-                    "Recovered implied add_to_cart meal_id={}",
-                    implied_add["arguments"].get("meal_id"),
-                )
 
         def _any_tool() -> bool:
             if recovered:
@@ -480,33 +336,9 @@ class Assistant(Agent):
                     return True
             return False
 
-        # Bug-010 fallback: "لحظة أشوف" with nothing to run. Recover a tool
-        # from the last user turn / last search; if even that is empty, speak
-        # a real sentence so TTS is not silent and the session does not die.
-        if claims_stall(speech) and not _any_tool():
-            stalled_calls = [
-                c
-                for c in recover_stalled_turn(speech, chat_ctx)
-                if c["name"] in allowed
-            ]
-            if stalled_calls:
-                recovered = list(recovered) + stalled_calls
-                suppress_speech = True
-                logger.warning(
-                    "Recovered stalled turn into {}: {}",
-                    [c["name"] for c in stalled_calls],
-                    [c.get("arguments") for c in stalled_calls],
-                )
-            else:
-                speech = STALL_FALLBACK_SAY_AR
-                logger.warning("Stall with nothing to run; speaking fallback")
-        elif claims_stall(speech):
-            suppress_speech = True
-            logger.warning("Suppressed stall speech; tools already in this turn")
-
         if recovered:
             logger.warning(
-                "Recovered {} text-leaked tool call(s) into real function calls: {}",
+                "Parsed {} text-leaked tool call(s) into function calls: {}",
                 len(recovered),
                 [(c["name"], c["arguments"]) for c in recovered],
             )
@@ -532,14 +364,12 @@ class Assistant(Agent):
             )
             speech = ""
 
-        if speech.strip() and not suppress_speech:
+        if speech.strip():
             yield ChatChunk(
                 id=last_chunk_id,
                 delta=ChoiceDelta(role="assistant", content=speech),
             )
-        elif not suppress_speech and not recovered and not _any_tool():
-            # Empty stream with nothing to run. After a successful tool the
-            # follow-up speech turn is often empty — that is not a cutout.
+        elif not recovered and not _any_tool():
             if should_speak_cutout_fallback(chat_ctx):
                 logger.warning("Empty LLM turn with no tools; speaking cutout fallback")
                 yield ChatChunk(
@@ -571,25 +401,23 @@ class Assistant(Agent):
         cashback: bool = False,
     ) -> dict[str, Any]:
         """
-        Search meals. Call as soon as you know one thing the user wants.
-        Speak names/prices/calories from `*_say_ar` fields, never convert digits.
-        Leave cuisine and protein_type empty unless the user said them.
+        Search meals in the catalog. Returns matching meals with spoken name/price fields.
 
         Args:
-            query: Arabic search text. Put حلويات here when they asked for sweets.
-            cuisine: Only if they named a kitchen (شامي، حلويات، مشاوي).
+            query: Arabic search text.
+            cuisine: Kitchen name only if the user named one.
             protein_type: meat/chicken/seafood/vegetarian only if they said it.
             max_calories: 0 = no limit.
             min_protein: 0 = no limit.
-            max_price: 0 = no limit. For "أرخص" use sort=price_asc instead.
-            min_price: 0 = no limit. For "أغلى" use sort=price_desc.
+            max_price: 0 = no limit.
+            min_price: 0 = no limit.
             spicy: True only if they asked for spicy meals.
-            only_offers: True for combo/family meals. Not a discount filter.
+            only_offers: True for combo/family/deal meals.
             restaurant: Restrict to one restaurant only if they named it.
-            serves: Headcount when they stated it. "أنا وأمي وأبوي" = 3.
+            serves: Headcount when they stated it.
             sort: relevance/calories_asc/calories_desc/price_asc/price_desc/rating_desc/protein_desc/fat_desc.
             offer_kind: combo, family, deal, or combo,family. Else empty.
-            cashback: True for عروض الكاش باك.
+            cashback: True for cashback offers.
         """
         protein = (protein_type or "").strip().lower()
         if protein and protein not in {"meat", "chicken", "seafood", "vegetarian"}:
@@ -703,10 +531,10 @@ class Assistant(Agent):
             "ok={} reason={}",
             kind, ui_query, wants_cashback, outcome.ok, outcome.reason,
         )
-        if wants_cashback and path:
+        if not outcome.ok and path:
             nav = await self._ui.navigate(path)
             logger.info(
-                "Tool search_meals navigated cashback path={} ok={} reason={}",
+                "Tool search_meals navigated filter path={} ok={} reason={}",
                 path, nav.ok, nav.reason,
             )
 
@@ -717,10 +545,7 @@ class Assistant(Agent):
         meal_id: str,
     ) -> dict[str, Any]:
         """
-        Full details for one meal, including its addons list. Call this before
-        offering additions, and again if the user disputes a price you just
-        said. Speak prices from `price_sentence_ar` or `price_say_ar`
-        verbatim, never from the digits.
+        Full details for one meal, including addons.
 
         Args:
             meal_id: The meal_id from a previous search result.
@@ -747,14 +572,11 @@ class Assistant(Agent):
         reason: str = "",
     ) -> dict[str, Any]:
         """
-        Open the meal's page in the user's app so they can see it while you
-        talk. Call this once you have settled on a recommendation. The result
-        includes `price_sentence_ar` — read that price, do not convert
-        `price_sar` yourself.
+        Open the meal page in the user's app.
 
         Args:
             meal_id: The meal_id from a previous search result.
-            reason: One short Arabic sentence on why this meal, shown in the UI.
+            reason: Optional short Arabic line shown in the UI.
         """
         meal = catalog.load_catalog().by_id(meal_id)
         if meal is None:
@@ -792,10 +614,8 @@ class Assistant(Agent):
                 "price_sar",
                 "price_say_ar",
                 "price_sentence_ar",
-                "price_speech_rule_ar",
                 "serves_people",
                 "serves_say_ar",
-                "serves_rule_ar",
                 "includes",
                 "includes_say_ar",
                 "calories",
@@ -824,29 +644,19 @@ class Assistant(Agent):
         restaurant: str,
     ) -> dict[str, Any]:
         """
-        Open one restaurant's page in the user's app, and get its details plus
-        a few of its popular dishes. Use when the user asks about a specific
-        restaurant rather than a dish.
+        Open one restaurant's page and return its details plus popular dishes.
 
         Args:
-            restaurant: The restaurant's Arabic name (e.g. "بيت الشواية") or a
-                restaurant_id from an earlier search result. Never invent an id.
-                If the user named a dish + people count (شاورما لخمسة أفراد),
-                do NOT use this tool — call search_meals instead.
+            restaurant: Arabic name or restaurant_id from an earlier search.
         """
         raw = (restaurant or "").strip()
         if catalog.looks_like_meal_query(raw) and catalog.restaurant_details(raw) is None:
             raise ToolError(
-                f"{raw!r} looks like a meal/offer search, not a restaurant name. "
-                "Call search_meals with that text (and serves if they named a "
-                "headcount). Do NOT tell the user there is no restaurant."
+                f"{raw!r} looks like a meal/offer search, not a restaurant name."
             )
         details = catalog.restaurant_details(raw)
         if details is None:
-            raise ToolError(
-                f"No restaurant matching {raw!r}. If the user asked for a dish, "
-                "call search_meals instead of telling them the restaurant is missing."
-            )
+            raise ToolError(f"No restaurant matching {raw!r}.")
 
         outcome = await self._ui.navigate(details["page_path"])
         logger.info(
@@ -879,20 +689,12 @@ class Assistant(Agent):
         page: str,
     ) -> dict[str, Any]:
         """
-        Open one of the app's main pages for the user.
+        Open one of the app's main pages.
 
         Args:
-            page: One of "home", "restaurants", "grocery", "fast", "24h",
-                "cart", "checkout", "orders", "offers", "search", "saved",
-                "cashback". Arabic names are accepted too: الرئيسية، المطاعم،
-                البقالة، توصيل سريع، السلة، إتمام الطلب، الطلبات، العروض،
-                البحث، المحفوظات، كاش باك. "المطبخ" / "kitchen" open the
-                restaurants list. "البقالة" opens /restaurants?filter=grocery.
-                "توصيل سريع" / "صفحة سريع" opens /restaurants?filter=fast.
-                "عروض الكاش باك" opens /offers?cashback=1.
-                Call this immediately when the user says روح للسلة / وريني
-                السلة / افتح السلة / الكارت / ادخل على المطبخ / صفحة المطاعم /
-                افتح البقالة / افتحي صفحة التوصيل سريعا / عروض الكاش باك.
+            page: home, restaurants, grocery, fast, 24h, cart, checkout,
+                orders, offers, search, saved, or cashback. Arabic aliases
+                (السلة، المطاعم، البقالة، …) are accepted.
         """
         paths = {
             "home": "/",
@@ -1000,11 +802,7 @@ class Assistant(Agent):
     @function_tool()
     async def press_checkout_button(self, context: RunContext) -> dict[str, Any]:
         """
-        Press the "إتمام الطلب" button in the cart, which opens the checkout
-        form. Call this immediately, with no questions first, whenever the user
-        says إتمام الطلب / كملي الطلب / اضغطي الزر / نروح للدفع. Do NOT ask for
-        name, phone or address before pressing — press first, then ask once for
-        whatever is still missing.
+        Open the checkout form from the cart (إتمام الطلب).
         """
         outcome = await self._ui.navigate("/checkout")
         logger.info("Tool press_checkout_button ok={} reason={}", outcome.ok, outcome.reason)
@@ -1047,10 +845,7 @@ class Assistant(Agent):
     @function_tool()
     async def get_ui_state(self, context: RunContext) -> dict[str, Any]:
         """
-        Read which page the user is looking at right now in the app (path,
-        page name, open meal/restaurant id). Call this when they ask "وين أنا؟"
-        / "وش قدامي؟", or before acting on a page-specific control, or after
-        navigating so your next sentence matches the screen.
+        Read which page the user is looking at (path, page, open meal/restaurant).
         """
         outcome = await self._ui.get_ui_state()
         logger.info(
@@ -1139,14 +934,12 @@ class Assistant(Agent):
         address: str = "",
     ) -> dict[str, Any]:
         """
-        Fill the checkout form fields the user said out loud. Opens /checkout
-        first if needed, writes the fields into the form, and remembers them
-        for complete_order. Phone must be a Saudi mobile: 05XXXXXXXX.
+        Fill checkout fields the user said out loud.
 
         Args:
             name: Customer full name.
             phone: Saudi mobile, digits like 05XXXXXXXX.
-            address: Delivery address (district, street, building).
+            address: Delivery address.
         """
         if name:
             self._checkout_draft["name"] = written_text(name)
@@ -1205,15 +998,13 @@ class Assistant(Agent):
         address: str = "",
     ) -> dict[str, Any]:
         """
-        Place the order from the user's cart and open the success page. Only
-        call after the user clearly asked to confirm / finish the order AND
-        you have name + Saudi phone (05XXXXXXXX) + address. Missing fields can
-        be taken from checkout_draft remembered earlier in this call.
+        Place the order from the cart. Needs name, Saudi phone, and address
+        (reuses checkout_draft for any omitted field).
 
         Args:
-            name: Customer full name (or empty to reuse draft).
-            phone: Saudi mobile 05XXXXXXXX (or empty to reuse draft).
-            address: Delivery address (or empty to reuse draft).
+            name: Full name, or empty to reuse draft.
+            phone: Saudi mobile 05XXXXXXXX, or empty to reuse draft.
+            address: Delivery address, or empty to reuse draft.
         """
         if name.strip():
             self._checkout_draft["name"] = written_text(name)
@@ -1389,10 +1180,6 @@ class Assistant(Agent):
             "subtotal_sar": round(subtotal, 2),
             "subtotal_say_ar": catalog.sar_words(subtotal),
             "is_empty": not lines,
-            "cart_speech_rule_ar": (
-                "انطقي subtotal_say_ar حرف بحرف. هذا مجموع السلة الحقيقي "
-                "على الشاشة. ممنوع تقولين رقم من line_total أو من ذاكرتك."
-            ),
         }
         snap.update(catalog.cart_nutrition(lines))
         return snap
@@ -1407,8 +1194,7 @@ class Assistant(Agent):
         addon_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Tick addons/spicy on the open meal page so the user sees them.
-        Does NOT add to the cart. Call add_to_cart only if they said للسلة.
+        Tick addons/spicy/quantity on the open meal page. Does not add to cart.
 
         Args:
             meal_id: meal_id of the open meal.
@@ -1425,6 +1211,16 @@ class Assistant(Agent):
         opts = self._resolve_meal_options(
             meal, addon_ids, spicy, quantity, tool="set_meal_options"
         )
+        if not opts["accepted"]:
+            scraped = self._addons_from_last_user(context, meal)
+            if scraped:
+                opts = self._resolve_meal_options(
+                    meal, scraped, spicy, quantity, tool="set_meal_options"
+                )
+                logger.info(
+                    "Tool set_meal_options scraped addons meal_id={} {}",
+                    meal.id, scraped,
+                )
 
         outcome = await self._ui.set_meal_options(
             meal_id=meal.id,
@@ -1467,6 +1263,24 @@ class Assistant(Agent):
         )
         if opts["rejected"]:
             result["ignored_unknown_addons"] = opts["rejected"]
+        chat = getattr(self, "chat_ctx", None) or getattr(context, "chat_ctx", None)
+        if not opts["accepted"] and (
+            user_asked_extras(last_user_text(chat))
+        ):
+            names = [
+                catalog.speakable_name(str(a.get("name") or ""))
+                for a in meal.addons
+                if a.get("name")
+            ]
+            if names:
+                listed = "، ".join(names[:4])
+                result["say_to_user_ar"] = f"الإضافات: {listed}. تبي أي منها؟"
+                result["addons_available_say_ar"] = names
+        elif opts["addon_names"]:
+            named = "، ".join(
+                catalog.speakable_name(n) for n in opts["addon_names"] if n
+            )
+            result["say_to_user_ar"] = f"علّمت {named}. تبي أضيفها للسلة؟"
         return result
 
     @function_tool()
@@ -1479,11 +1293,7 @@ class Assistant(Agent):
         addon_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Add a meal to the cart. Call only when THIS turn says to put it in
-        the cart (ضيفها للسلة / حطها). Once per request — a second call
-        duplicates the line. Not for opening the cart, changing quantity,
-        calories, or addons (open_page / set_cart_quantity / get_cart /
-        set_meal_options).
+        Add a meal to the cart.
 
         Args:
             meal_id: meal_id from a previous search.
@@ -1496,50 +1306,6 @@ class Assistant(Agent):
             raise ToolError(
                 f"No meal with id {meal_id!r}. Search first and use a real meal_id."
             )
-
-        chat = getattr(self, "chat_ctx", None) or getattr(context, "chat_ctx", None)
-        user_turn = last_user_text(chat)
-        if user_turn and not should_run_add_to_cart(user_turn, chat):
-            logger.warning(
-                "Blocked add_to_cart; user did not ask to add this turn meal_id={}",
-                meal.id,
-            )
-            cart = await self._cart_snapshot()
-            skipped = {
-                "ok": True,
-                "skipped": True,
-                "skip_reason": "user_did_not_ask_to_add",
-                "meal_id": meal.id,
-                "meal_name": meal.name,
-                "say_to_user_ar": "ما ضفتها للسلة لأن الطلب مو إضافة.",
-                "on_success": "ما ضفتها للسلة",
-            }
-            if cart.get("ok"):
-                skipped["cart"] = cart
-                skipped["subtotal_sar"] = cart.get("subtotal_sar")
-                skipped["subtotal_say_ar"] = cart.get("subtotal_say_ar")
-            return skipped
-
-        if user_cancels_repeat_add(user_turn):
-            logger.warning(
-                "Blocked add_to_cart; user cancelled a repeat add meal_id={}",
-                meal.id,
-            )
-            cart = await self._cart_snapshot()
-            skipped = {
-                "ok": True,
-                "skipped": True,
-                "skip_reason": "user_cancelled_repeat",
-                "meal_id": meal.id,
-                "meal_name": meal.name,
-                "say_to_user_ar": f"{meal.name} موجودة. ما ضفت نسخة ثانية.",
-                "on_success": f"ما ضفت {meal.name} مرة ثانية",
-            }
-            if cart.get("ok"):
-                skipped["cart"] = cart
-                skipped["subtotal_sar"] = cart.get("subtotal_sar")
-                skipped["subtotal_say_ar"] = cart.get("subtotal_say_ar")
-            return skipped
 
         # Omitting addon_ids after set_meal_options means "the options I already
         # chose", not "nothing". Losing the additions between the two calls
@@ -1590,6 +1356,7 @@ class Assistant(Agent):
         )
         result.update(
             {
+                "meal_id": meal.id,
                 "meal_name": meal.name,
                 "meal_name_say_ar": catalog.speakable_name(meal.name),
                 "quantity": quantity,
@@ -1603,10 +1370,6 @@ class Assistant(Agent):
                 "addons_surcharge_sar": round(
                     line_total - meal.effective_price * quantity, 2
                 ),
-                "price_speech_rule_ar": (
-                    "انطقي line_total_say_ar حرف بحرف — هذا سعر الوجبة مع "
-                    "الإضافات. ممنوع تقولين سعر الوجبة بدون الإضافات."
-                ),
             }
         )
         if rejected:
@@ -1615,21 +1378,35 @@ class Assistant(Agent):
         if outcome.ok:
             previous = self._added_this_session.get(meal.id, 0)
             self._added_this_session[meal.id] = previous + 1
-            if previous:
-                result["duplicate_note_ar"] = (
-                    f"{meal.name} كانت مضافة قبل في هذي المكالمة. "
-                    "add_to_cart *يزيد* الكمية، ما يستبدلها. إذا المستخدم "
-                    "قال 'خليهم اثنين' أو 'واحد بس'، استخدمي set_cart_quantity "
-                    "بالعدد المطلق."
-                )
-            # Always re-read the cart: line_total is only this call's payload,
-            # while the browser may already have had quantity on the same line.
+            result["already_in_session"] = previous > 0
             cart = await self._cart_snapshot()
             if cart.get("ok"):
-                result["cart"] = cart
                 result["subtotal_sar"] = cart["subtotal_sar"]
                 result["subtotal_say_ar"] = cart["subtotal_say_ar"]
                 result["cart_item_count"] = cart["item_count"]
+                in_cart = [
+                    str(line.get("meal_id"))
+                    for line in cart.get("items") or []
+                    if line.get("meal_id")
+                ]
+            else:
+                in_cart = [meal.id]
+            pairs = catalog.suggest_pairs(
+                meal,
+                exclude_meal_ids=in_cart,
+                exclude_addon_ids=accepted,
+            )
+            pair_line = catalog.pair_speech(pairs)
+            first_pair = pairs[0] if pairs else None
+            if pair_line and first_pair:
+                result["pair_say_ar"] = pair_line
+                if first_pair.get("meal_id"):
+                    result["pair_meal_id"] = first_pair["meal_id"]
+                    result["pair_name"] = first_pair.get("name")
+                elif first_pair.get("addon_id"):
+                    result["pair_addon_id"] = first_pair.get("addon_id")
+                confirm = str(result.get("say_to_user_ar") or f"أضفت {meal.name} للسلة")
+                result["say_to_user_ar"] = f"{confirm}. {pair_line}"
         return result
 
     @function_tool()
@@ -1642,17 +1419,13 @@ class Assistant(Agent):
         addon_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Set the absolute quantity of a meal already in the cart, or remove it.
-        Use this when the user changes how many they want ("خليهم واحد",
-        "اعمل اثنين", "شيلها من السلة"). Do NOT use add_to_cart for that —
-        add_to_cart adds on top of what is already there.
+        Set the absolute quantity of a meal already in the cart. 0 removes it.
 
         Args:
             meal_id: The meal_id of the cart line.
-            quantity: Absolute count. 0 removes the line entirely.
+            quantity: Absolute count. 0 removes the line.
             spicy: Match the spicy flag of the cart line if known.
-            addon_ids: Match the addons of the cart line if known; omit to
-                target the only line for this meal_id.
+            addon_ids: Match the addons of the cart line if known.
         """
         meal = catalog.load_catalog().by_id(meal_id)
         if meal is None:
@@ -1737,12 +1510,11 @@ class Assistant(Agent):
         saved: bool = True,
     ) -> dict[str, Any]:
         """
-        Save a meal to the user's favourites (the heart button), or remove it.
-        Only meals can be saved — restaurants cannot.
+        Save a meal to favourites, or remove it.
 
         Args:
             meal_id: The meal_id from a previous search result.
-            saved: True to save it, False to remove it from favourites.
+            saved: True to save, False to remove.
         """
         cat = catalog.load_catalog()
         meal = cat.by_id(meal_id)
@@ -1797,11 +1569,7 @@ class Assistant(Agent):
 
     @function_tool()
     async def get_saved(self, context: RunContext) -> dict[str, Any]:
-        """
-        Read the meals currently in المحفوظات. Call this BEFORE saying the
-        list is empty, and BEFORE deleting "everything" in bookmarks. Speak
-        names from `items[].name_say_ar` only.
-        """
+        """Read the meals currently in المحفوظات."""
         outcome = await self._ui.get_saved()
         logger.info("Tool get_saved ok={} reason={}", outcome.ok, outcome.reason)
         ids: list[str] = []
@@ -1841,9 +1609,6 @@ class Assistant(Agent):
             "rpc_ok": outcome.ok,
             "failure_reason": None if outcome.ok else outcome.reason,
             "say_to_user_ar": say,
-            "saved_speech_rule_ar": (
-                "انطقي الأسماء من items فقط. ممنوع تقولين فاضية إذا item_count>0."
-            ),
         }
         if not outcome.ok and not items:
             result["say_to_user_ar"] = (
@@ -1854,10 +1619,7 @@ class Assistant(Agent):
 
     @function_tool()
     async def clear_saved(self, context: RunContext) -> dict[str, Any]:
-        """
-        Remove every meal from المحفوظات. Use when the user says
-        احذفي اللي في المحفوظات / فضّي المحفوظات.
-        """
+        """Remove every meal from المحفوظات."""
         listed = await self.get_saved(context)
         ids = [str(i.get("meal_id")) for i in (listed.get("items") or []) if i.get("meal_id")]
         rpc = await self._ui.clear_saved()
@@ -1903,19 +1665,15 @@ class Assistant(Agent):
         menu_tab: str = "",
     ) -> dict[str, Any]:
         """
-        Apply an on-screen filter chip so the page matches a tap the user
-        could make: offers Combo/Family/Deal, cashback, search query,
-        restaurants 24h/fast/grocery, home cuisine, or a restaurant menu tab.
-        Also search the catalog with the same filters so speech matches the
-        screen.
+        Apply an on-screen filter chip and search with the same filters.
 
         Args:
-            offers_kind: "combo", "family", "deal", "combo,family", or "all".
-            query: Search text to put in the search box (e.g. مقرمش, كيتو).
-            restaurants_filter: "all", "grocery", "24h", or "fast".
-            cuisine: Cuisine chip if the user named one (شامي, سعودي, …).
-            cashback: True to keep / add ?cashback=1 on the offers page.
-            menu_tab: Restaurant page tab: "all", "offers", "popular", "menu".
+            offers_kind: combo, family, deal, combo,family, or all.
+            query: Search-box text.
+            restaurants_filter: all, grocery, 24h, or fast.
+            cuisine: Cuisine chip if the user named one.
+            cashback: True for cashback offers.
+            menu_tab: Restaurant tab: all, offers, popular, menu.
         """
         kind = (offers_kind or "").strip().lower()
         if kind in {"كومبو", "كمبو"}:
@@ -2019,13 +1777,7 @@ class Assistant(Agent):
 
     @function_tool()
     async def get_cart(self, context: RunContext) -> dict[str, Any]:
-        """
-        Read what is currently in the user's cart. Use before talking about the
-        cart contents, total price, or calorie/protein totals, so you never
-        guess or add the numbers yourself. Speak calories from
-        `calories_total_say_ar` and protein from `protein_total_say_ar`, or
-        read `nutrition_say_ar` verbatim.
-        """
+        """Read what is currently in the user's cart, with spoken totals."""
         outcome = await self._ui.get_cart()
         logger.info("Tool get_cart ok={} reason={}", outcome.ok, outcome.reason)
         result = outcome.as_tool_result(
@@ -2085,16 +1837,6 @@ class Assistant(Agent):
         result["subtotal_say_ar"] = catalog.sar_words(subtotal)
         result["is_empty"] = not lines
         result.update(catalog.cart_nutrition(lines))
-        result["cart_speech_rule_ar"] = (
-            "انطقي subtotal_say_ar حرف بحرف لمجموع السعر. "
-            "انطقي nutrition_say_ar أو calories_total_say_ar حرف بحرف "
-            "لسعرات السلة كلها. ممنوع تجمعين أرقام في رأسك، وممنوع تأخذين "
-            "سعرات آخر صنف بس. unit_price_sar لكل سطر يشمل الإضافات."
-        )
-        result["calories_speech_rule_ar"] = (
-            f"مجموع السعرات هو {result.get('calories_total_say_ar')}. "
-            "انطقي هذا الحقل كما هو."
-        )
         return result
 
     # ─── Misc ────────────────────────────────────────────────────────────────
@@ -2180,8 +1922,12 @@ class Assistant(Agent):
 AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
 server = AgentServer(port=AGENT_PORT, num_idle_processes=3)
 
+# Named so Cloud dispatches this worker, not some other empty-name agent on
+# the same LiveKit project. The frontend token must request the same name.
+LIVEKIT_AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "luqma")
 
-@server.rtc_session()
+
+@server.rtc_session(agent_name=LIVEKIT_AGENT_NAME)
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
     # Room.sid is an async property in the current SDK; touching it without
@@ -2262,7 +2008,6 @@ async def my_agent(ctx: agents.JobContext):
     prefs_context = build_prefs_context(participant_metadata)
     instructions = compose_instructions(
         voice=profile.key,
-        catalog_index=catalog.catalog_index(),
         prefs_context=prefs_context,
     )
     logger.info(

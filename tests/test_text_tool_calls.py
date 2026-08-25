@@ -29,14 +29,17 @@ from src.text_tool_calls import (  # noqa: E402
     recover_implied_get_saved,
     recover_implied_open_page,
     recover_implied_search_meals,
+    recover_implied_set_meal_options,
     recover_implied_set_ui_filter,
     recover_implied_show_meal,
     recover_stalled_turn,
     should_speak_cutout_fallback,
     should_run_add_to_cart,
     user_asked_add_to_cart,
+    user_asked_extras,
     user_blocks_add_to_cart,
     user_cancels_repeat_add,
+    claims_went_to_cart,
 )
 
 failures: list[str] = []
@@ -693,6 +696,122 @@ def main() -> None:
                 },
             )(),
         ),
+    )
+
+    print("\n── live 2026-08-25 pizza home / cross-sell / ASR yes ──")
+    pizza_shown = type(
+        "C",
+        (),
+        {
+            "items": [
+                _User("طيب ممكن توريني البيتزا؟"),
+                type(
+                    "S",
+                    (),
+                    {
+                        "name": "show_meal",
+                        "arguments": {"meal_id": "amico-kitchen-offer-2"},
+                    },
+                )(),
+            ]
+        },
+    )()
+    check(
+        "showing pizza does not recover open_page home",
+        recover_implied_open_page(
+            "فتحت لك صفحة وجبة عائلية بيتزا لثلاثة أشخاص. تبي تضيف لها شيء؟",
+            pizza_shown,
+        ),
+        None,
+    )
+    check(
+        "البيتزا is not the home page",
+        recover_implied_open_page(
+            "فتحت لك صفحة وجبة بيتزا",
+            _Chat("طيب ممكن توريني البيتزا؟"),
+        ),
+        None,
+    )
+    check_true(
+        "stretched اي is not an add request",
+        not user_asked_add_to_cart("أي" + "ي" * 40),
+    )
+
+    class _AfterPizzaAdd:
+        items = [
+            type(
+                "S",
+                (),
+                {
+                    "name": "add_to_cart",
+                    "arguments": {"meal_id": "amico-kitchen-offer-2"},
+                    "output": json.dumps(
+                        {
+                            "ok": True,
+                            "meal_id": "amico-kitchen-offer-2",
+                            "meal_name": "وجبة عائلية بيتزا لـ 3 أشخاص",
+                            "pair_meal_id": "cardamom-cafe-tiramisu",
+                            "pair_name": "تيراميسو صغير",
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            )(),
+            _Asst("أضفت البيتزا. لو ودك حلا بعدها، تيراميسو صغير."),
+            _User("ماشي ضيفي له السلة"),
+        ]
+
+    implied = recover_implied_add_to_cart("", _AfterPizzaAdd())
+    check_true("cross-sell yes recovers add_to_cart", implied is not None)
+    assert implied is not None
+    check(
+        "cross-sell yes adds the pair not the pizza",
+        implied["arguments"]["meal_id"],
+        "cardamom-cafe-tiramisu",
+    )
+
+    check_true(
+        "رحت للسلة is a cart-nav hallucination",
+        claims_went_to_cart("أبشر، رحت للسلة. وش تبي تطلب الحين؟"),
+    )
+    check(
+        "extras question plus cart-claim does not open home or cart",
+        recover_implied_open_page(
+            "أبشر، رحت للسلة. وش تبي تطلب الحين؟",
+            _Chat("ما يشد فيا السلة"),
+        ),
+        None,
+    )
+    extras_ctx = type(
+        "E",
+        (),
+        {
+            "items": [
+                type(
+                    "S",
+                    (),
+                    {
+                        "name": "show_meal",
+                        "arguments": {"meal_id": "amico-kitchen-offer-2"},
+                    },
+                )(),
+                _Asst("فتحت لك صفحة البيتزا. تبي تضيف لها شيء؟"),
+                _User("ضيف extras ثوم وبطاطس"),
+            ]
+        },
+    )()
+    extras_call = recover_implied_set_meal_options("", extras_ctx)
+    check_true("named extras recover set_meal_options", extras_call is not None)
+    assert extras_call is not None
+    check(
+        "extras recover the open meal",
+        extras_call["arguments"]["meal_id"],
+        "amico-kitchen-offer-2",
+    )
+    check_true("garlic/fries count as extras", user_asked_extras("ضيف ثوم وبطاطس"))
+    check_true(
+        "stretched اي is not extras",
+        not user_asked_extras("أي" + "ي" * 40),
     )
 
     if failures:

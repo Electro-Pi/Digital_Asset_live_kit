@@ -32,6 +32,9 @@ from src.catalog import (  # noqa: E402
     search_meals,
     speakable_name,
     catalog_index,
+    pair_speech,
+    suggest_pairs,
+    normalize_ar,
 )
 
 failures: list[str] = []
@@ -124,8 +127,8 @@ check_true("groceries hidden by default",
            all("ماركت" not in r["restaurant"] for r in groceries["results"]))
 
 impossible = search_meals(query="سمك", protein_type="seafood", max_calories=100, max_price=10)
-check_true("impossible search advises what to relax",
-           impossible["total_matches"] == 0 and "no_results_advice" in impossible)
+check_true("impossible search reports the dish exists outside the filters",
+           impossible["total_matches"] == 0 and "exists_but_filtered" in impossible)
 
 print("\n── a category request is not a missing dish ──")
 # "asked for a dessert, got a burger": حلى normalizes to حلي, which sits inside
@@ -380,8 +383,6 @@ print("\n── an offer is a bundle, not a discount ──")
 combo_row = search_meals(query="وجبة مشاوي فردية")["results"][0]
 check_true("offer rows say which kind they are", combo_row["offer_kind"] == "combo")
 check("no offerPrice means no discount", combo_row["has_discount"], False)
-check_true("a claim rule rides along when there is no discount",
-           "خصم" in combo_row["price_claim_rule_ar"])
 check_true("bundle contents are itemised, not left to the model",
            "شيش طاووق" in combo_row["includes"])
 plain = search_meals(query="شاورما دجاج", restaurant_id="مذاق الشام")["results"][0]
@@ -392,8 +393,6 @@ family = [m for m in load_catalog().meals if m.name == "وجبة عائلية م
 check("headcount parsed from the name", family.serves, 3)
 check("'لشخص واحد' parses as one", grill_combo.serves, 1)
 check("an unstated headcount stays unknown, not one", plain["serves_people"], None)
-check_true("and says so, so no number gets invented",
-           "لا تقولين رقم" in plain["serves_rule_ar"])
 
 print("\n── the user's words outrank the model's guess about them ──")
 # Live failure: asked to open "وجبة مشاوي فردية", the model guessed
@@ -452,10 +451,50 @@ check_true("and is actually shawarma",
 r = search_meals(query="ستربس", serves=6)
 check("no strips meal feeds six — said honestly, not papered over",
       r["no_meal_serves_requested"], True)
-check_true("with advice to order multiples instead",
-           "أكثر من وحدة" in r["serves_advice_ar"])
 r = search_meals(query="بيتزا")
 check("no headcount, no serves logic", r.get("serves_requested"), None)
+
+print("\n── 3-person offers exist even when shawarma family trays are 4+ ──")
+# Live 2026-08-25: "وجبة شاورما تكفي ثلاث أفراد" searched family+شاورما,
+# opened a 4-person tray, then said there were no 3-person offers while
+# thirty family trays for 3 sat on the offers page.
+shawarma3 = search_meals(
+    query="شاورما", cuisine="شاورما", protein_type="chicken",
+    serves=3, offer_kind="family",
+)
+check("shawarma family for 3 is not an exact match",
+      shawarma3.get("no_meal_serves_requested"), True)
+check_true(
+    "spoken line is handed over",
+    bool(shawarma3.get("say_to_user_ar")),
+)
+check_true(
+    "does not claim 3-person offers are missing",
+    "ما فيه عروض" not in (shawarma3.get("say_to_user_ar") or ""),
+)
+check("top result is actually for 3",
+      shawarma3["results"][0]["serves_people"], 3)
+check_true(
+    "top result is not the 4-person shawarma tray",
+    shawarma3["results"][0]["meal_id"] != "manakeesh-street-offer-2",
+)
+check_true(
+    "asks if they want a 3-person alternative",
+    "تبي" in (shawarma3.get("say_to_user_ar") or ""),
+)
+_say3 = normalize_ar(shawarma3.get("say_to_user_ar") or "")
+check_true(
+    "names a real 3-person offer in speech",
+    "بيتزا" in _say3 or "برجر" in _say3 or "بحري" in _say3,
+)
+check_true(
+    "3-person offers are listed",
+    (shawarma3.get("offers_for_requested_serves") or shawarma3["results"])
+    and all(
+        row.get("serves_people") == 3
+        for row in (shawarma3.get("offers_for_requested_serves") or shawarma3["results"])
+    ),
+)
 
 print("\n── me + named family is three, not four ──")
 # Live failure 2026-08-13: "أكل أنا وأمي وأبوي" ranked a popular mashawi tray
@@ -739,6 +778,68 @@ check_true(
 cb_flag = search_meals(query="عايز حاجة عليها كاش باك", cashback=True)
 check_true("cashback=true still returns matches", cb_flag["total_matches"] > 0)
 check("cashback ASR cashback → كاش باك", repair_asr_query("cashback"), "كاش باك")
+
+print("\n── pairing is catalog facts; speech is one assembled line ──")
+shawarma = next(
+    m for m in cat.meals
+    if m.name == "شاورما دجاج" and m.restaurant_name == "مذاق الشام"
+)
+pairs = suggest_pairs(shawarma)
+check_true("shawarma gets at least one pair", len(pairs) >= 1)
+check_true(
+    "pairs are addons or real meals",
+    all(p.get("addon_id") or cat.by_id(p.get("meal_id") or "") for p in pairs),
+)
+check_true("no spoken script on pair rows", all("say_to_user_ar" not in p for p in pairs))
+spoken = pair_speech(pairs)
+check_true("pair_speech is one Arabic line", bool(spoken) and spoken.endswith("."))
+check_true("pair_speech uses the first pair's spoken name", pairs[0]["name_say_ar"] in spoken)
+check_true("pair_speech uses the first pair's spoken price", pairs[0]["price_say_ar"] in spoken)
+check_true(
+    "main dish cross-sells a drink first, not garlic",
+    "مشروب" in pairs[0]["name"] or pairs[0].get("pairs_as") == "drink" or pairs[0].get("kind") == "drink",
+    str(pairs[0]),
+)
+check("empty pairs are silent", pair_speech([]), "")
+kinds = {p["kind"] for p in pairs}
+check_true(
+    "shawarma pairs as addon/drink/dessert/side",
+    kinds <= {"addon", "drink", "dessert", "side"},
+    str(kinds),
+)
+# Already-chosen fries addon should not be suggested again.
+fries_id = next(
+    (str(a["id"]) for a in shawarma.addons if "بطاطس" in str(a.get("name") or "")),
+    "",
+)
+if fries_id:
+    skipped = suggest_pairs(shawarma, exclude_addon_ids=[fries_id])
+    check_true(
+        "excluded addon is not re-offered",
+        all(p.get("addon_id") != fries_id for p in skipped),
+    )
+dessert = next(m for m in cat.meals if m.name == "كنافة نابلسية")
+dessert_pairs = suggest_pairs(dessert)
+check_true(
+    "dessert is not paired with another dessert",
+    all(p.get("kind") != "dessert" for p in dessert_pairs),
+    str([p.get("kind") for p in dessert_pairs]),
+)
+burger = next(m for m in cat.meals if m.name == "برجر كلاسيك")
+burger_pairs = suggest_pairs(burger)
+check_true(
+    "classic burger is not treated as a drink",
+    all(p.get("meal_id") != burger.id for p in burger_pairs),
+)
+check_true(
+    "burger pairs stay at the same restaurant or as addons",
+    all(
+        p.get("kind") == "addon"
+        or p.get("restaurant") == burger.restaurant_name
+        for p in burger_pairs
+    ),
+    str(burger_pairs),
+)
 
 print("\n" + "=" * 60)
 if failures:

@@ -126,6 +126,16 @@ _SAVOURY_KEYWORDS = (
     "فطور", "صحن", "نقانق", "بيكون",
 )
 
+# Pairing uses the dish *name*, not noisy diet tags. "فتة" matching "لبن"
+# inside a description is not a drink; "ميلك شيك" in the name is.
+_PAIR_DRINK_NAME = (
+    "قهوه", "لاتيه", "ميلك شيك", "عصير", "مياه", "مشروب", "شاي",
+    "سموذي", "كولا", "غازي",
+)
+_PAIR_SIDE_NAME = ("بطاطس", "سلطه", "فتوش", "حمص", "مخلل", "ثوم")
+_PAIR_ADDON_DRINK = ("مشروب", "غازي", "عصير", "كولا")
+_PAIR_ADDON_SIDE = ("بطاطس", "ثوم", "مخلل", "صلصه", "صوص")
+
 # Thresholds used for derived tags and for the "why this meal" reasons. They are
 # named because they appear in both filtering and explanation, and drifting them
 # apart would make سلمى justify a pick with a rule it did not actually use.
@@ -1270,31 +1280,19 @@ def _next_question(
     if f.protein_type is None:
         kinds = {t for m in results for t in m.protein_tags if t in _PROTEIN_LABEL_AR}
         if len(kinds) >= 2:
-            return {
-                "ask_about": "protein_type",
-                "suggested_question_ar": "تبي لحم ولا دجاج ولا شي بحري؟",
-            }
+            return {"ask_about": "protein_type"}
     if f.max_price is None:
         prices = [m.effective_price for m in results]
         if prices and (max(prices) - min(prices)) >= 30:
-            return {
-                "ask_about": "max_price",
-                "suggested_question_ar": "كم ميزانيتك تقريبا؟",
-            }
+            return {"ask_about": "max_price"}
     if f.cuisine is None:
         cuisines = {m.cuisine for m in results}
         if len(cuisines) >= 3:
-            return {
-                "ask_about": "cuisine",
-                "suggested_question_ar": "ودك بمطبخ معين، مثل سعودي أو شامي أو هندي؟",
-            }
+            return {"ask_about": "cuisine"}
     if f.max_calories is None and f.min_protein is None:
         cals = [m.calories for m in results if m.calories]
         if cals and (max(cals) - min(cals)) >= 300:
-            return {
-                "ask_about": "max_calories",
-                "suggested_question_ar": "تبيه خفيف ولا دسم؟",
-            }
+            return {"ask_about": "max_calories"}
     return None
 
 
@@ -1366,10 +1364,6 @@ def _price_speech(meal: Meal) -> dict[str, Any]:
         "price_sar": round(meal.effective_price, 2),
         "price_say_ar": spoken,
         "price_sentence_ar": f"السعر {spoken}",
-        "price_speech_rule_ar": (
-            "انطقي price_say_ar أو price_sentence_ar حرف بحرف. "
-            "ممنوع تحولين price_sar بنفسك."
-        ),
     }
 
 
@@ -1444,11 +1438,6 @@ def _offer_facts(meal: Meal) -> dict[str, Any]:
     if meal.combo_includes:
         facts["includes"] = list(meal.combo_includes)
         facts["includes_say_ar"] = [speakable_name(i) for i in meal.combo_includes]
-    if not meal.has_discount:
-        facts["price_claim_rule_ar"] = (
-            "ما فيه خصم ولا نسبة على هذا الصنف. السعر المعروض هو سعره العادي. "
-            "ممنوع تقولين \"خصم\" أو \"وفّرت\" أو نسبة مئوية."
-        )
     if meal.cashback_percent:
         facts["cashback_percent"] = meal.cashback_percent
     return facts
@@ -1461,10 +1450,7 @@ def _serves_facts(meal: Meal) -> dict[str, Any]:
             "serves_people": meal.serves,
             "serves_say_ar": number_to_arabic_words(meal.serves),
         }
-    return {
-        "serves_people": None,
-        "serves_rule_ar": "ما مسجل عندنا يكفي كم شخص. لا تقولين رقم من عندك.",
-    }
+    return {"serves_people": None}
 
 
 def meal_summary(meal: Meal, f: Optional[SearchFilters] = None) -> dict[str, Any]:
@@ -1848,48 +1834,88 @@ def search_meals(
         result["min_protein_used"] = min_protein
     if "rich" in implied:
         result["sort_used"] = sort
-        result["intent_note_ar"] = (
-            "المستخدم يبي أكل دسم (دهون/سعرات عالية)، مو صنف اسمه دسمة. "
-            "رشحي أول نتيجة. ممنوع تقولين ما عندنا دسمة."
-        )
 
     if ignored_restaurant:
         result["ignored_restaurant"] = ignored_restaurant
-        result["note_ar"] = (
-            "ما عرفت المطعم اللي حددتيه، فبحثت في كل المطاعم. استخدمي "
-            "restaurant_id من نتيجة سابقة أو اسم المطعم بالعربي."
-        )
 
     if serves_wanted:
         result["serves_requested"] = serves_wanted
         exact = [m for m in matched if m.serves == serves_wanted]
+        larger = [m for m in matched if m.serves > serves_wanted]
         if exact:
             result["serves_exact_available"] = True
-            result["serves_pick_rule_ar"] = (
-                f"فيه وجبة تكفي {serves_wanted} أشخاص بالضبط. رشحي أول نتيجة "
-                f"(serves_people={serves_wanted}). ممنوع ترشحين وجبة لعدد أكبر "
-                "وتبررين إنها تكفي وزيادة. إذا المستخدم أعاد عدد الأشخاص، "
-                "ابحثي من جديد بنفس العدد."
+            # Live 2026-08-25: "شاورما لثلاثة" + family still ranked a 4-person
+            # shawarma tray first. Exact size has to lead the spoken pick.
+            scored.sort(
+                key=lambda pair: (
+                    0 if pair[0].serves == serves_wanted else 1,
+                    sort_keys.get(sort, sort_keys["relevance"])(pair),
+                )
             )
-        if not any(m.serves >= serves_wanted for m in matched):
-            # The requested headcount has no matching bundle. Saying so — and
-            # offering multiples of the ordinary dish — is the answer the user
-            # actually asked for; recommending a single-person combo instead is
-            # the pizza-for-three failure from the live session.
+            top = [m for m, _ in scored[:limit]]
+            result["results"] = [meal_summary(m, filters) for m in top]
+            result["showing"] = len(top)
+        else:
+            # No exact size in *this* filtered set. A 4-person tray is not an
+            # answer to "ثلاثة بس مش أربعة". The old `>= N` check hid 30 real
+            # 3-person family offers because a larger shawarma tray existed.
             result["no_meal_serves_requested"] = True
-            result["serves_advice_ar"] = (
-                f"ما فيه وجبة مسجل إنها تكفي {serves_wanted} أشخاص من هذا "
-                "الصنف. قولي بصراحة إن ما فيه عرض عائلي بهذا الحجم حاليا، "
-                "واقترحي عليه ياخذ أكثر من وحدة من الصنف العادي (مثلا "
-                "اثنتين أو ثلاث). لا ترشحين وجبة فردية وكأنها تكفيهم."
+            extras = [
+                m
+                for m in cat.meals
+                if m.serves == serves_wanted
+                and m.is_offer
+                and (include_grocery or "grocery" not in m.diet_tags)
+            ]
+            extras.sort(key=lambda m: (not m.is_popular, -m.rating, m.id))
+            nearest = (
+                min(larger, key=lambda m: (m.serves, m.effective_price, m.id))
+                if larger
+                else None
             )
+            people = number_to_arabic_words(serves_wanted)
+            dish = fix_pronunciation(" ".join(tokens)) if tokens else ""
+            parts: list[str] = []
+            if dish:
+                parts.append(f"ما فيه {dish} تكفي {people} بالضبط.")
+            else:
+                parts.append(f"ما فيه وجبة تكفي {people} بالضبط بهالبحث.")
+            if nearest:
+                result["nearest_larger"] = meal_summary(nearest, filters)
+            if extras:
+                result["serves_exact_available"] = True
+                result["offers_for_requested_serves"] = [
+                    meal_summary(m, filters) for m in extras[:limit]
+                ]
+                alts = extras[:2]
+                bits = [
+                    f"{speakable_name(m.name)} من {speakable_name(m.restaurant_name)} "
+                    f"بـ {sar_words(m.effective_price)}"
+                    for m in alts
+                ]
+                if len(bits) == 1:
+                    parts.append(f"بدائل لـ {people}: {bits[0]}. تبيها؟")
+                else:
+                    parts.append(
+                        f"بدائل لـ {people}: {bits[0]}، و{bits[1]}. تبي أحدها؟"
+                    )
+                # Family/offer browse with a leftover dish word (شاورما) must
+                # not keep showing the wrong size. Put the real N-person
+                # offers in `results` so she opens one of those.
+                if filters.only_offers or filters.offer_kinds:
+                    top = extras[:limit]
+                    result["results"] = [meal_summary(m, filters) for m in top]
+                    result["showing"] = len(top)
+                    result["total_matches"] = len(extras)
+            elif nearest:
+                parts.append(
+                    f"أقرب شي {speakable_name(nearest.name)} تكفي "
+                    f"{number_to_arabic_words(nearest.serves)}."
+                )
+            result["say_to_user_ar"] = " ".join(parts)
 
     if dropped_guessed_filters:
         result["dropped_filters"] = dropped_guessed_filters
-        result["note_ar"] = (
-            "الصنف اللي سماه المستخدم موجود، بس تصنيفك له كان غلط، فتجاهلت "
-            "الفلتر وجبت الصنف نفسه. رشحي أول نتيجة."
-        )
 
     if price_ceiling_hit:
         cheapest = min(matched, key=lambda m: m.effective_price)
@@ -1899,11 +1925,6 @@ def search_meals(
             f"ما فيه أرخص من كذا بهالفئة الحين، أرخص شي عندنا "
             f"{speakable_name(cheapest.name)} بـ {sar_words(cheapest.effective_price)}"
         )
-        result["price_advice_ar"] = (
-            "المستخدم طلب أرخص، بس الفلتر max_price صفّر النتائج. رجّعت أرخص "
-            "النتائج المتاحة. قولي say_to_user_ar واعرضي أول نتيجة. ممنوع تقولين "
-            "ما عندنا."
-        )
 
     if price_floor_hit:
         priciest = max(matched, key=lambda m: m.effective_price)
@@ -1912,10 +1933,6 @@ def search_meals(
         result["say_to_user_ar"] = (
             f"ما فيه أغلى من كذا بهالفئة الحين، أغلى شي عندنا "
             f"{speakable_name(priciest.name)} بـ {sar_words(priciest.effective_price)}"
-        )
-        result["price_advice_ar"] = (
-            "المستخدم طلب أغلى، بس الفلتر min_price صفّر النتائج. رجّعت أغلى "
-            "النتائج المتاحة. قولي say_to_user_ar واعرضي أول نتيجة."
         )
 
     if total == 0:
@@ -1943,13 +1960,6 @@ def search_meals(
             result["say_to_user_ar"] = (
                 f"{spoken_term} موجودة عندنا، بس ما فيه منها شي {constraint}"
             )
-            result["no_results_advice"] = (
-                f"الصنف \"{spoken_term}\" موجود في الكتالوج لكن مافيه ولا واحد "
-                "يطابق الشروط الحالية. **ممنوع تقولين \"ما عندنا\"** — هذي جملة "
-                "غلط وتخلي المستخدم يشوف الصنف قدامه على الشاشة. قولي جملة "
-                "say_to_user_ar كما هي، وبعدها اعرضي عليه الصنف نفسه بسعره "
-                "العادي من example_* أو اسأليه يخفف الشرط."
-            )
             return result
         if unmatched_query:
             # No alternatives are returned here, deliberately.
@@ -1971,24 +1981,180 @@ def search_meals(
             spoken_term = fix_pronunciation(unmatched_query)
             result["query_not_found"] = unmatched_query
             result["say_to_user_ar"] = f"ما عندنا {spoken_term}"
-            result["no_results_advice"] = (
-                f"ما فيه أي صنف اسمه \"{spoken_term}\". قولي الجملة اللي في "
-                "say_to_user_ar بالضبط، ولا تسمين أي وجبة ثانية بهذا الاسم أبدا. "
-                "بعدها اسأليه وش يبي بداله، أو ابحثي من جديد بنوع عام مثل دجاج "
-                "أو مقرمش وسميها باسمها الحقيقي."
-            )
         else:
-            # Tell the model what to relax rather than letting it guess or invent.
-            result["no_results_advice"] = (
-                "ما فيه نتيجة بهذي الشروط. خففي شرط واحد فقط "
-                "(السعرات أو السعر أو نوع البروتين) وجربي مرة ثانية."
-            )
+            result["filters_too_strict"] = True
         return result
 
     hint = _next_question(matched, filters, total, len(top), named_dish)
     if hint:
         result["ambiguous"] = hint
     return result
+
+
+def _name_kind(meal: Meal) -> Optional[str]:
+    """Pairing bucket from the dish name: drink, dessert, side, or None (main)."""
+    if "grocery" in meal.diet_tags:
+        return None
+    name = normalize_ar(meal.name)
+    if _has_keyword(name, _PAIR_DRINK_NAME):
+        return "drink"
+    if "dessert" in meal.diet_tags or _has_keyword(name, _DESSERT_KEYWORDS):
+        return "dessert"
+    if _has_keyword(name, _PAIR_SIDE_NAME):
+        return "side"
+    return None
+
+
+def _addon_kind(name: str) -> Optional[str]:
+    folded = normalize_ar(name)
+    if _has_keyword(folded, _PAIR_ADDON_DRINK):
+        return "drink"
+    if _has_keyword(folded, _PAIR_ADDON_SIDE):
+        return "side"
+    return None
+
+
+def _pair_meal_row(meal: Meal, kind: str) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "meal_id": meal.id,
+        "name": meal.name,
+        "name_say_ar": speakable_name(meal.name),
+        "price_say_ar": sar_words(meal.effective_price),
+        "price_sar": round(meal.effective_price, 2),
+        "restaurant": meal.restaurant_name,
+        "restaurant_say_ar": speakable_name(meal.restaurant_name),
+    }
+
+
+def _pair_addon_row(addon: dict[str, Any], kind: str) -> dict[str, Any]:
+    name = str(addon.get("name") or "")
+    price = float(addon.get("price") or 0)
+    return {
+        "kind": "addon",
+        "addon_id": addon.get("id"),
+        "name": name,
+        "name_say_ar": speakable_name(name),
+        "price_say_ar": sar_words(price),
+        "price_sar": round(price, 2),
+        "pairs_as": kind,
+    }
+
+
+def pair_speech(pairs: Optional[Iterable[dict[str, Any]]]) -> str:
+    """One speakable cross-sell line from the first catalog pair.
+
+    Names and prices come from ``*_say_ar`` on the pair row. Empty if there is
+    nothing real to offer — the model should then only confirm the add.
+    """
+    rows = [p for p in (pairs or ()) if isinstance(p, dict)]
+    if not rows:
+        return ""
+    pair = rows[0]
+    name = str(pair.get("name_say_ar") or pair.get("name") or "").strip()
+    if not name:
+        return ""
+    price = str(pair.get("price_say_ar") or "").strip()
+    kind = str(pair.get("pairs_as") or pair.get("kind") or "").strip()
+    lead = {
+        "drink": "لو ودك مشروب معاها",
+        "dessert": "لو ودك حلا بعدها",
+        "side": "لو ودك جنب معاها",
+        "addon": "لو ودك لمسة معاها",
+    }.get(kind, "لو ودك شيء معاها")
+    if price:
+        return f"{lead}، {name} بـ {price}."
+    return f"{lead}، {name}."
+
+
+def suggest_pairs(
+    meal: Meal,
+    *,
+    exclude_meal_ids: Optional[Iterable[str]] = None,
+    exclude_addon_ids: Optional[Iterable[str]] = None,
+    catalog: Optional[Catalog] = None,
+    limit: int = 2,
+) -> list[dict[str, Any]]:
+    """Real addons/meals that pair with ``meal``. Facts only — no spoken script.
+
+    Same restaurant first. Combo/family mains skip drinks (the bundle usually
+    already includes one) and lean dessert. Already-carted ids are excluded.
+    """
+    cat = catalog or load_catalog()
+    skip_meals = {str(x) for x in (exclude_meal_ids or ()) if x}
+    skip_meals.add(meal.id)
+    skip_addons = {str(x) for x in (exclude_addon_ids or ()) if x}
+
+    source_kind = _name_kind(meal)
+    combo = "combo" in meal.diet_tags or "family" in meal.diet_tags
+    if source_kind == "drink":
+        wanted = ("dessert",)
+    elif source_kind == "dessert":
+        wanted = ("drink",)
+    elif source_kind == "side":
+        wanted = ("drink",)
+    elif combo:
+        wanted = ("dessert", "side")
+    else:
+        wanted = ("drink", "dessert", "side")
+
+    picks: list[dict[str, Any]] = []
+
+    def take(row: dict[str, Any]) -> None:
+        if len(picks) >= limit:
+            return
+        key = row.get("addon_id") or row.get("meal_id")
+        if any((p.get("addon_id") or p.get("meal_id")) == key for p in picks):
+            return
+        slot = row.get("pairs_as") or row.get("kind")
+        if any((p.get("pairs_as") or p.get("kind")) == slot for p in picks):
+            return
+        picks.append(row)
+
+    same_rest = [
+        m for m in cat.meals
+        if m.restaurant_id == meal.restaurant_id
+        and m.id not in skip_meals
+        and "grocery" not in m.diet_tags
+        and not m.is_combo
+    ]
+    pool_rest = sorted(same_rest, key=lambda m: (not m.is_popular, -m.rating, m.id))
+    elsewhere = [
+        m for m in cat.meals
+        if m.restaurant_id != meal.restaurant_id
+        and m.id not in skip_meals
+        and "grocery" not in m.diet_tags
+        and not m.is_combo
+    ]
+    pool_else = sorted(elsewhere, key=lambda m: (not m.is_popular, -m.rating, m.id))
+
+    for kind in wanted:
+        if len(picks) >= limit:
+            break
+        for addon in meal.addons:
+            addon_id = str(addon.get("id") or "")
+            if not addon_id or addon_id in skip_addons:
+                continue
+            if _addon_kind(str(addon.get("name") or "")) != kind:
+                continue
+            take(_pair_addon_row(addon, kind))
+            break
+        if len(picks) >= limit:
+            break
+        chosen: Optional[Meal] = None
+        for candidate in pool_rest:
+            if _name_kind(candidate) == kind:
+                chosen = candidate
+                break
+        if chosen is None and not picks:
+            for candidate in pool_else:
+                if _name_kind(candidate) == kind:
+                    chosen = candidate
+                    break
+        if chosen is not None:
+            take(_pair_meal_row(chosen, kind))
+
+    return picks[:limit]
 
 
 def meal_details(meal_id: str, catalog: Optional[Catalog] = None) -> Optional[dict[str, Any]]:

@@ -5,11 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/projects/jahez-project/jahez-frontend
+User=bassem
+Group=bassem
+WorkingDirectory=/home/bassem/projects/jahez-project/jahez-frontend
 Environment=NODE_ENV=production
-# Bound to loopback only — nginx (port 6702) is the sole public entry point.
+Environment=HOME=/home/bassem
+# Bound to loopback only — nginx on laqma.testdevelopment.top is the public entry.
+EnvironmentFile=/home/bassem/projects/jahez-project/jahez-frontend/.env.local
 ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 6701
 Restart=always
 RestartSec=5

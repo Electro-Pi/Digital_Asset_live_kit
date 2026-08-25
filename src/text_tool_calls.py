@@ -399,6 +399,32 @@ def latest_tool_arguments(chat_ctx: Any, tool_name: str) -> Optional[dict[str, A
     return None
 
 
+def latest_tool_output(chat_ctx: Any, tool_name: str) -> dict[str, Any]:
+    """Newest JSON output for a named tool."""
+    for item in reversed(_chat_items(chat_ctx)):
+        name = getattr(item, "name", None) or (
+            item.get("name") if isinstance(item, dict) else None
+        )
+        if name != tool_name:
+            continue
+        output = getattr(item, "output", None)
+        if output is None and isinstance(item, dict):
+            output = item.get("output")
+        if isinstance(output, str):
+            try:
+                output = json.loads(output)
+            except (ValueError, TypeError):
+                output = None
+        if isinstance(output, dict):
+            return output
+    return {}
+
+
+def latest_add_to_cart_output(chat_ctx: Any) -> dict[str, Any]:
+    """Newest add_to_cart tool JSON, for the pending cross-sell meal_id."""
+    return latest_tool_output(chat_ctx, "add_to_cart")
+
+
 def recover_implied_show_meal(
     speech: str,
     chat_ctx: Any = None,
@@ -441,37 +467,57 @@ def recover_implied_show_meal(
     }
 
 
+def message_text(item: Any) -> str:
+    """Plain text of a chat item (LiveKit stores either text_content or content[])."""
+    text = getattr(item, "text_content", None) if item is not None else None
+    if not text and isinstance(item, dict):
+        text = item.get("text_content")
+    if not text:
+        content = getattr(item, "content", None) if item is not None else None
+        if content is None and isinstance(item, dict):
+            content = item.get("content") or item.get("text")
+        if isinstance(content, list):
+            parts: list[str] = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                else:
+                    parts.append(str(getattr(part, "text", "") or part or ""))
+            text = " ".join(parts)
+        elif content is not None:
+            text = str(content)
+    return str(text or "").strip()
+
+
 def last_user_text(chat_ctx: Any) -> str:
     """Newest user utterance from the LiveKit chat context."""
-    items = getattr(chat_ctx, "items", None)
-    if items is None and isinstance(chat_ctx, (list, tuple)):
-        items = chat_ctx
-    if not items:
-        return ""
-    for item in reversed(list(items)):
+    for item in reversed(_chat_items(chat_ctx)):
         role = getattr(item, "role", None)
         if role is None and isinstance(item, dict):
             role = item.get("role")
         if role != "user":
             continue
-        text = getattr(item, "text_content", None)
-        if not text:
-            content = getattr(item, "content", None)
-            if content is None and isinstance(item, dict):
-                content = item.get("content") or item.get("text")
-            if isinstance(content, list):
-                parts: list[str] = []
-                for part in content:
-                    if isinstance(part, str):
-                        parts.append(part)
-                    else:
-                        parts.append(str(getattr(part, "text", "") or part or ""))
-                text = " ".join(parts)
-            elif content is not None:
-                text = str(content)
+        text = message_text(item)
         if text:
-            return str(text).strip()
+            return text
     return ""
+
+
+def recent_user_texts(chat_ctx: Any, limit: int = 3) -> list[str]:
+    """Newest distinct user utterances, oldest-last, for extras scraping."""
+    found: list[str] = []
+    for item in reversed(_chat_items(chat_ctx)):
+        role = getattr(item, "role", None)
+        if role is None and isinstance(item, dict):
+            role = item.get("role")
+        if role != "user":
+            continue
+        text = message_text(item)
+        if text and text not in found:
+            found.append(text)
+        if len(found) >= max(1, limit):
+            break
+    return found
 
 
 def last_assistant_text(chat_ctx: Any) -> str:
@@ -482,23 +528,9 @@ def last_assistant_text(chat_ctx: Any) -> str:
             role = item.get("role")
         if role != "assistant":
             continue
-        text = getattr(item, "text_content", None)
-        if not text:
-            content = getattr(item, "content", None)
-            if content is None and isinstance(item, dict):
-                content = item.get("content") or item.get("text")
-            if isinstance(content, list):
-                parts: list[str] = []
-                for part in content:
-                    if isinstance(part, str):
-                        parts.append(part)
-                    else:
-                        parts.append(str(getattr(part, "text", "") or part or ""))
-                text = " ".join(parts)
-            elif content is not None:
-                text = str(content)
+        text = message_text(item)
         if text:
-            return str(text).strip()
+            return text
     return ""
 
 
@@ -552,7 +584,7 @@ def _page_from_nav_text(text: str) -> Optional[str]:
     if not folded:
         return None
     for needles, page in _NAV_PAGE_MAP:
-        if any(n in folded for n in needles):
+        if any(_has_ar_word(folded, n) or (" " in n and n in folded) for n in needles):
             return page
     if "بقاله" in folded and (
         any(v in folded for v in _NAV_VERBS)
@@ -598,6 +630,29 @@ def _canonical_open_page(page: str) -> str:
     return key
 
 
+def _user_asked_home(user: str) -> bool:
+    """True only for a real home request — not البيتزا."""
+    folded = _fold_ar(user)
+    if not folded or "بيتزا" in folded:
+        return False
+    if "الرئيسيه" in folded or "الصفحه الرئيسيه" in folded:
+        return True
+    return _has_ar_word(folded, "البيت") and _looks_like_nav_request(user)
+
+
+def _user_asked_open_cart(user: str) -> bool:
+    """True when they asked to open the cart page, not to add a meal."""
+    folded = _fold_ar(user)
+    if not folded or user_asked_add_to_cart(user):
+        return False
+    cart = _has_ar_word(folded, "السله") or any(
+        w in folded for w in ("الكارت", "الكارد", "cart")
+    )
+    if not cart:
+        return False
+    return _looks_like_nav_request(user)
+
+
 def recover_implied_open_page(
     speech: str,
     chat_ctx: Any = None,
@@ -614,6 +669,13 @@ def recover_implied_open_page(
     twice in one turn (open-claim loop after a successful navigate).
     """
     user = last_user_text(chat_ctx) if chat_ctx is not None else ""
+    # Live 2026-08-25: "توريني البيتزا" opened the meal, then "فتحت لك صفحة
+    # وجبة بيتزا" recovered open_page(home) because البيت sits inside البيتزا.
+    if chat_ctx is not None and (
+        tool_called_since_last_user(chat_ctx, "show_meal")
+        or tool_called_since_last_user(chat_ctx, "show_restaurant")
+    ):
+        return None
     page: Optional[str] = None
     if _user_asked_cashback(user):
         page = "cashback"
@@ -626,6 +688,11 @@ def recover_implied_open_page(
     if page is None and claims_page_opened(speech):
         page = _page_from_nav_text(speech)
     if not page:
+        return None
+    # Speech-only "رحت للسلة / فتحت الرئيسية" must not yank the meal page.
+    if page == "home" and not _user_asked_home(user):
+        return None
+    if page == "cart" and not _user_asked_open_cart(user):
         return None
     already = (
         latest_tool_arguments(chat_ctx, "open_page")
@@ -898,6 +965,17 @@ def _has_ar_word(folded: str, word: str) -> bool:
         start = i + 1
 
 
+def _is_stretched_asr_noise(text: str) -> bool:
+    """True for the 1000-character 'أييييي' loops that Gemma treats as yes."""
+    folded = _fold_ar(text)
+    if not folded:
+        return False
+    letters = re.sub(r"\s+", "", folded)
+    if len(letters) >= 8 and len(set(letters)) <= 2:
+        return True
+    return bool(re.search(r"(.)\1{4,}", letters))
+
+
 def _has_confirm_word(folded: str) -> bool:
     return any(_has_ar_word(folded, w) for w in _CONFIRM_WORDS)
 
@@ -1028,6 +1106,8 @@ def user_asked_add_to_cart(text: str) -> bool:
     """True when the last user turn is an add-to-cart request."""
     if user_cancels_repeat_add(text) or user_blocks_add_to_cart(text):
         return False
+    if _is_stretched_asr_noise(text):
+        return False
     folded = _fold_ar(text)
     if not folded:
         return False
@@ -1088,6 +1168,56 @@ def claims_added_to_cart(text: str) -> bool:
     )
 
 
+def claims_went_to_cart(text: str) -> bool:
+    """True when she claims she opened the cart page without proving it."""
+    folded = _fold_ar(text)
+    if not folded:
+        return False
+    went = any(p in folded for p in ("رحت", "روحت", "وديتك", "فتحت"))
+    return went and _cartish(folded)
+
+
+def user_asked_extras(text: str) -> bool:
+    """True when this turn is about meal addons, not the cart."""
+    if _is_stretched_asr_noise(text):
+        return False
+    folded = _fold_ar(text)
+    if not folded:
+        return False
+    return any(
+        w in folded
+        for w in (
+            "اضافات",
+            "اضافه",
+            "اكسترا",
+            "extra",
+            "extras",
+            "صوص",
+            "ثوم",
+            "بطاطس",
+            "جبن",
+            "مع اضاف",
+        )
+    )
+
+
+def assistant_offered_extras(chat_ctx: Any = None) -> bool:
+    """True when she asked whether to add extras on the meal, not the cart."""
+    asst = _fold_ar(last_assistant_text(chat_ctx))
+    if not asst:
+        return False
+    offered_cart = ("سله" in asst or "حطها" in asst) and any(
+        p in asst
+        for p in ("تبي اضيف", "تبين اضيف", "اضيفها", "حطها", "ضيفها للسله")
+    )
+    if offered_cart:
+        return False
+    return any(
+        p in asst
+        for p in ("تضيف لها", "تبي تضيف", "اضافات", "اكسترا", "شيء عليها")
+    )
+
+
 def user_confirms_add(user: str, chat_ctx: Any = None) -> bool:
     """True when they accept her offer to add the last meal to the cart.
 
@@ -1095,6 +1225,8 @@ def user_confirms_add(user: str, chat_ctx: Any = None) -> bool:
     calories, open-cart, or checkout. "تمام" inside "إتمام" does not count.
     """
     if user_blocks_add_to_cart(user) or user_cancels_repeat_add(user):
+        return False
+    if _is_stretched_asr_noise(user):
         return False
     folded = _fold_ar(user)
     if not folded or not _has_confirm_word(folded):
@@ -1149,12 +1281,64 @@ def recover_implied_add_to_cart(
         return None
     if chat_ctx is not None and tool_called_since_last_user(chat_ctx, "add_to_cart"):
         return None
-    meal_id = latest_meal_id(chat_ctx)
+    pending = latest_add_to_cart_output(chat_ctx) if chat_ctx is not None else {}
+    pair_id = str(pending.get("pair_meal_id") or "").strip()
+    last_added = str(pending.get("meal_id") or "").strip()
+    user_fold = _fold_ar(user)
+    # Live 2026-08-25: after pizza + tiramisu cross-sell, "ماشي ضيفي له السلة"
+    # recovered add_to_cart on the pizza again. A yes after pair_say_ar is the pair.
+    meal_id = ""
+    if pair_id:
+        pair_name = _fold_ar(pending.get("pair_name") or "")
+        last_name = _fold_ar(pending.get("meal_name") or last_added)
+        said_pair = bool(pair_name) and any(
+            t in user_fold for t in pair_name.split() if len(t) >= 4
+        )
+        said_last = bool(last_name) and any(
+            t in user_fold for t in last_name.split() if len(t) >= 4
+        )
+        if said_pair or not said_last:
+            meal_id = pair_id
+    if not meal_id:
+        meal_id = latest_meal_id(chat_ctx)
     if not meal_id:
         return None
     return {
         "name": "add_to_cart",
         "arguments": {"meal_id": meal_id, "quantity": 1},
+        "call_id": f"recovered_{uuid.uuid4().hex[:12]}",
+    }
+
+
+def recover_implied_set_meal_options(
+    speech: str,
+    chat_ctx: Any = None,
+) -> Optional[dict[str, Any]]:
+    """Tick extras on the open meal when they named them or accepted extras.
+
+    Live 2026-08-25: after pizza she asked «تبي تضيف لها شيء؟» and extras
+    never reached set_meal_options / add_to_cart.
+    """
+    user = last_user_text(chat_ctx)
+    if _is_stretched_asr_noise(user) or should_run_add_to_cart(user, chat_ctx):
+        return None
+    named = user_asked_extras(user)
+    accepted = assistant_offered_extras(chat_ctx) and (
+        named or _has_confirm_word(_fold_ar(user))
+    )
+    if not named and not accepted:
+        return None
+    if chat_ctx is not None and (
+        tool_called_since_last_user(chat_ctx, "set_meal_options")
+        or tool_called_since_last_user(chat_ctx, "add_to_cart")
+    ):
+        return None
+    meal_id = latest_meal_id(chat_ctx)
+    if not meal_id:
+        return None
+    return {
+        "name": "set_meal_options",
+        "arguments": {"meal_id": meal_id},
         "call_id": f"recovered_{uuid.uuid4().hex[:12]}",
     }
 
