@@ -92,6 +92,19 @@ export const apiKeyCreateSchema = z.strictObject({
   expiresAt: z.iso.datetime({ offset: true }).nullable().default(null),
 });
 
+// Mirrors the ceiling in admin_grant_credits. Duplicated deliberately so a
+// mistyped amount is refused in the browser rather than after a round trip,
+// but the database remains the authority — never relax one without the other.
+export const MAX_CREDIT_GRANT = 100_000_000;
+
+export const creditGrantSchema = z.strictObject({
+  amount: z.number().int().min(1).max(MAX_CREDIT_GRANT),
+  reason: z.string().trim().min(1).max(120).default("admin_grant"),
+  // Idempotency token. The ledger is uniquely indexed on it, so a retried or
+  // double-clicked grant is recognised and refused rather than applied twice.
+  ref: z.string().trim().min(1).max(120).nullable().default(null),
+});
+
 /** Tuple form, because enumQuery needs a readonly [string, ...string[]]. */
 export const API_KEY_STATUSES = ["active", "revoked", "expired"] as const;
 

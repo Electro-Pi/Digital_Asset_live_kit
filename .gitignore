@@ -220,3 +220,6 @@ __marimo__/
 # The directory itself has to be un-ignored, not just the files: git will not
 # re-include a path whose parent directory is excluded.
 !frontend/coda-admin/src/lib/
+
+# Pre-serverless config backups — they hold live credentials.
+.env.local.bak-*

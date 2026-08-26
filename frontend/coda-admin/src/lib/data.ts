@@ -321,6 +321,34 @@ export async function createApiKey(input: {
   return { ...(created as Record<string, unknown>), ownerEmail: email, key: raw };
 }
 
+export async function grantCredits(input: {
+  tokenHash: string;
+  csrfHash: string;
+  userId: string;
+  amount: number;
+  reason: string;
+  ref: string | null;
+  requestId: string;
+  ip: string;
+}): Promise<unknown> {
+  // `ref` falls back to the request id so a grant is idempotent even when the
+  // caller supplies nothing: a browser retry of the same submission carries the
+  // same id and is recognised, while two deliberate grants of the same amount
+  // carry different ones and both apply.
+  return rpcData(
+    await callAdminRpc("admin_grant_credits", {
+      p_token_hash: input.tokenHash,
+      p_csrf_hash: input.csrfHash,
+      p_user_id: input.userId,
+      p_amount: input.amount,
+      p_reason: input.reason,
+      p_ref: input.ref ?? `admin:${input.requestId}`,
+      p_request_id: input.requestId,
+      p_ip: input.ip,
+    }),
+  );
+}
+
 export async function revokeApiKey(input: {
   tokenHash: string;
   csrfHash: string;

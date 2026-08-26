@@ -58,8 +58,20 @@ from src.voice_profile import (
 
 load_dotenv(".env.local")
 
-TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:16326")
-TTS_MODEL = os.getenv("TTS_MODEL", "VoxCPM2")
+# ─── Speech gateway ──────────────────────────────────────────────────────────
+# All three model backends — TTS, LLM and STT — are reached through the Coda
+# Speech Gateway rather than dialled directly. The gateway holds the Vast
+# credential, routes to the serverless workers, meters usage and breaks the
+# circuit on a dead worker; none of that belongs in a voice agent. Setting the
+# three *_BASE_URL vars individually still works, and is how you point one
+# backend somewhere else without moving the other two.
+SPEECH_GATEWAY_URL = os.getenv("SPEECH_GATEWAY_URL", "http://127.0.0.1:8011").rstrip("/")
+SPEECH_GATEWAY_API_KEY = os.getenv("SPEECH_GATEWAY_API_KEY", "").strip()
+
+TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", SPEECH_GATEWAY_URL)
+# The gateway publishes exactly one model name and rejects any other.
+TTS_MODEL = os.getenv("TTS_MODEL", "Coda-V2")
+TTS_API_KEY = os.getenv("TTS_API_KEY", "").strip() or SPEECH_GATEWAY_API_KEY
 # Server-side voice names — see GET /v1/audio/voices. Both speakers are
 # precomputed upstream ("nouf" female / نوف, "nawaf" male / نواف); which one a
 # session gets is chosen per participant, so these are the names, not the pick.
@@ -84,17 +96,19 @@ TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))
 TTS_SENTENCE_MIN_LEN = int(os.getenv("TTS_SENTENCE_MIN_LEN", "300"))
 
 # ─── LLM / STT backends ──────────────────────────────────────────────────────
-# Both are OpenAI-compatible vLLM servers. When vLLM is started with --api-key
-# every /v1/* route 401s without a matching bearer token, so the key is required
-# for the hosted endpoints and ignorable for an unauthenticated local server.
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://8.213.50.155:8001/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma4")
+# Both are OpenAI-compatible routes on the gateway. The gateway authenticates
+# with its own keys, so one token covers all three backends unless a per-backend
+# key is set explicitly.
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", f"{SPEECH_GATEWAY_URL}/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "Coda-V2")
 # openai.LLM rejects an empty api_key, so fall back to a placeholder.
-LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip() or "no-key-needed"
+LLM_API_KEY = (
+    os.getenv("LLM_API_KEY", "").strip() or SPEECH_GATEWAY_API_KEY or "no-key-needed"
+)
 
-STT_BASE_URL = os.getenv("STT_BASE_URL", "http://localhost:8000")
-STT_MODEL = os.getenv("STT_MODEL", "CohereLabs/cohere-transcribe-arabic-07-2026")
-STT_API_KEY = os.getenv("STT_API_KEY", "").strip() or None
+STT_BASE_URL = os.getenv("STT_BASE_URL", SPEECH_GATEWAY_URL)
+STT_MODEL = os.getenv("STT_MODEL", "Coda-V2")
+STT_API_KEY = os.getenv("STT_API_KEY", "").strip() or SPEECH_GATEWAY_API_KEY or None
 
 # Use the speech classifier, rather than audio volume alone, to decide which
 # microphone segments are sent to ASR.  The slightly conservative defaults keep
@@ -333,6 +347,7 @@ async def my_agent(ctx: agents.JobContext):
 
     voice_tts = VoxCPMTTSPlugin(
         server_url=TTS_SERVER_URL,
+        api_key=TTS_API_KEY,
         model=TTS_MODEL,
         voice=profile.tts_voice,
         # Normally None: both speakers are named voices on the server. Setting

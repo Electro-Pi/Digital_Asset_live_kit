@@ -37,6 +37,7 @@ deliberately absent here rather than passed and ignored.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import time
 import unicodedata
@@ -52,7 +53,15 @@ from livekit.agents import tts, utils
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
-SERVER_SAMPLE_RATE = 48000  # raw pcm output rate of the server
+# Raw PCM output rate of whatever is behind the gateway. Both the serverless
+# VoxCPM endpoint and a dedicated vLLM-omni box emit 48 kHz — measured, not
+# assumed: at 48 kHz `nawaf` reads 107 Hz and `nouf` 211 Hz, each inside its
+# own pitch band, and halving the rate swaps them into each other's.
+#
+# Overridable because a mismatch does not raise. It plays the voice at the
+# wrong pitch and speed and skews every duration in the logs by the same
+# ratio, so a backend that ever changes rate needs this knob, not a patch.
+SERVER_SAMPLE_RATE = int(os.getenv("TTS_SAMPLE_RATE", "48000"))
 SERVER_CHANNELS = 1  # VoxCPM2 is mono on both the stream and wav paths
 # Default (female) pitch band — logged, not gated. A male session overrides it
 # with the male band; see voice_profile.py.
@@ -362,6 +371,8 @@ class VoxCPMTTSPlugin(tts.TTS):
         self,
         *,
         server_url: str = "http://localhost:16326",
+        api_key: str | None = None,
+        prepared_text: bool = True,
         model: str = "VoxCPM2",
         voice: str = "nouf",
         ref_audio: str | None = None,
@@ -375,8 +386,18 @@ class VoxCPMTTSPlugin(tts.TTS):
     ) -> None:
         """
         Args:
-            server_url: VoxCPM2 server base URL, WITHOUT the /v1 suffix — the
+            server_url: speech gateway base URL, WITHOUT the /v1 suffix — the
                 endpoint path is appended here.
+            api_key: bearer token for the gateway. Required when the gateway
+                enforces auth, which it does everywhere but a local smoke test.
+            prepared_text: the text arriving here is already diacritized, so
+                the gateway should synthesize it verbatim instead of running
+                its own tashkeel stage. True for the live agent — the persona
+                prompt asks the LLM for word-internal tashkeel precisely so the
+                voice gets its vowels (see prompts/agent_prompt.py), and
+                re-diacritizing it would spend an extra LLM round trip per
+                utterance to rewrite text that is already correct. Set False
+                when feeding this plugin bare Arabic from somewhere else.
             model: model id served (see GET /v1/models); an unknown id is a 404.
             voice: server-side voice name (see GET /v1/audio/voices). The
                 production speakers are "nouf" (female) and "nawaf" (male), both
@@ -404,6 +425,8 @@ class VoxCPMTTSPlugin(tts.TTS):
             sample_rate=SERVER_SAMPLE_RATE,
             num_channels=1,
         )
+        self._api_key = (api_key or "").strip() or None
+        self._prepared_text = prepared_text
         self._server_url = server_url.rstrip("/")
         # The base URL is commonly copy-pasted from the model card with the /v1
         # already on it; appending the endpoint then yields /v1/v1/audio/speech.
@@ -466,6 +489,12 @@ class VoxCPMTTSPlugin(tts.TTS):
             logger.info("VoxCPM TTS aiohttp session created/reused from LiveKit context")
         return self._session
 
+    def _request_headers(self, request_id: str) -> dict[str, str]:
+        headers = {"X-Request-ID": request_id}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
+
     def update_options(self, *, voice: str | None = None, model: str | None = None) -> None:
         old_voice = self._voice
         old_model = self._model
@@ -514,6 +543,8 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             "response_format": "pcm",
             "stream": True,
             "stream_format": "audio",
+            # Skip the gateway's tashkeel stage; see `prepared_text`.
+            "raw": self._tts._prepared_text,
         }
         if self._tts._ref_audio:
             payload["ref_audio"] = self._tts._ref_audio
@@ -594,7 +625,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             async with self._tts._ensure_session().post(
                 endpoint,
                 json=payload,
-                headers={"X-Request-ID": request_id},
+                headers=self._tts._request_headers(request_id),
                 timeout=aiohttp.ClientTimeout(
                     total=None,
                     sock_connect=self._conn_options.timeout,

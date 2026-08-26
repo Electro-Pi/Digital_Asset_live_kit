@@ -6,6 +6,7 @@ import { adminFetch, apiErrorMessage } from './admin-api';
 import type { OverridePayload, QuotaSnapshot, UserDetailData } from './admin-types';
 import { Icon } from './ui/Icons';
 import { Avatar, BackLink, Badge, Button, DashboardSkeleton, ErrorState, PageHeading, ProgressBar, formatDate, formatNumber, timeAgo } from './ui/Primitives';
+import { MAX_CREDIT_GRANT } from '@/lib/validation';
 
 const tooltipStyle = { background: '#161827', border: '1px solid rgba(255,255,255,.1)', borderRadius: '12px', color: '#f5f6fb', boxShadow: '0 14px 36px rgba(0,0,0,.35)', fontSize: '12px' };
 type OverrideForm = Record<keyof OverridePayload, string>;
@@ -34,6 +35,13 @@ export function UserDetail({ userId }: { userId: string }) {
   const [error, setError] = useState('');
   const [formError, setFormError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [grantAmount, setGrantAmount] = useState('');
+  const [grantReason, setGrantReason] = useState('');
+  // Held across retries of one submission so a resend cannot double-grant.
+  const [grantRef, setGrantRef] = useState<string | null>(null);
+  const [granting, setGranting] = useState(false);
+  const [grantError, setGrantError] = useState('');
+  const [granted, setGranted] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +86,45 @@ export function UserDetail({ userId }: { userId: string }) {
     }
   }
 
+  async function submitGrant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = Number(grantAmount);
+    if (!Number.isSafeInteger(amount) || amount < 1) {
+      setGrantError('Enter a whole number of credits, one or more.');
+      return;
+    }
+    if (amount > MAX_CREDIT_GRANT) {
+      setGrantError(`A single grant is capped at ${formatNumber(MAX_CREDIT_GRANT)} credits.`);
+      return;
+    }
+    setGranting(true);
+    setGrantError('');
+    setGranted('');
+    try {
+      // The ref is minted once per submission attempt and reused if the user
+      // resubmits after a network error, so a request that actually landed is
+      // recognised as a duplicate instead of granting twice.
+      const ref = grantRef ?? `admin-ui:${crypto.randomUUID()}`;
+      setGrantRef(ref);
+      const result = await adminFetch<{ balance: number; duplicate: boolean }>(
+        `/api/users/${encodeURIComponent(userId)}/credits`,
+        { method: 'POST', body: JSON.stringify({ amount, reason: grantReason.trim() || 'admin_grant', ref }) },
+      );
+      setGranted(result.duplicate
+        ? `Already applied — balance is ${formatNumber(result.balance)}.`
+        : `Granted ${formatNumber(amount)}. New balance ${formatNumber(result.balance)}.`);
+      setGrantAmount('');
+      setGrantReason('');
+      setGrantRef(null);
+      await load();
+      window.setTimeout(() => setGranted(''), 5000);
+    } catch (grantFailure) {
+      setGrantError(apiErrorMessage(grantFailure));
+    } finally {
+      setGranting(false);
+    }
+  }
+
   const dirty = data ? JSON.stringify(form) !== JSON.stringify(formFromOverride(data.override)) : false;
 
   if (loading && !data) return <div className="page-stack"><BackLink href="/users">Back to users</BackLink><DashboardSkeleton /></div>;
@@ -97,7 +144,7 @@ export function UserDetail({ userId }: { userId: string }) {
           <div><dt>Joined</dt><dd>{formatDate(user.createdAt)}</dd></div>
           <div><dt>Last sign-in</dt><dd>{timeAgo(user.lastSignInAt)}</dd></div>
           <div><dt>Recent activity</dt><dd>{timeAgo(user.lastActiveAt)}</dd></div>
-          <div><dt>API credits</dt><dd>{formatNumber(data.credits)} <span>read-only</span></dd></div>
+          <div><dt>API credits</dt><dd>{formatNumber(data.credits)}</dd></div>
         </dl>
       </section>
 
@@ -142,6 +189,19 @@ export function UserDetail({ userId }: { userId: string }) {
               })}
             </div>
             <div className="form-actions"><button className="text-button" disabled={!dirty || saving} onClick={() => setForm(formFromOverride(data.override))} type="button">Discard changes</button><Button disabled={!dirty} icon="save" loading={saving} type="submit" variant="primary">Save overrides</Button></div>
+          </form>
+        </section>
+
+        <section className="panel override-panel">
+          <header className="panel__header"><div><h2>Credits</h2><p>Add credits to this account&rsquo;s balance</p></div><Badge tone={data.credits > 0 ? 'green' : 'amber'}>{formatNumber(data.credits)} available</Badge></header>
+          <form className="limits-form" onSubmit={submitGrant}>
+            {grantError ? <div className="form-alert" role="alert"><Icon name="warning" size={17} /><span>{grantError}</span></div> : null}
+            {granted ? <div className="form-success" role="status"><Icon name="check" size={17} /><span>{granted}</span></div> : null}
+            <div className="override-fields">
+              <label className="field limit-field"><span>Amount <small>credits</small></span><input inputMode="numeric" min="1" onChange={(event) => { setGrantAmount(event.target.value); setGranted(''); }} placeholder="e.g. 100000" step="1" type="number" value={grantAmount} /><small>Added to the balance, not a replacement for it.</small></label>
+              <label className="field limit-field"><span>Reason <small>audit trail</small></span><input maxLength={120} onChange={(event) => setGrantReason(event.target.value)} placeholder="admin_grant" type="text" value={grantReason} /><small>Recorded in the credit ledger and the admin audit log.</small></label>
+            </div>
+            <div className="form-actions"><span className="text-button" aria-hidden="true" /><Button disabled={grantAmount.trim() === ''} icon="save" loading={granting} type="submit" variant="primary">Grant credits</Button></div>
           </form>
         </section>
       </div>
