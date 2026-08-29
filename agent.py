@@ -372,11 +372,21 @@ async def my_agent(ctx: agents.JobContext):
         participant_obj = getattr(params, "participant", None)
         participant_kind = getattr(participant_obj, "kind", None)
         participant_identity = getattr(participant_obj, "identity", None)
-        use_telephony = participant_kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+        track_obj = getattr(params, "track", None)
+        track_name = getattr(track_obj, "name", None)
+        # The AudioSocket bridge is a regular LiveKit participant, not a SIP
+        # participant, but deliberately publishes its 8 kHz phone audio as the
+        # ``telephone`` track. Detect both forms so low-bandwidth caller speech
+        # is not processed as a browser microphone and suppressed by BVC.
+        use_telephony = (
+            participant_kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+            or track_name == "telephone"
+        )
         logger.info(
-            "LiveKit audio input noise cancellation selected participant={} kind={} mode={}",
+            "LiveKit audio input noise cancellation selected participant={} kind={} track={} mode={}",
             participant_identity,
             participant_kind,
+            track_name,
             "BVCTelephony" if use_telephony else "BVC",
         )
         return noise_cancellation.BVCTelephony() if use_telephony else noise_cancellation.BVC()
