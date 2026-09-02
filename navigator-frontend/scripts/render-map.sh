@@ -6,5 +6,5 @@ APP_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PDF_PATH="${APP_DIR}/../../leap plan.pdf"
 
 mkdir -p "${APP_DIR}/public"
-pdftocairo -png -singlefile -r 180 "${PDF_PATH}" "${APP_DIR}/public/leap-plan"
+pdftocairo -png -singlefile -r 300 "${PDF_PATH}" "${APP_DIR}/public/leap-plan"
 echo "Rendered ${APP_DIR}/public/leap-plan.png"

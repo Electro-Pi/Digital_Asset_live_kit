@@ -1,14 +1,10 @@
-import { ArrowLeft, ArrowRight, Check, ChevronRight, CornerUpLeft, CornerUpRight, MapPin, MoveUp, Navigation } from 'lucide-react';
-import { locationById, type Language } from '../data/mapData';
+import { CornerUpLeft, CornerUpRight, MapPin, MoveUp, Navigation } from 'lucide-react';
+import { locationById, locationDisplayName, type Language } from '../data/mapData';
 import type { RoutePlan, RouteStep } from '../lib/navigation';
 
 interface RoutePanelProps {
   language: Language;
   route: RoutePlan;
-  activeStep: number;
-  onPrevious: () => void;
-  onNext: () => void;
-  onSpeakStep: () => void;
 }
 
 function ManeuverIcon({ maneuver, size = 22 }: { maneuver: RouteStep['maneuver']; size?: number }) {
@@ -19,13 +15,13 @@ function ManeuverIcon({ maneuver, size = 22 }: { maneuver: RouteStep['maneuver']
   return <MoveUp size={size} />;
 }
 
-export function RoutePanel({ language, route, activeStep, onPrevious, onNext, onSpeakStep }: RoutePanelProps) {
-  const step = route.steps[activeStep];
+export function RoutePanel({ language, route }: RoutePanelProps) {
   const destination = locationById.get(route.destinationId)!;
-  const isLast = activeStep === route.steps.length - 1;
+  const numberFormatter = new Intl.NumberFormat(language === 'ar' ? 'ar-SA' : 'en-US');
+  const directionCount = numberFormatter.format(route.steps.length);
 
   return (
-    <section className="route-panel" aria-live="polite">
+    <section className="route-panel" aria-live="polite" aria-labelledby="route-directions-title">
       <div className="route-summary">
         <div className="route-summary__metric">
           <strong>{route.durationMinutes}</strong>
@@ -38,35 +34,41 @@ export function RoutePanel({ language, route, activeStep, onPrevious, onNext, on
         </div>
         <div className="route-summary__destination">
           <span>{language === 'ar' ? 'إلى' : 'TO'}</span>
-          <strong>{language === 'ar' ? destination.nameAr : destination.name}</strong>
+          <strong>{locationDisplayName(destination, language)}</strong>
         </div>
       </div>
 
-      <button className="current-instruction" onClick={onSpeakStep}>
-        <span className={`maneuver maneuver--${step.maneuver}`}><ManeuverIcon maneuver={step.maneuver} size={28} /></span>
-        <span>
-          <small>{language === 'ar' ? `الخطوة ${activeStep + 1} من ${route.steps.length}` : `STEP ${activeStep + 1} OF ${route.steps.length}`}</small>
-          <strong>{step.instruction}</strong>
-          {step.note && <em>{step.note}</em>}
-        </span>
-        <ChevronRight size={19} className="instruction-play" />
-      </button>
+      <div className="route-directions">
+        <div className="route-directions__header">
+          <div>
+            <small id="route-directions-title">{language === 'ar' ? 'المسار الكامل' : 'FULL ROUTE'}</small>
+            <strong>{language === 'ar' ? 'كل التعليمات بالترتيب' : 'Every direction, in order'}</strong>
+          </div>
+          <span>
+            {language === 'ar'
+              ? `${directionCount} تعليمات`
+              : `${directionCount} ${route.steps.length === 1 ? 'direction' : 'directions'}`}
+          </span>
+        </div>
 
-      <div className="step-progress" aria-hidden="true">
-        {route.steps.map((routeStep, index) => (
-          <span key={routeStep.id} className={index <= activeStep ? 'is-complete' : ''} />
-        ))}
-      </div>
-
-      <div className="route-actions">
-        <button className="button button--secondary" onClick={onPrevious} disabled={activeStep === 0}>
-          {language === 'ar' ? <ArrowRight size={17} /> : <ArrowLeft size={17} />}
-          {language === 'ar' ? 'السابق' : 'Previous'}
-        </button>
-        <button className="button button--primary" onClick={onNext} disabled={isLast}>
-          {isLast ? <Check size={18} /> : language === 'ar' ? <ArrowLeft size={18} /> : <ArrowRight size={18} />}
-          {isLast ? language === 'ar' ? 'وصلت' : 'Arrived' : language === 'ar' ? 'الخطوة التالية' : 'Next step'}
-        </button>
+        <ol className="route-directions__list" aria-label={language === 'ar' ? 'تعليمات المسار بالترتيب' : 'Ordered route directions'}>
+          {route.steps.map((step, index) => (
+            <li className="route-direction" key={step.id}>
+              <span className={`maneuver maneuver--${step.maneuver}`} aria-hidden="true">
+                <ManeuverIcon maneuver={step.maneuver} size={22} />
+              </span>
+              <span className="route-direction__copy">
+                <small>
+                  {language === 'ar'
+                    ? `التعليمة ${numberFormatter.format(index + 1)}`
+                    : `DIRECTION ${index + 1}`}
+                </small>
+                <strong>{step.instruction}</strong>
+                {step.note && <em>{step.note}</em>}
+              </span>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );

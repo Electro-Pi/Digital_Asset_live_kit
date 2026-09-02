@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Callable
 from dotenv import load_dotenv
 from typing import Any, Optional
 
@@ -10,6 +10,7 @@ from loguru import logger
 import httpx
 
 from livekit import agents, rtc
+from livekit.agents import llm
 from livekit.agents import stt as livekit_stt
 from livekit.agents import (
     Agent,
@@ -42,6 +43,18 @@ from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
 from src.arabic_text import strip_tashkeel
+from src.leap_navigation import (
+    NavigationNarrationError,
+    NavigationLocationError,
+    NavigatorLanguage,
+    build_navigation_route_action,
+    narration_text_from_data_packet,
+    navigator_intro,
+    navigator_prompt,
+    parse_navigator_session,
+    publish_navigation_route,
+    resolve_navigator_location,
+)
 from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
 from src.billing import (
     billing_from_env,
@@ -60,6 +73,7 @@ load_dotenv(".env.local")
 
 TTS_SERVER_URL = os.getenv("TTS_SERVER_URL", "http://localhost:16326")
 TTS_MODEL = os.getenv("TTS_MODEL", "VoxCPM2")
+TTS_API_KEY = os.getenv("SPEECH_GATEWAY_API_KEY", "").strip() or None
 # Server-side voice names — see GET /v1/audio/voices. Both speakers are
 # precomputed upstream ("nouf" female / نوف, "nawaf" male / نواف); which one a
 # session gets is chosen per participant, so these are the names, not the pick.
@@ -131,7 +145,7 @@ def _preview(value: Any, limit: int = 220) -> str:
     return f"{text[:limit]}..."
 
 
-class Assistant(Agent):
+class _TranscriptAgent(Agent):
     def __init__(self, instructions: str) -> None:
         super().__init__(
             instructions=instructions,
@@ -169,6 +183,8 @@ class Assistant(Agent):
             else:
                 yield bare
 
+
+class Assistant(_TranscriptAgent):
     @function_tool()
     async def lookup_weather(
         self,
@@ -240,6 +256,258 @@ class Assistant(Agent):
         }
 
 
+class NavigatorAssistant(_TranscriptAgent):
+    """Map-aware LEAP persona selected only by signed participant metadata."""
+
+    def __init__(
+        self,
+        *,
+        instructions: str,
+        room: rtc.Room,
+        language: NavigatorLanguage,
+        start_id: str | None = None,
+        destination_id: str | None = None,
+    ) -> None:
+        self._navigator_room = room
+        self._navigator_language = language
+        self._navigator_start_id = start_id
+        self._navigator_destination_id = destination_id
+        super().__init__(instructions=instructions)
+
+    async def on_user_turn_completed(
+        self,
+        turn_ctx: llm.ChatContext,
+        new_message: llm.ChatMessage,
+    ) -> None:
+        """Resolve a clearly stated single endpoint before the LLM can guess.
+
+        This is deliberately stateful and conservative. While collecting the
+        first route, an otherwise bare place name fills the missing endpoint.
+        Once a route exists, automatic replacement requires explicit navigation
+        language such as "take me to" / "وديني إلى", so a casual question about
+        an exhibitor does not unexpectedly redraw the map.
+        """
+        text = " ".join(
+            part for part in new_message.content if isinstance(part, str)
+        ).strip()
+        if not text:
+            return
+
+        normalized_text = strip_tashkeel(text).casefold()
+        destination_intent = any(marker in normalized_text for marker in (
+            " إلى ", " الى ", "ابي", "أبي", "ابغ", "أبغ", "اريد", "أريد",
+            "اروح", "أروح", "خذني", "روح بي", "وديني", "ودي", "take me",
+            "go to", "going to", "want to", "navigate to", "directions to",
+        ))
+        current_intent = any(marker in normalized_text for marker in (
+            "انا عند", "أنا عند", "انا في", "أنا في", "موقعي", "واقف عند",
+            "i am at", "i'm at", "im at", "my location", "standing at",
+        ))
+        if destination_intent and current_intent:
+            return
+        if destination_intent:
+            endpoint_role = "destination"
+        elif current_intent:
+            endpoint_role = "current_location"
+        elif not self._navigator_start_id:
+            endpoint_role = "current_location"
+        elif not self._navigator_destination_id:
+            endpoint_role = "destination"
+        else:
+            return
+
+        try:
+            resolved = resolve_navigator_location(text, role=endpoint_role.replace("_", " "))
+        except NavigationLocationError:
+            return
+
+        result = await self.set_navigation_route(
+            None,
+            **{endpoint_role: resolved.id},
+        )
+        status = result["status"]
+        if status == "route_set":
+            instruction = (
+                "Trusted navigator update: the deterministic catalog already "
+                f"resolved this turn and displayed the route from {result['startId']} "
+                f"to {result['destinationId']}. Do not ask for spelling or a booth "
+                "code and do not call the tool again. Briefly confirm the new route."
+            )
+        elif status == "need_destination":
+            instruction = (
+                "Trusted navigator update: the current location was validated and "
+                "remembered. Do not call the tool again for this turn; ask only for "
+                "the destination."
+            )
+        else:
+            instruction = (
+                "Trusted navigator update: the destination was validated and "
+                "remembered. Do not call the tool again for this turn; ask only for "
+                "the current location."
+            )
+        turn_ctx.add_message(role="system", content=instruction)
+
+    @function_tool()
+    async def set_navigation_route(
+        self,
+        context: RunContext,
+        current_location: str | None = None,
+        destination: str | None = None,
+    ) -> dict[str, Any]:
+        """Validate and remember either endpoint as soon as it is spoken.
+
+        Do not pre-validate a name and do not ask whether it is a booth, office,
+        or other place before calling this tool. Pass the visitor's natural
+        wording unchanged. The deterministic resolver is the only authority on
+        whether a name is unique, duplicated, or unmatched. Either argument may
+        be omitted: the tool remembers a previously validated endpoint and says
+        which one is still needed. If both are known, it displays the route.
+
+        Args:
+            current_location: A newly spoken current place, if supplied, as a
+                location ID, English or Arabic name, or spoken alias.
+            destination: A newly spoken destination, if supplied, as a location
+                ID, English or Arabic name, or spoken alias.
+        """
+        _ = context
+        resolved_start_id = self._navigator_start_id
+        resolved_destination_id = self._navigator_destination_id
+        try:
+            if current_location and current_location.strip():
+                resolved_start_id = resolve_navigator_location(
+                    current_location,
+                    role="current location",
+                ).id
+            if destination and destination.strip():
+                resolved_destination_id = resolve_navigator_location(
+                    destination,
+                    role="destination",
+                ).id
+        except NavigationLocationError as error:
+            raise ToolError(str(error)) from error
+
+        if not resolved_start_id and not resolved_destination_id:
+            raise ToolError(
+                "No location was supplied. Ask for the visitor's current location."
+            )
+
+        self._navigator_start_id = resolved_start_id
+        self._navigator_destination_id = resolved_destination_id
+        if not resolved_start_id:
+            destination_match = resolve_navigator_location(resolved_destination_id)
+            return {
+                "status": "need_current_location",
+                "destinationId": destination_match.id,
+                "destination": {
+                    "name": destination_match.name,
+                    "nameAr": destination_match.name_ar,
+                },
+            }
+        if not resolved_destination_id:
+            start_match = resolve_navigator_location(resolved_start_id)
+            return {
+                "status": "need_destination",
+                "startId": start_match.id,
+                "start": {
+                    "name": start_match.name,
+                    "nameAr": start_match.name_ar,
+                },
+            }
+
+        try:
+            action = build_navigation_route_action(
+                resolved_start_id,
+                resolved_destination_id,
+                language=self._navigator_language,
+            )
+        except NavigationLocationError as error:
+            raise ToolError(str(error)) from error
+
+        try:
+            await publish_navigation_route(self._navigator_room, action)
+        except Exception as error:  # noqa: BLE001
+            logger.exception(
+                "Could not publish navigator route start={} destination={}",
+                action["startId"],
+                action["destinationId"],
+            )
+            raise ToolError(
+                "The map could not be updated. Do not claim the route is ready; "
+                "ask the visitor to try again."
+            ) from error
+
+        logger.info(
+            "Navigator route published start={} destination={} language={}",
+            action["startId"],
+            action["destinationId"],
+            action["language"],
+        )
+        return {
+            "status": "route_set",
+            "startId": action["startId"],
+            "destinationId": action["destinationId"],
+            "language": action["language"],
+            "narration": "pending_frontend_route_steps",
+        }
+
+
+def register_navigator_narration_handler(
+    *,
+    room: rtc.Room,
+    session: AgentSession,
+    participant_identity: str,
+    language: NavigatorLanguage,
+) -> Callable[[rtc.DataPacket], None]:
+    """Speak one validated route packet while allowing natural barge-in."""
+    last_narration_payload: bytes | None = None
+
+    @room.on("data_received")
+    def _on_navigator_narration(packet: rtc.DataPacket) -> None:
+        nonlocal last_narration_payload
+        packet_payload = bytes(getattr(packet, "data", b""))
+        if packet_payload and packet_payload == last_narration_payload:
+            logger.info(
+                "Ignoring duplicate navigator narration participant={}",
+                participant_identity,
+            )
+            return
+        try:
+            narration_text = narration_text_from_data_packet(
+                packet,
+                expected_participant_identity=participant_identity,
+                expected_language=language,
+            )
+        except NavigationNarrationError as error:
+            logger.warning(
+                "Rejected navigator narration participant={} bytes={} reason={}",
+                getattr(getattr(packet, "participant", None), "identity", None),
+                len(getattr(packet, "data", b"")),
+                error,
+            )
+            return
+        if narration_text is None:
+            return
+
+        try:
+            # One say() call is the one-shot contract. The text is assembled only
+            # from the validated deterministic frontend steps; no LLM is involved.
+            session.say(narration_text, allow_interruptions=True)
+        except Exception as error:  # noqa: BLE001
+            logger.exception(
+                "Could not schedule navigator route narration participant={}",
+                participant_identity,
+            )
+            return
+        last_narration_payload = packet_payload
+        logger.info(
+            "Navigator full route narration scheduled participant={} chars={}",
+            participant_identity,
+            len(narration_text),
+        )
+
+    return _on_navigator_narration
+
+
 # num_idle_processes defaults to 128 in prod (one warm job process per CPU core,
 # assuming a dedicated box). This is a shared server, so cap it — a few warm
 # processes keep session start-up instant without spawning 128 procs on boot.
@@ -265,7 +533,7 @@ async def my_agent(ctx: agents.JobContext):
         "tts_server_url={} tts_model={} tts_voice_default={} "
         "tts_seed={} tts_speed={} sentence_min_len={}",
         getattr(ctx.room, "name", None),
-        getattr(ctx.room, "sid", None),
+        getattr(getattr(job, "room", None), "sid", None),
         getattr(job, "id", None),
         TTS_SERVER_URL,
         TTS_MODEL,
@@ -314,9 +582,9 @@ async def my_agent(ctx: agents.JobContext):
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not resolve the calling participant: {}", e)
 
-    selected_voice = parse_voice_from_metadata(
-        getattr(_part, "metadata", None) if _part else None
-    )
+    participant_metadata = getattr(_part, "metadata", None) if _part else None
+    navigator_session = parse_navigator_session(participant_metadata)
+    selected_voice = parse_voice_from_metadata(participant_metadata)
     profile = voice_profile(
         selected_voice,
         female_tts_voice=TTS_VOICE,
@@ -331,10 +599,18 @@ async def my_agent(ctx: agents.JobContext):
         bool(TTS_REF_AUDIO),
         getattr(_part, "identity", None),
     )
+    logger.info(
+        "Participant experience selected experience={} language={} start={} destination={}",
+        "leap-navigator" if navigator_session else "coda",
+        navigator_session.language if navigator_session else None,
+        navigator_session.start_id if navigator_session else None,
+        navigator_session.destination_id if navigator_session else None,
+    )
 
     voice_tts = VoxCPMTTSPlugin(
         server_url=TTS_SERVER_URL,
         model=TTS_MODEL,
+        api_key=TTS_API_KEY,
         voice=profile.tts_voice,
         # Normally None: both speakers are named voices on the server. Setting
         # TTS_REF_AUDIO overrides whichever one this session picked.
@@ -397,6 +673,12 @@ async def my_agent(ctx: agents.JobContext):
         ),
         vad=voice_vad,
         turn_detection=MultilingualModel(),
+        # Route narration can be long, so barge-in must be a first-class path:
+        # one clearly detected word stops Coda quickly and becomes a normal
+        # conversational turn (for example, "لا، وديني لمايكروسوفت").
+        allow_interruptions=True,
+        min_interruption_duration=0.25,
+        min_interruption_words=1,
     )
 
 
@@ -540,10 +822,44 @@ async def my_agent(ctx: agents.JobContext):
             except Exception as e:
                 logger.warning(f"Could not calculate EOU latency: {e}")
 
+    if navigator_session:
+        session_agent: Agent = NavigatorAssistant(
+            instructions=navigator_prompt(
+                navigator_session.language,
+                start_id=navigator_session.start_id,
+                destination_id=navigator_session.destination_id,
+            ),
+            room=ctx.room,
+            language=navigator_session.language,
+            start_id=navigator_session.start_id,
+            destination_id=navigator_session.destination_id,
+        )
+        initial_reply_instructions = navigator_intro(
+            navigator_session.language,
+            start_id=navigator_session.start_id,
+            destination_id=navigator_session.destination_id,
+        )
+    else:
+        # Preserve the existing Coda cultural-guide behavior for every session
+        # that was not explicitly tagged by the trusted token issuer.
+        session_agent = Assistant(instructions=prompt_for_voice(profile.key))
+        initial_reply_instructions = intro_for_voice(profile.key)
+
+    if navigator_session and _part:
+        # Register before session.start publishes the listening state. The web
+        # client waits for that state before sending its single reliable route
+        # narration packet, so there is no join-time packet-loss race.
+        register_navigator_narration_handler(
+            room=ctx.room,
+            session=session,
+            participant_identity=_part.identity,
+            language=navigator_session.language,
+        )
+
     logger.info("LiveKit session.start beginning room_name={}", getattr(ctx.room, "name", None))
     await session.start(
         room=ctx.room,
-        agent=Assistant(instructions=prompt_for_voice(profile.key)),
+        agent=session_agent,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=_noise_cancellation_for
@@ -665,15 +981,28 @@ async def my_agent(ctx: agents.JobContext):
 
     ctx.add_shutdown_callback(_final_bill)
 
-    logger.info(
-        "LiveKit initial generate_reply beginning voice={} name_ar={}",
-        profile.key,
-        profile.display_name_ar,
-    )
-    await session.generate_reply(
-        instructions=intro_for_voice(profile.key)
-    )
-    logger.info("LiveKit initial generate_reply completed")
+    if (
+        navigator_session
+        and navigator_session.start_id
+        and navigator_session.destination_id
+    ):
+        # The browser already has the deterministic route and will send all of
+        # its instructions once Coda is listening. Avoid a competing LLM
+        # confirmation before that authoritative narration.
+        logger.info(
+            "Skipping navigator initial reply; awaiting full frontend route "
+            "start={} destination={}",
+            navigator_session.start_id,
+            navigator_session.destination_id,
+        )
+    else:
+        logger.info(
+            "LiveKit initial generate_reply beginning voice={} name_ar={}",
+            profile.key,
+            profile.display_name_ar,
+        )
+        await session.generate_reply(instructions=initial_reply_instructions)
+        logger.info("LiveKit initial generate_reply completed")
 
 
 if __name__ == "__main__":

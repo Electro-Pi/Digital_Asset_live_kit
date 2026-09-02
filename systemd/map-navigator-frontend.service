@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/projects/map-navigator /Digital_Asset_live_kit/navigator-frontend
+User=root
+Group=root
+WorkingDirectory=/home/navigator-ai/Digital_Asset_live_kit/navigator-frontend
 Environment=NODE_ENV=production
 Environment=HOST=0.0.0.0
 Environment=PORT=4173

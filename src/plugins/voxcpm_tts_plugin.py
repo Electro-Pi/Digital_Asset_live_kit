@@ -52,6 +52,8 @@ from livekit.agents import tts, utils
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
+from src.arabic_text import normalize_arabic_speech_codes
+
 SERVER_SAMPLE_RATE = 48000  # raw pcm output rate of the server
 SERVER_CHANNELS = 1  # VoxCPM2 is mono on both the stream and wav paths
 # Default (female) pitch band — logged, not gated. A male session overrides it
@@ -150,7 +152,10 @@ def normalize_arabic(text: str) -> str:
     why U+0653-U+0655 stays out of the character class above: those marks are
     letter identity, not vowels, and must survive the strip.
     """
-    composed = _NON_PHONETIC_MARKS.sub("", unicodedata.normalize("NFC", text))
+    spoken_text = normalize_arabic_speech_codes(text)
+    composed = _NON_PHONETIC_MARKS.sub(
+        "", unicodedata.normalize("NFC", spoken_text)
+    )
     return _WORD_FINAL_MARKS.sub(_keep_shadda_only, composed)
 
 
@@ -363,6 +368,7 @@ class VoxCPMTTSPlugin(tts.TTS):
         *,
         server_url: str = "http://localhost:16326",
         model: str = "VoxCPM2",
+        api_key: str | None = None,
         voice: str = "nouf",
         ref_audio: str | None = None,
         ref_text: str | None = None,
@@ -378,6 +384,7 @@ class VoxCPMTTSPlugin(tts.TTS):
             server_url: VoxCPM2 server base URL, WITHOUT the /v1 suffix — the
                 endpoint path is appended here.
             model: model id served (see GET /v1/models); an unknown id is a 404.
+            api_key: optional bearer token for an authenticated speech gateway.
             voice: server-side voice name (see GET /v1/audio/voices). The
                 production speakers are "nouf" (female) and "nawaf" (male), both
                 precomputed. An unregistered name is a 400, so this fails loudly
@@ -415,6 +422,7 @@ class VoxCPMTTSPlugin(tts.TTS):
                 self._server_url,
             )
         self._model = model
+        self._api_key = api_key.strip() if api_key else None
         self._voice = voice
         self._ref_audio = ref_audio
         self._ref_text = ref_text
@@ -440,11 +448,12 @@ class VoxCPMTTSPlugin(tts.TTS):
         self._voice_max_f0 = float(voice_max_f0)
         self._session = http_session
         logger.info(
-            "VoxCPM TTS plugin initialized server_url={} model={} voice={} ref_audio={} "
+            "VoxCPM TTS plugin initialized server_url={} model={} api_key_set={} voice={} ref_audio={} "
             "ref_text_chars={} seed={} speed={} sample_rate={} channels={} "
             "voice_f0_band={:.0f}-{:.0f}",
             self._server_url,
             self._model,
+            bool(self._api_key),
             self._voice,
             "set" if self._ref_audio else None,
             len(self._ref_text or ""),
@@ -591,10 +600,14 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         )
 
         try:
+            headers = {"X-Request-ID": request_id}
+            if self._tts._api_key:
+                headers["Authorization"] = f"Bearer {self._tts._api_key}"
+
             async with self._tts._ensure_session().post(
                 endpoint,
                 json=payload,
-                headers={"X-Request-ID": request_id},
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(
                     total=None,
                     sock_connect=self._conn_options.timeout,

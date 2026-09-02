@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ArrowRight,
   ArrowUpDown,
@@ -11,70 +11,78 @@ import {
 } from 'lucide-react';
 import { MapView } from './components/MapView';
 import { RoutePanel } from './components/RoutePanel';
-import { VoiceDock, type VoiceStatus } from './components/VoiceDock';
+import { VoiceDock } from './components/VoiceDock';
 import {
   locationById,
-  locationName,
+  locationDisplayName,
   locations,
   locationZone,
   nodeById,
   type Language,
   type MapLocation,
 } from './data/mapData';
-import { createRoute, findLocationFromSpeech, routeSpeech, type RoutePlan } from './lib/navigation';
+import { useLiveKitVoice, type NavigationRouteAction } from './hooks/useLiveKitVoice';
+import {
+  buildRouteNarration,
+  createRoute,
+  type NavigationRouteNarration,
+  type RoutePlan,
+} from './lib/navigation';
 
 const copy = {
   en: {
     badge: 'VOICE-GUIDED INDOOR NAVIGATION',
     title: 'Find your way,',
     titleAccent: 'without the guesswork.',
-    subtitle: 'Tell the guide where you are and where you want to go. Your route appears directly on the original event plan.',
+    subtitle: 'Tell the guide where you are and where you want to go, then explore the destination on the live 3D venue map.',
     location: 'YOUR LOCATION',
     destination: 'DESTINATION',
     chooseLocation: 'Choose where you are',
     chooseDestination: 'Where do you want to go?',
-    start: 'Start voice navigation',
+    start: 'Show full route & start Coda',
     suggested: 'POPULAR DESTINATIONS',
     askStart: 'Hi! Where are you located right now?',
     askDestination: 'Great. Where would you like to go?',
-    tapVoice: 'Tap the microphone and tell me where you are.',
-    routeReady: 'Your route is ready. Tap any direction to hear it again.',
-    noMatch: 'I could not match that place. Try saying a name shown on the map.',
+    tapVoice: 'Tap the microphone to talk naturally with the live Coda guide.',
+    connecting: 'Connecting you to Coda through LiveKit…',
+    connected: 'You are live with Coda. Say where you are and where you want to go.',
+    connectionFailed: 'Coda could not connect. Check microphone permission and try again.',
+    routeReady: 'Your full route is ready. Coda will read every direction once.',
+    narrationFailed: 'Your full route is visible, but Coda could not read it. Reconnect and try again.',
     samePlace: 'Your destination needs to be different from your current location.',
     chooseBoth: 'Choose a current location and a destination to build your route.',
-    heardAt: (name: string) => `Got it, you are at ${name}. Where would you like to go?`,
     selectedMapStart: (name: string) => `${name} set as your current location. Now choose a destination.`,
     selectedMapDestination: (name: string) => `${name} set as your destination. Your route is ready to start.`,
-    powered: 'Calibrated to the uploaded floor plan',
-    estimate: 'Distances are indoor-plan estimates. Advance steps manually; live positioning needs venue beacons.',
+    powered: 'LIVE LEAP 2026 3D VENUE MAP',
+    estimate: 'Route guidance uses calibrated indoor-plan estimates. The live 3D venue viewer requires network access.',
   },
   ar: {
     badge: 'ملاحة داخلية بالصوت',
     title: 'وصل وجهتك،',
     titleAccent: 'بدون ما تحتار.',
-    subtitle: 'قل للمرشد وينك ووين تبي تروح، وبيطلع مسارك مباشرة على مخطط الفعالية الأصلي.',
+    subtitle: 'قل للمرشد وينك ووين تبي تروح، وبعدها استكشف وجهتك على خريطة الموقع الحية ثلاثية الأبعاد.',
     location: 'موقعك الحالي',
     destination: 'الوجهة',
     chooseLocation: 'اختر موقعك الحالي',
     chooseDestination: 'وين تبي تروح؟',
-    start: 'ابدأ الملاحة الصوتية',
+    start: 'اعرض المسار الكامل وابدأ مع كودا',
     suggested: 'وجهات مشهورة',
     askStart: 'هلا والله! وين موقعك الحين؟',
     askDestination: 'زين، وين تبي تروح؟',
-    tapVoice: 'اضغط المايك وقل لي وينك.',
-    routeReady: 'مسارك جاهز. اضغط على أي خطوة عشان تسمعها مرة ثانية.',
-    noMatch: 'ما قدرت أحدد المكان. جرّب تقول اسم واضح من الخريطة.',
+    tapVoice: 'اضغط المايك وتكلم بشكل طبيعي مع مرشدة كودا المباشرة.',
+    connecting: 'جاري توصيلك بكودا عن طريق لايف كِت…',
+    connected: 'أنت متصل بكودا. قل لها وينك ووين تبي تروح.',
+    connectionFailed: 'تعذّر اتصال كودا. تأكد من إذن المايك وجرّب مرة ثانية.',
+    routeReady: 'مسارك الكامل جاهز، وكودا بتقرأ لك كل التعليمات مرة وحدة.',
+    narrationFailed: 'مسارك الكامل ظاهر، لكن كودا ما قدرت تقرأه. أعد الاتصال وجرّب مرة ثانية.',
     samePlace: 'وجهتك لازم تكون غير موقعك الحالي.',
     chooseBoth: 'اختر موقعك الحالي والوجهة عشان أرسم لك المسار.',
-    heardAt: (name: string) => `تمام، أنت عند ${name}. وين تبي تروح؟`,
     selectedMapStart: (name: string) => `حددنا ${name} كموقعك الحالي. الحين اختر وجهتك.`,
     selectedMapDestination: (name: string) => `حددنا ${name} كوجهتك. مسارك جاهز للبدء.`,
-    powered: 'مضبوطة على مخطط الفعالية المرفوع',
-    estimate: 'المسافات تقديرية من المخطط. تقدم يدوياً بين الخطوات؛ التتبع الحي يحتاج حساسات داخل الموقع.',
+    powered: 'خريطة ليب ٢٠٢٦ الحية ثلاثية الأبعاد',
+    estimate: 'إرشادات المسار تقديرية من المخطط الداخلي. خريطة الموقع الحية تحتاج اتصالاً بالإنترنت.',
   },
 };
-
-type VoiceTarget = 'start' | 'destination' | 'command';
 
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
@@ -82,169 +90,110 @@ export default function App() {
   const [destinationId, setDestinationId] = useState('');
   const [picking, setPicking] = useState<'start' | 'destination'>('start');
   const [route, setRoute] = useState<RoutePlan | null>(null);
-  const [activeStep, setActiveStep] = useState(0);
-  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle');
-  const [voiceMessage, setVoiceMessage] = useState(copy.en.askStart);
-  const [transcript, setTranscript] = useState('');
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const [pendingNarration, setPendingNarration] = useState<NavigationRouteNarration | null>(null);
+  const [voiceMessage, setVoiceMessage] = useState(copy.en.tapVoice);
 
   const t = copy[language];
   const start = startId ? locationById.get(startId) : undefined;
   const destination = destinationId ? locationById.get(destinationId) : undefined;
-  const currentPoint = route
-    ? nodeById.get(route.steps[Math.min(activeStep, route.steps.length - 1)].fromNodeId)
-    : start ? nodeById.get(start.nodeId) : undefined;
+  const currentPoint = start ? nodeById.get(start.nodeId) : undefined;
 
-  const Recognition = typeof window !== 'undefined'
-    ? window.SpeechRecognition ?? window.webkitSpeechRecognition
-    : undefined;
-  const recognitionSupported = Boolean(Recognition);
+  const handleAgentRoute = useCallback((action: NavigationRouteAction) => {
+    const nextStart = locationById.get(action.startId);
+    const nextDestination = locationById.get(action.destinationId);
+    if (!nextStart || !nextDestination || nextStart.id === nextDestination.id) return;
+    const plan = createRoute(nextStart.id, nextDestination.id, language);
+    if (!plan) return;
+    setStartId(nextStart.id);
+    setDestinationId(nextDestination.id);
+    setPicking('destination');
+    setRoute(plan);
+    setPendingNarration(buildRouteNarration(plan, language));
+    setVoiceMessage(copy[language].routeReady);
+  }, [language]);
+
+  const voice = useLiveKitVoice({ onRouteAction: handleAgentRoute });
 
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
 
-  useEffect(() => () => {
-    recognitionRef.current?.abort();
-    window.speechSynthesis?.cancel();
-  }, []);
+  useEffect(() => {
+    if (!voice.isConnected) return;
+    void voice.updateContext({ language, startId, destinationId }).catch(() => undefined);
+  }, [destinationId, language, startId, voice.isConnected, voice.updateContext]);
 
-  function speak(text: string, onComplete?: () => void) {
-    if (!('speechSynthesis' in window)) {
-      onComplete?.();
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language === 'ar' ? 'ar-SA' : 'en-US';
-    utterance.rate = language === 'ar' ? 0.92 : 0.96;
-    utterance.pitch = 1.02;
-    utterance.onstart = () => setVoiceStatus('speaking');
-    utterance.onend = () => {
-      setVoiceStatus('idle');
-      onComplete?.();
-    };
-    utterance.onerror = () => setVoiceStatus('error');
-    window.speechSynthesis.speak(utterance);
-  }
+  useEffect(() => {
+    // LiveKit data packets are not buffered for participants that have not
+    // joined yet. Waiting for Coda's listening state guarantees that the agent
+    // session and its narration handler are ready before this one-shot packet.
+    if (!pendingNarration || !voice.isConnected || voice.status !== 'listening') return;
+    const narration = pendingNarration;
+    setPendingNarration(null);
+    void voice.publishRouteNarration(narration)
+      .then((published) => {
+        if (!published) setVoiceMessage(copy[language].narrationFailed);
+      })
+      .catch(() => setVoiceMessage(copy[language].narrationFailed));
+  }, [language, pendingNarration, voice.isConnected, voice.publishRouteNarration, voice.status]);
 
-  function listenFor(target: VoiceTarget) {
-    if (!Recognition) return;
-    recognitionRef.current?.abort();
-    const recognition = new Recognition();
-    recognitionRef.current = recognition;
-    recognition.lang = language === 'ar' ? 'ar-SA' : 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    let handled = false;
-    recognition.onstart = () => setVoiceStatus('listening');
-    recognition.onresult = (event) => {
-      handled = true;
-      const heard = event.results[0][0].transcript.trim();
-      setTranscript(heard);
-      handleVoiceTranscript(target, heard);
-    };
-    recognition.onerror = () => {
-      setVoiceStatus('error');
-      setVoiceMessage(t.noMatch);
-    };
-    recognition.onend = () => {
-      if (!handled) setVoiceStatus('idle');
-    };
-    recognition.start();
-  }
-
-  function activateRoute(fromId: string, toId: string, announce = true) {
+  async function activateRoute(fromId: string, toId: string) {
     if (!fromId || !toId) {
       setVoiceMessage(t.chooseBoth);
       return;
     }
     if (fromId === toId) {
       setVoiceMessage(t.samePlace);
-      speak(t.samePlace);
       return;
     }
     const plan = createRoute(fromId, toId, language);
     if (!plan) return;
     setRoute(plan);
-    setActiveStep(0);
+    setPendingNarration(buildRouteNarration(plan, language));
     setVoiceMessage(t.routeReady);
-    if (announce) speak(routeSpeech(plan, language));
+
+    if (voice.isConnected) {
+      return;
+    }
+
+    try {
+      await voice.connect({ language, startId: fromId, destinationId: toId });
+    } catch {
+      setVoiceMessage(t.connectionFailed);
+    }
   }
 
-  function handleVoiceTranscript(target: VoiceTarget, heard: string) {
-    const normalized = heard.toLocaleLowerCase();
-    if (target === 'command' && route) {
-      if (/next|continue|التالي|كمل|كمّل/.test(normalized)) {
-        goToNextStep();
-        return;
+  async function onVoiceAction() {
+    if (voice.isActive || voice.isConnected) {
+      setPendingNarration(null);
+      await voice.disconnect();
+      setVoiceMessage(t.tapVoice);
+      return;
+    }
+    setVoiceMessage(t.connecting);
+    if (startId && destinationId && startId !== destinationId) {
+      const plan = createRoute(startId, destinationId, language);
+      if (plan) {
+        setRoute(plan);
+        setPendingNarration(buildRouteNarration(plan, language));
       }
-      if (/repeat|again|أعد|كرر|عيد/.test(normalized)) {
-        speakCurrentStep();
-        return;
-      }
     }
-
-    const matched = findLocationFromSpeech(heard);
-    if (!matched) {
-      setVoiceMessage(t.noMatch);
-      speak(t.noMatch);
-      return;
+    try {
+      await voice.connect({ language, startId, destinationId });
+      setVoiceMessage(t.connected);
+    } catch {
+      setVoiceMessage(t.connectionFailed);
     }
-
-    if (target === 'start' || !startId) {
-      setStartId(matched.id);
-      setPicking('destination');
-      setRoute(null);
-      const message = t.heardAt(locationName(matched, language));
-      setVoiceMessage(message);
-      speak(message, () => listenFor('destination'));
-      return;
-    }
-
-    if (matched.id === startId) {
-      setVoiceMessage(t.samePlace);
-      speak(t.samePlace, () => listenFor('destination'));
-      return;
-    }
-
-    setDestinationId(matched.id);
-    activateRoute(startId, matched.id, true);
-  }
-
-  function onVoiceAction() {
-    if (voiceStatus === 'speaking' || voiceStatus === 'listening') {
-      recognitionRef.current?.abort();
-      window.speechSynthesis?.cancel();
-      setVoiceStatus('idle');
-      return;
-    }
-    setTranscript('');
-    if (route) {
-      const prompt = language === 'ar'
-        ? 'قل التالي، أو أعد الخطوة، أو اسم وجهة جديدة.'
-        : 'Say next, repeat, or the name of a new destination.';
-      setVoiceMessage(prompt);
-      speak(prompt, () => listenFor('command'));
-      return;
-    }
-    if (!startId) {
-      setVoiceMessage(t.askStart);
-      speak(t.askStart, () => listenFor('start'));
-      return;
-    }
-    setVoiceMessage(t.askDestination);
-    speak(t.askDestination, () => listenFor('destination'));
   }
 
   function onMapSelect(location: MapLocation) {
     if (picking === 'start') {
       setStartId(location.id);
       setRoute(null);
-      setActiveStep(0);
+      setPendingNarration(null);
       setPicking('destination');
-      setVoiceMessage(t.selectedMapStart(locationName(location, language)));
+      setVoiceMessage(t.selectedMapStart(locationDisplayName(location, language)));
       return;
     }
     if (location.id === startId) {
@@ -253,14 +202,14 @@ export default function App() {
     }
     setDestinationId(location.id);
     setRoute(null);
-    setActiveStep(0);
-    setVoiceMessage(t.selectedMapDestination(locationName(location, language)));
+    setPendingNarration(null);
+    setVoiceMessage(t.selectedMapDestination(locationDisplayName(location, language)));
   }
 
   function onStartChange(value: string) {
     setStartId(value);
     setRoute(null);
-    setActiveStep(0);
+    setPendingNarration(null);
     setPicking('destination');
     setVoiceMessage(value ? t.askDestination : t.askStart);
   }
@@ -268,7 +217,7 @@ export default function App() {
   function onDestinationChange(value: string) {
     setDestinationId(value);
     setRoute(null);
-    setActiveStep(0);
+    setPendingNarration(null);
     setVoiceMessage(value ? t.tapVoice : t.askDestination);
   }
 
@@ -277,16 +226,18 @@ export default function App() {
     setStartId(destinationId);
     setDestinationId(startId);
     setPicking(destinationId ? 'destination' : 'start');
+    setPendingNarration(null);
     if (route && destinationId && startId) {
       const reversed = createRoute(destinationId, startId, language);
       setRoute(reversed);
-      setActiveStep(0);
     } else {
       setRoute(null);
     }
   }
 
   function changeLanguage(nextLanguage: Language) {
+    if (voice.isActive || voice.isConnected) void voice.disconnect();
+    setPendingNarration(null);
     setLanguage(nextLanguage);
     const nextCopy = copy[nextLanguage];
     if (route) {
@@ -301,26 +252,7 @@ export default function App() {
     }
   }
 
-  function speakCurrentStep() {
-    if (!route) return;
-    const step = route.steps[activeStep];
-    speak(`${step.instruction} ${step.note ?? ''}`.trim());
-  }
-
-  function goToNextStep() {
-    if (!route || activeStep >= route.steps.length - 1) return;
-    const next = activeStep + 1;
-    setActiveStep(next);
-    const step = route.steps[next];
-    speak(`${step.instruction} ${step.note ?? ''}`.trim());
-  }
-
-  function goToPreviousStep() {
-    if (!route || activeStep === 0) return;
-    setActiveStep((step) => step - 1);
-  }
-
-  const popularDestinationIds = ['leap-arena', 'deep-stage', 'food-zone', 'investors-stage'];
+  const popularDestinationIds = ['leader-pass-investors', 'ai-deep-tech-a', 'info-hub', 'prayer-room-east'];
 
   return (
     <div className="app-shell">
@@ -331,7 +263,9 @@ export default function App() {
         </a>
 
         <div className="header-center">
-          <span className="system-status"><span /> {language === 'ar' ? 'الخريطة جاهزة' : 'MAP READY'}</span>
+          <span className="system-status"><span /> {voice.isConnected
+            ? language === 'ar' ? 'كودا متصلة' : 'CODA LIVE'
+            : language === 'ar' ? 'الخريطة جاهزة' : 'MAP READY'}</span>
           <span className="header-divider" />
           <span>{t.powered}</span>
         </div>
@@ -353,11 +287,12 @@ export default function App() {
 
           <VoiceDock
             language={language}
-            status={voiceStatus}
+            status={voice.status}
+            active={voice.isActive || voice.isConnected}
             message={voiceMessage}
-            transcript={transcript}
-            recognitionSupported={recognitionSupported}
-            onVoiceAction={onVoiceAction}
+            transcript={voice.lastTranscript}
+            error={voice.error}
+            onVoiceAction={() => void onVoiceAction()}
           />
 
           <section className="planner" aria-label="Route planner">
@@ -375,7 +310,7 @@ export default function App() {
                       <option value="">{t.chooseLocation}</option>
                       {locations.map((location) => (
                         <option key={location.id} value={location.id}>
-                          {locationName(location, language)} · {locationZone(location, language)}
+                          {locationDisplayName(location, language)} · {locationZone(location, language)}
                         </option>
                       ))}
                     </select>
@@ -401,7 +336,7 @@ export default function App() {
                       <option value="">{t.chooseDestination}</option>
                       {locations.map((location) => (
                         <option key={location.id} value={location.id} disabled={location.id === startId}>
-                          {locationName(location, language)} · {locationZone(location, language)}
+                          {locationDisplayName(location, language)} · {locationZone(location, language)}
                         </option>
                       ))}
                     </select>
@@ -429,7 +364,7 @@ export default function App() {
               </div>
             </div>
 
-            <button className="start-button" onClick={() => activateRoute(startId, destinationId, true)}>
+            <button className="start-button" onClick={() => void activateRoute(startId, destinationId)}>
               <Route size={19} />
               {t.start}
               <ArrowRight size={19} className="start-button__arrow" />
@@ -440,10 +375,6 @@ export default function App() {
             <RoutePanel
               language={language}
               route={route}
-              activeStep={activeStep}
-              onPrevious={goToPreviousStep}
-              onNext={goToNextStep}
-              onSpeakStep={speakCurrentStep}
             />
           )}
 

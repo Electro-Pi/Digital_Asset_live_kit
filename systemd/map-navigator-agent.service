@@ -5,12 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/projects/map-navigator /Digital_Asset_live_kit
+User=root
+Group=root
+WorkingDirectory=/home/navigator-ai/Digital_Asset_live_kit
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/home/ubuntu/projects/map-navigator /Digital_Asset_live_kit/.env.navigator
-ExecStart=/usr/bin/env ./.venv/bin/python agent.py start
+EnvironmentFile=/home/navigator-ai/Digital_Asset_live_kit/.env.remote
+EnvironmentFile=/home/navigator-ai/Digital_Asset_live_kit/.env.navigator
+ExecStart=/home/navigator-ai/Digital_Asset_live_kit/.venv/bin/python agent.py start
 Restart=always
 RestartSec=5
 KillMode=control-group

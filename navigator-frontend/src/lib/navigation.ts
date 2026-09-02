@@ -1,6 +1,7 @@
 import {
   edges,
   locationById,
+  locationDisplayName,
   nodeById,
   type Language,
   type MapEdge,
@@ -25,6 +26,21 @@ export interface RoutePlan {
   steps: RouteStep[];
   distanceMeters: number;
   durationMinutes: number;
+}
+
+export interface NavigationRouteNarration {
+  version: 1;
+  type: 'narrate_navigation_route';
+  language: Language;
+  startId: string;
+  destinationId: string;
+  distanceMeters: number;
+  durationMinutes: number;
+  steps: Array<{
+    id: string;
+    instruction: string;
+    note?: string;
+  }>;
 }
 
 interface GraphLink {
@@ -209,8 +225,8 @@ export function createRoute(startId: string, destinationId: string, language: La
     maneuver: 'arrive',
     instruction:
       language === 'ar'
-        ? `وصلت ${destination.nameAr}. بتلقى الوجهة عند نهاية الخط البنفسجي.`
-        : `You have arrived at ${destination.name}. It is at the end of the purple route.`,
+        ? `وصلت ${locationDisplayName(destination, language)}. بتلقى الوجهة عند نهاية الخط البنفسجي.`
+        : `You have arrived at ${locationDisplayName(destination, language)}. It is at the end of the purple route.`,
     corridor: language === 'ar' ? 'الوجهة' : 'Destination',
     distanceMeters: 0,
     fromNodeId: result.nodes.at(-1)!.id,
@@ -220,14 +236,24 @@ export function createRoute(startId: string, destinationId: string, language: La
   return { startId, destinationId, path: result.nodes, steps, distanceMeters, durationMinutes };
 }
 
-export function routeSpeech(plan: RoutePlan, language: Language) {
-  const start = locationById.get(plan.startId)!;
-  const destination = locationById.get(plan.destinationId)!;
-  const stepText = plan.steps.map((step) => `${step.instruction} ${step.note ?? ''}`.trim()).join(' ');
-  if (language === 'ar') {
-    return `تمام. مسارك من ${start.nameAr} إلى ${destination.nameAr}. المشوار تقريباً ${plan.distanceMeters} متر وياخذ ${plan.durationMinutes} دقيقة. ${stepText}`;
-  }
-  return `Route ready from ${start.name} to ${destination.name}. It is approximately ${plan.distanceMeters} metres and takes ${plan.durationMinutes} minutes. ${stepText}`;
+export function buildRouteNarration(
+  plan: RoutePlan,
+  language: Language,
+): NavigationRouteNarration {
+  return {
+    version: 1,
+    type: 'narrate_navigation_route',
+    language,
+    startId: plan.startId,
+    destinationId: plan.destinationId,
+    distanceMeters: plan.distanceMeters,
+    durationMinutes: plan.durationMinutes,
+    steps: plan.steps.map((step) => ({
+      id: step.id,
+      instruction: step.instruction,
+      ...(step.note ? { note: step.note } : {}),
+    })),
+  };
 }
 
 export function findLocationFromSpeech(transcript: string) {

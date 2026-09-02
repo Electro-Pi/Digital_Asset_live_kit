@@ -1,3 +1,5 @@
+import pdfPlaceCatalog from './pdfPlaces.json' with { type: 'json' };
+
 export type Language = 'en' | 'ar';
 
 export interface MapNode {
@@ -17,6 +19,7 @@ export interface MapEdge {
 
 export interface MapLocation {
   id: string;
+  boothCode?: string;
   name: string;
   nameAr: string;
   shortName: string;
@@ -26,6 +29,8 @@ export interface MapLocation {
   zoneAr: string;
   aliases: string[];
   featured?: boolean;
+  printedOnPdf?: boolean;
+  sourceLabel?: string;
 }
 
 export const MAP_WIDTH = 1275;
@@ -101,7 +106,7 @@ export const edges: MapEdge[] = [
   { from: 'lower_east', to: 'lower_east_mid', corridor: 'east hall main aisle', corridorAr: 'الممر الرئيسي للصالة الشرقية' },
   { from: 'lower_east_mid', to: 'lower_east_top', corridor: 'east hall main aisle', corridorAr: 'الممر الرئيسي للصالة الشرقية' },
   { from: 'lower_west_top', to: 'south_concourse_west', corridor: 'arena south concourse', corridorAr: 'الممر الجنوبي للساحة' },
-  { from: 'south_concourse_west', to: 'south_concourse_center', corridor: 'arena south concourse', corridorAr: 'الممر الجنوبي للساحة', note: 'The circular LEAP Arena will be ahead on your left.', noteAr: 'بتكون ساحة ليب الدائرية قدامك على اليسار.' },
+  { from: 'south_concourse_west', to: 'south_concourse_center', corridor: 'central south concourse', corridorAr: 'الممر الجنوبي الأوسط', note: 'The large circular structure will be ahead on your left.', noteAr: 'بيكون المبنى الدائري الكبير قدامك على اليسار.' },
   { from: 'south_concourse_center', to: 'lower_center_top', corridor: 'arena south concourse', corridorAr: 'الممر الجنوبي للساحة' },
   { from: 'lower_center_top', to: 'south_concourse_east', corridor: 'arena south concourse', corridorAr: 'الممر الجنوبي للساحة' },
   { from: 'south_concourse_east', to: 'lower_east_top', corridor: 'arena south concourse', corridorAr: 'الممر الجنوبي للساحة' },
@@ -120,7 +125,7 @@ export const edges: MapEdge[] = [
   { from: 'arena_west_upper', to: 'arena_north_west', corridor: 'arena north promenade', corridorAr: 'الممشى الشمالي للساحة' },
   { from: 'arena_north_west', to: 'arena_north_center', corridor: 'arena north promenade', corridorAr: 'الممشى الشمالي للساحة', note: 'Follow the top edge of the arena.', noteAr: 'كمّل مع الجهة العلوية للساحة.' },
   { from: 'arena_north_center', to: 'arena_north_east', corridor: 'arena north promenade', corridorAr: 'الممشى الشمالي للساحة' },
-  { from: 'arena_north_center', to: 'academy', corridor: 'Academy access aisle', corridorAr: 'ممر الأكاديمية' },
+  { from: 'arena_north_center', to: 'academy', corridor: 'north access aisle', corridorAr: 'ممر الوصول الشمالي' },
   { from: 'arena_north_east', to: 'diagonal_1', corridor: 'northeast hall promenade', corridorAr: 'ممشى الصالة الشمالية الشرقية' },
   { from: 'diagonal_1', to: 'diagonal_2', corridor: 'northeast hall promenade', corridorAr: 'ممشى الصالة الشمالية الشرقية', note: 'Follow the angled outer aisle beside the exhibition stands.', noteAr: 'كمّل مع الممر المائل بجانب أجنحة المعرض.' },
   { from: 'diagonal_2', to: 'diagonal_3', corridor: 'northeast hall promenade', corridorAr: 'ممشى الصالة الشمالية الشرقية' },
@@ -128,35 +133,80 @@ export const edges: MapEdge[] = [
   { from: 'diagonal_4', to: 'diagonal_5', corridor: 'northeast hall promenade', corridorAr: 'ممشى الصالة الشمالية الشرقية' },
   { from: 'diagonal_5', to: 'diagonal_bottom', corridor: 'northeast hall promenade', corridorAr: 'ممشى الصالة الشمالية الشرقية' },
   { from: 'diagonal_bottom', to: 'lower_east_top', corridor: 'east hall connector', corridorAr: 'الممر الرابط للصالة الشرقية' },
-  { from: 'diagonal_bottom', to: 'investors_stage', corridor: 'Investors Stage access', corridorAr: 'ممر منصة المستثمرين' },
-  { from: 'diagonal_bottom', to: 'leap_hall', corridor: 'LEAP Hall access', corridorAr: 'ممر صالة ليب' },
+  { from: 'diagonal_bottom', to: 'investors_stage', corridor: 'east service access', corridorAr: 'ممر الخدمات الشرقي' },
+  { from: 'diagonal_bottom', to: 'leap_hall', corridor: 'Hall 1 access', corridorAr: 'ممر الصالة 1' },
 ];
 
-export const locations: MapLocation[] = [
-  { id: 'registration', name: 'Registration', nameAr: 'التسجيل', shortName: 'Registration', shortNameAr: 'التسجيل', nodeId: 'registration', zone: 'Arrival zone', zoneAr: 'منطقة الوصول', aliases: ['registration desk', 'check in', 'registration', 'تسجيل', 'التسجيل'], featured: true },
-  { id: 'main-entrance', name: 'Main entrance', nameAr: 'المدخل الرئيسي', shortName: 'Main entrance', shortNameAr: 'المدخل الرئيسي', nodeId: 'entrance_center', zone: 'South entrance', zoneAr: 'المدخل الجنوبي', aliases: ['main entrance', 'entrance', 'gate', 'مدخل', 'المدخل', 'البوابة'], featured: true },
-  { id: 'vip-entrance', name: 'VIP entrance', nameAr: 'مدخل كبار الشخصيات', shortName: 'VIP', shortNameAr: 'كبار الشخصيات', nodeId: 'vip_entrance', zone: 'Southwest entrance', zoneAr: 'المدخل الجنوبي الغربي', aliases: ['vip', 'vip entrance', 'مدخل vip', 'كبار الشخصيات'] },
-  { id: 'security', name: 'Security checkpoint', nameAr: 'نقطة التفتيش', shortName: 'Security', shortNameAr: 'التفتيش', nodeId: 'security_south', zone: 'Entrance concourse', zoneAr: 'ممر المداخل', aliases: ['security', 'security checkpoint', 'checkpoint', 'التفتيش', 'الأمن'] },
-  { id: 'leap-arena', name: 'LEAP Arena', nameAr: 'ساحة ليب', shortName: 'LEAP Arena', shortNameAr: 'ساحة ليب', nodeId: 'south_concourse_center', zone: 'Central arena', zoneAr: 'الساحة الوسطى', aliases: ['leap arena', 'arena', 'main stage', 'ليب أرينا', 'ساحة ليب', 'المسرح الرئيسي'], featured: true },
-  { id: 'deep-stage', name: 'DEEP Stage', nameAr: 'منصة ديب', shortName: 'DEEP Stage', shortNameAr: 'منصة ديب', nodeId: 'lower_center_mid', zone: 'Central hall', zoneAr: 'الصالة الوسطى', aliases: ['deep', 'deep stage', 'deep fest', 'ديب', 'منصة ديب'], featured: true },
-  { id: 'cybersecurity', name: 'Cybersecurity zone', nameAr: 'منطقة الأمن السيبراني', shortName: 'Cybersecurity', shortNameAr: 'الأمن السيبراني', nodeId: 'lower_center_top', zone: 'Central hall', zoneAr: 'الصالة الوسطى', aliases: ['cybersecurity', 'cyber security', 'security zone', 'الأمن السيبراني', 'سيبراني'] },
-  { id: 'food-zone', name: 'Food Zone', nameAr: 'منطقة الطعام', shortName: 'Food Zone', shortNameAr: 'الطعام', nodeId: 'lower_east_mid', zone: 'East hall', zoneAr: 'الصالة الشرقية', aliases: ['food', 'food zone', 'restaurant', 'cafe', 'طعام', 'الأكل', 'مطاعم'], featured: true },
-  { id: 'media-center', name: 'Media Center', nameAr: 'المركز الإعلامي', shortName: 'Media', shortNameAr: 'الإعلام', nodeId: 'lower_east_top', zone: 'East hall', zoneAr: 'الصالة الشرقية', aliases: ['media', 'media center', 'press', 'الإعلام', 'المركز الإعلامي'] },
-  { id: 'leap-hall', name: 'LEAP Hall', nameAr: 'صالة ليب', shortName: 'LEAP Hall', shortNameAr: 'صالة ليب', nodeId: 'leap_hall', zone: 'East concourse', zoneAr: 'الممر الشرقي', aliases: ['leap hall', 'leap', 'صالة ليب', 'ليب'], featured: true },
-  { id: 'investors-stage', name: 'Investors Stage', nameAr: 'منصة المستثمرين', shortName: 'Investors', shortNameAr: 'المستثمرون', nodeId: 'investors_stage', zone: 'East concourse', zoneAr: 'الممر الشرقي', aliases: ['investors', 'investor stage', 'investors stage', 'مستثمرين', 'المستثمرين'], featured: true },
-  { id: 'academy', name: 'LEAP Academy', nameAr: 'أكاديمية ليب', shortName: 'Academy', shortNameAr: 'الأكاديمية', nodeId: 'academy', zone: 'North hall', zoneAr: 'الصالة الشمالية', aliases: ['academy', 'leap academy', 'أكاديمية', 'الأكاديمية'] },
-  { id: 'government-park', name: 'Government Park', nameAr: 'منطقة الجهات الحكومية', shortName: 'Gov Park', shortNameAr: 'الجهات الحكومية', nodeId: 'left_hall_top', zone: 'West exhibition hall', zoneAr: 'صالة المعرض الغربية', aliases: ['government park', 'government', 'government zone', 'الحكومة', 'الجهات الحكومية'] },
-  { id: 'network-hall', name: 'Networks zone', nameAr: 'منطقة الشبكات', shortName: 'Networks', shortNameAr: 'الشبكات', nodeId: 'left_hall_bottom', zone: 'West exhibition hall', zoneAr: 'صالة المعرض الغربية', aliases: ['networks', 'network hall', 'network zone', 'شبكات', 'الشبكات'] },
-  { id: 'prayer-room', name: 'Prayer room', nameAr: 'المصلى', shortName: 'Prayer', shortNameAr: 'المصلى', nodeId: 'lower_east', zone: 'East hall', zoneAr: 'الصالة الشرقية', aliases: ['prayer', 'prayer room', 'mosque', 'مصلى', 'المصلى', 'صلاة'] },
-  { id: 'toilets', name: 'Toilets', nameAr: 'دورات المياه', shortName: 'Toilets', shortNameAr: 'دورات المياه', nodeId: 'lower_west_mid', zone: 'West hall', zoneAr: 'الصالة الغربية', aliases: ['toilet', 'toilets', 'restroom', 'bathroom', 'دورات المياه', 'حمام'] },
-  { id: 'southwest-hall', name: 'Southwest exhibition hall', nameAr: 'صالة المعرض الجنوبية الغربية', shortName: 'SW Hall', shortNameAr: 'الصالة الجنوبية', nodeId: 'south_hall_center', zone: 'Southwest hall', zoneAr: 'الصالة الجنوبية الغربية', aliases: ['southwest hall', 'south hall', 'hall southwest', 'الصالة الجنوبية', 'الجنوبية الغربية'] },
-];
+interface PdfPlaceRecord {
+  id: string;
+  boothCode?: string;
+  name: string;
+  nameAr: string;
+  shortName: string;
+  shortNameAr: string;
+  x: number;
+  y: number;
+  zone: string;
+  zoneAr: string;
+  aliases: string[];
+  featured?: boolean;
+  printedOnPdf?: boolean;
+  sourceLabel?: string;
+}
+
+const routeAnchorNodes = [...nodes];
+function mapPdfPlace(place: PdfPlaceRecord): MapLocation {
+  const nodeId = `${place.id}-point`;
+  const point = { id: nodeId, x: place.x, y: place.y };
+  const nearestAnchor = routeAnchorNodes.reduce((nearest, candidate) => {
+    const nearestDistance = Math.hypot(nearest.x - point.x, nearest.y - point.y);
+    const candidateDistance = Math.hypot(candidate.x - point.x, candidate.y - point.y);
+    return candidateDistance < nearestDistance ? candidate : nearest;
+  });
+
+  nodes.push(point);
+  edges.push({
+    from: nearestAnchor.id,
+    to: nodeId,
+    corridor: place.boothCode ? `${place.boothCode} booth access` : `${place.name} access`,
+    corridorAr: place.boothCode ? `ممر الجناح ${place.boothCode}` : `ممر ${place.nameAr}`,
+  });
+
+  return {
+    id: place.id,
+    boothCode: place.boothCode,
+    name: place.name,
+    nameAr: place.nameAr,
+    shortName: place.shortName,
+    shortNameAr: place.shortNameAr,
+    nodeId,
+    zone: place.zone,
+    zoneAr: place.zoneAr,
+    aliases: place.aliases,
+    featured: place.featured,
+    printedOnPdf: place.printedOnPdf,
+    sourceLabel: place.sourceLabel,
+  };
+}
+
+const publicPdfLocations = (pdfPlaceCatalog.publicPlaces as PdfPlaceRecord[]).map(mapPdfPlace);
+const boothPdfLocations = (pdfPlaceCatalog.places as PdfPlaceRecord[]).map(mapPdfPlace);
+
+export const PDF_ASSIGNED_BOOTH_COUNT = pdfPlaceCatalog.assignedBoothCount;
+export const PDF_PUBLIC_PLACE_COUNT = pdfPlaceCatalog.publicPlaceCount;
+export const PDF_DESTINATION_COUNT = PDF_PUBLIC_PLACE_COUNT + PDF_ASSIGNED_BOOTH_COUNT;
+export const locations: MapLocation[] = [...publicPdfLocations, ...boothPdfLocations];
 
 export const nodeById = new Map(nodes.map((node) => [node.id, node]));
 export const locationById = new Map(locations.map((location) => [location.id, location]));
 
 export function locationName(location: MapLocation, language: Language) {
   return language === 'ar' ? location.nameAr : location.name;
+}
+
+export function locationDisplayName(location: MapLocation, language: Language) {
+  const name = locationName(location, language);
+  return location.boothCode ? `${name} (${location.boothCode})` : name;
 }
 
 export function locationZone(location: MapLocation, language: Language) {
