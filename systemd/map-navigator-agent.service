@@ -5,19 +5,23 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-Group=root
-WorkingDirectory=/home/navigator-ai/Digital_Asset_live_kit
+User=bassem
+Group=bassem
+WorkingDirectory=/home/bassem/Coda-navigator/Digital_Asset_live_kit
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/home/navigator-ai/Digital_Asset_live_kit/.env.remote
-EnvironmentFile=/home/navigator-ai/Digital_Asset_live_kit/.env.navigator
-ExecStart=/home/navigator-ai/Digital_Asset_live_kit/.venv/bin/python agent.py start
+EnvironmentFile=/home/bassem/Coda/Digital_Asset_live_kit/.env.local
+# This deployment shares the existing Coda LiveKit/model credentials, but its
+# named dispatch and health port are isolated from coda-agent.service.
+ExecStart=/usr/bin/env AGENT_NAME=leap-navigator AGENT_PORT=2954 AGENT_IDLE_PROCESSES=1 /home/bassem/Coda-navigator/Digital_Asset_live_kit/.venv/bin/python agent.py start
 Restart=always
 RestartSec=5
 KillMode=control-group
-TimeoutStopSec=30
+TimeoutStopSec=90
 NoNewPrivileges=true
 PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=map-navigator-agent
 
 [Install]
 WantedBy=multi-user.target

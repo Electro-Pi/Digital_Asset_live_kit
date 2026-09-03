@@ -525,7 +525,7 @@ server = AgentServer(port=AGENT_PORT, num_idle_processes=AGENT_IDLE_PROCESSES)
 billing = billing_from_env()
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=os.getenv("AGENT_NAME", "").strip())
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
     logger.info(
