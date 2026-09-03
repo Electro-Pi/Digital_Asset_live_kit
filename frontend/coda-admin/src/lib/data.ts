@@ -366,3 +366,216 @@ export async function revokeApiKey(input: {
     }),
   );
 }
+
+// ── Podcast ─────────────────────────────────────────────────────────────────
+
+export const PODCAST_BUCKET = "podcast-video";
+
+export async function listPodcastEpisodes(input: {
+  tokenHash: string;
+  search: string | null;
+  status: string | null;
+  page: number;
+  pageSize: number;
+}): Promise<unknown> {
+  return rpcData(
+    await callAdminRpc("admin_list_podcast_episodes", {
+      p_token_hash: input.tokenHash,
+      p_search: input.search,
+      p_status: input.status,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+    }),
+  );
+}
+
+export type PodcastEpisodeInput = {
+  titleAr: string;
+  titleEn: string;
+  summaryAr: string | null;
+  summaryEn: string | null;
+  guestName: string | null;
+  videoUrl: string;
+  videoPath: string | null;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  publishAt: string;
+  status: "draft" | "scheduled" | "archived";
+};
+
+/**
+ * `episodeId` null creates; otherwise the RPC updates that row in place.
+ *
+ * When an edit swaps in a new upload, the RPC reports the path it displaced and
+ * the old object is removed here — episodes run to hundreds of megabytes, so
+ * leaving one behind on every re-upload is not a cost the bucket can absorb.
+ * Removal failure is logged, not raised: the episode is already saved, and the
+ * operator can do nothing useful with a storage error at that point.
+ */
+export async function savePodcastEpisode(input: {
+  tokenHash: string;
+  csrfHash: string;
+  episodeId: string | null;
+  episode: PodcastEpisodeInput;
+  requestId: string;
+  ip: string;
+}): Promise<unknown> {
+  const saved = (await rpcData(
+    await callAdminRpc("admin_save_podcast_episode", {
+      p_token_hash: input.tokenHash,
+      p_csrf_hash: input.csrfHash,
+      p_id: input.episodeId,
+      p_title_ar: input.episode.titleAr,
+      p_title_en: input.episode.titleEn,
+      p_summary_ar: input.episode.summaryAr,
+      p_summary_en: input.episode.summaryEn,
+      p_guest_name: input.episode.guestName,
+      p_video_url: input.episode.videoUrl,
+      p_video_path: input.episode.videoPath,
+      p_thumbnail_url: input.episode.thumbnailUrl,
+      p_duration_seconds: input.episode.durationSeconds,
+      p_publish_at: input.episode.publishAt,
+      p_status: input.episode.status,
+      p_request_id: input.requestId,
+      p_ip: input.ip,
+    }),
+  )) as (Record<string, unknown> & { replacedVideoPath?: string | null }) | null;
+
+  const replaced = saved?.replacedVideoPath;
+  if (replaced) {
+    const { error } = await createSupabaseServiceClient()
+      .storage.from(PODCAST_BUCKET)
+      .remove([replaced]);
+    if (error) {
+      console.error("[coda-admin] replaced podcast object could not be removed", {
+        path: replaced,
+      });
+    }
+  }
+
+  return saved;
+}
+
+/**
+ * Delete the row, then the uploaded object it pointed at.
+ *
+ * In that order on purpose: a storage object with no row is invisible clutter,
+ * while a row pointing at a deleted object is a broken player on the public
+ * page. So the delete that matters commits first, and a failure to remove the
+ * file is logged rather than surfaced as a failed deletion.
+ */
+export async function deletePodcastEpisode(input: {
+  tokenHash: string;
+  csrfHash: string;
+  episodeId: string;
+  requestId: string;
+  ip: string;
+}): Promise<unknown> {
+  const result = (await rpcData(
+    await callAdminRpc("admin_delete_podcast_episode", {
+      p_token_hash: input.tokenHash,
+      p_csrf_hash: input.csrfHash,
+      p_id: input.episodeId,
+      p_request_id: input.requestId,
+      p_ip: input.ip,
+    }),
+  )) as { videoPath?: string | null } | null;
+
+  const path = result?.videoPath;
+  if (path) {
+    const { error } = await createSupabaseServiceClient()
+      .storage.from(PODCAST_BUCKET)
+      .remove([path]);
+    if (error) {
+      console.error("[coda-admin] podcast object could not be removed", { path });
+    }
+  }
+
+  return { id: input.episodeId };
+}
+
+/**
+ * Hand the browser a one-shot URL it can PUT the file to directly.
+ *
+ * The alternative — posting the file to this app and forwarding it — would pull
+ * a multi-hundred-megabyte video through the dashboard's memory for no gain.
+ * The signed URL is scoped to one object path and expires on its own.
+ */
+export async function createPodcastUploadUrl(input: {
+  kind: "video" | "thumbnail";
+  extension: string;
+}): Promise<{ path: string; signedUrl: string; token: string; publicUrl: string }> {
+  const folder = input.kind === "video" ? "episodes" : "thumbnails";
+  const path = `${folder}/${crypto.randomUUID()}.${input.extension}`;
+  const storage = createSupabaseServiceClient().storage.from(PODCAST_BUCKET);
+
+  const { data, error } = await storage.createSignedUploadUrl(path);
+  if (error || !data) {
+    throw new AdminApiError(502, "upload_url_failed", "The upload could not be prepared");
+  }
+
+  return {
+    path,
+    signedUrl: data.signedUrl,
+    token: data.token,
+    publicUrl: storage.getPublicUrl(path).data.publicUrl,
+  };
+}
+
+export async function listPodcastSeats(input: {
+  tokenHash: string;
+  search: string | null;
+  status: string | null;
+  day: string | null;
+  page: number;
+  pageSize: number;
+}): Promise<unknown> {
+  return rpcData(
+    await callAdminRpc("admin_list_podcast_seats", {
+      p_token_hash: input.tokenHash,
+      p_search: input.search,
+      p_status: input.status,
+      p_day: input.day,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+    }),
+  );
+}
+
+export async function updatePodcastSeatStatus(input: {
+  tokenHash: string;
+  csrfHash: string;
+  seatId: string;
+  status: "new" | "confirmed" | "done" | "canceled";
+  requestId: string;
+  ip: string;
+}): Promise<unknown> {
+  return rpcData(
+    await callAdminRpc("admin_update_podcast_seat_status", {
+      p_token_hash: input.tokenHash,
+      p_csrf_hash: input.csrfHash,
+      p_seat_id: input.seatId,
+      p_status: input.status,
+      p_request_id: input.requestId,
+      p_ip: input.ip,
+    }),
+  );
+}
+
+export async function listPodcastSubscribers(input: {
+  tokenHash: string;
+  search: string | null;
+  status: string | null;
+  page: number;
+  pageSize: number;
+}): Promise<unknown> {
+  return rpcData(
+    await callAdminRpc("admin_list_podcast_subscribers", {
+      p_token_hash: input.tokenHash,
+      p_search: input.search,
+      p_status: input.status,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+    }),
+  );
+}

@@ -9,6 +9,7 @@ dependencies = [
     "livekit-plugins-noise-cancellation~=0.2",
     "locust>=2.43.2",
     "loguru>=0.7.3",
+    "numpy>=2.0.0",
     "openai>=2.15.0",
     "pyarabic>=0.6.15",
     "pydub>=0.25.1",

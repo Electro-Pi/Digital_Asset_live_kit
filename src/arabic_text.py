@@ -41,3 +41,74 @@ def strip_tashkeel(text: str) -> str:
     back into a single letter no rule here can touch.
     """
     return _TASHKEEL_AND_MARKS.sub("", unicodedata.normalize("NFC", text))
+
+
+# ─── Dual-form markers ───────────────────────────────────────────────────────
+# A reply is read on screen and spoken aloud, and those outputs need different
+# forms for brand names, booth codes and numbers. The model writes both once as
+# [[written|spoken]]; the transcript keeps the first and TTS keeps the second.
+_OPEN = "[["
+_CLOSE = "]]"
+_SEP = "|"
+_MAX_PENDING = 400
+
+WRITTEN, SPOKEN = 0, 1
+
+
+def resolve_dual_form(text: str, side: int) -> str:
+    """Resolve every complete [[written|spoken]] marker in a finished string."""
+    stream = DualFormStream(side)
+    return stream.feed(text) + stream.flush()
+
+
+class DualFormStream:
+    """Resolve dual-form markers across streamed partial text deltas."""
+
+    def __init__(self, side: int) -> None:
+        self._side = side
+        self._buffer = ""
+
+    def feed(self, text: str) -> str:
+        """Consume one delta, returning whatever is now unambiguous."""
+        self._buffer += text
+        out: list[str] = []
+        while self._buffer:
+            start = self._buffer.find(_OPEN)
+            if start == -1:
+                keep = 1 if self._buffer.endswith("[") else 0
+                if keep:
+                    out.append(self._buffer[:-1])
+                    self._buffer = self._buffer[-1:]
+                else:
+                    out.append(self._buffer)
+                    self._buffer = ""
+                break
+            end = self._buffer.find(_CLOSE, start + len(_OPEN))
+            if end == -1:
+                out.append(self._buffer[:start])
+                self._buffer = self._buffer[start:]
+                if len(self._buffer) > _MAX_PENDING:
+                    out.append(self._release(self._buffer))
+                    self._buffer = ""
+                break
+            out.append(self._buffer[:start])
+            out.append(self._pick(self._buffer[start + len(_OPEN) : end]))
+            self._buffer = self._buffer[end + len(_CLOSE) :]
+        return "".join(out)
+
+    def flush(self) -> str:
+        """Release anything still held when the reply ends mid-marker."""
+        pending, self._buffer = self._buffer, ""
+        return self._release(pending)
+
+    def _pick(self, inner: str) -> str:
+        written, sep, spoken = inner.partition(_SEP)
+        if not sep:
+            return written
+        return written if self._side == WRITTEN else spoken
+
+    def _release(self, pending: str) -> str:
+        """Salvage readable text from a marker that never closed."""
+        if not pending.startswith(_OPEN):
+            return pending
+        return self._pick(pending[len(_OPEN) :])

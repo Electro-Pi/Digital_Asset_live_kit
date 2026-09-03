@@ -109,3 +109,60 @@ export const creditGrantSchema = z.strictObject({
 export const API_KEY_STATUSES = ["active", "revoked", "expired"] as const;
 
 export const apiKeyStatusSchema = z.enum(API_KEY_STATUSES);
+
+// ── Podcast ─────────────────────────────────────────────────────────────────
+
+export const PODCAST_EPISODE_STATUSES = ["draft", "scheduled", "archived"] as const;
+export const PODCAST_SEAT_STATUSES = ["new", "confirmed", "done", "canceled"] as const;
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .default(null)
+    .transform((value) => (value ? value : null));
+
+// Storage and the RPC both refuse anything else; keeping the check here means a
+// pasted http:// link is rejected in the browser rather than after a round trip.
+const httpsUrl = (max: number) => z.string().trim().max(max).regex(/^https:\/\/\S+$/);
+
+export const podcastEpisodeSchema = z.strictObject({
+  titleAr: z.string().trim().min(1).max(180),
+  titleEn: z.string().trim().min(1).max(180),
+  summaryAr: optionalText(1200),
+  summaryEn: optionalText(1200),
+  guestName: optionalText(160),
+  videoUrl: httpsUrl(2048),
+  // Set only for objects this dashboard uploaded; a pasted external link has no
+  // storage path, and deleting such an episode must not try to remove one.
+  videoPath: optionalText(400),
+  thumbnailUrl: httpsUrl(2048).nullable().default(null),
+  durationSeconds: z.number().int().min(0).max(86_400).nullable().default(null),
+  // Sent as an instant with an explicit offset. The dashboard builds it from a
+  // Riyadh wall-clock date and time with a fixed +03:00, so what the operator
+  // typed is what Postgres stores.
+  publishAt: z.iso.datetime({ offset: true }),
+  status: z.enum(PODCAST_EPISODE_STATUSES).default("scheduled"),
+});
+
+export const podcastSeatStatusSchema = z.strictObject({
+  status: z.enum(PODCAST_SEAT_STATUSES),
+});
+
+export const PODCAST_VIDEO_EXTENSIONS = ["mp4", "webm", "mov", "m4v"] as const;
+export const PODCAST_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "avif"] as const;
+
+export const podcastUploadSchema = z
+  .strictObject({
+    kind: z.enum(["video", "thumbnail"]),
+    extension: z.string().trim().toLowerCase().max(8).regex(/^[a-z0-9]+$/),
+  })
+  .refine(
+    (value) =>
+      value.kind === "video"
+        ? (PODCAST_VIDEO_EXTENSIONS as readonly string[]).includes(value.extension)
+        : (PODCAST_IMAGE_EXTENSIONS as readonly string[]).includes(value.extension),
+    { message: "Unsupported file type", path: ["extension"] },
+  );

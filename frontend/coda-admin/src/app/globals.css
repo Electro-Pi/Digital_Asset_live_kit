@@ -1336,3 +1336,51 @@ a {
     transition-duration: .01ms !important;
   }
 }
+
+/* Drawer forms. `.field` laid out the label and helper text but left the
+   controls at browser defaults, which read as white boxes on the dark panel. */
+.form-stack { display: flex; flex-direction: column; gap: 18px; }
+
+.field legend { color: var(--text-soft); font-size: 12px; font-weight: 650; padding: 0; }
+.field small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+.field > input,
+.field > textarea,
+.field > select,
+.field > .filter-group > input {
+  background: rgba(5,6,11,.48);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  outline: 0;
+  padding: 11px 12px;
+  width: 100%;
+}
+.field > input:focus,
+.field > textarea:focus,
+.field > select:focus,
+.field > .filter-group > input:focus {
+  border-color: rgba(139,124,255,.55);
+  box-shadow: 0 0 0 3px rgba(139,124,255,.07);
+}
+.field > input::placeholder,
+.field > textarea::placeholder { color: #53576a; }
+.field > textarea { line-height: 1.65; min-height: 76px; resize: vertical; }
+.field > input:disabled,
+.field > textarea:disabled { opacity: .55; }
+
+/* File pickers: the control itself cannot be restyled, only its button. */
+.field > input[type="file"] { cursor: pointer; padding: 9px 10px; }
+.field > input[type="file"]::file-selector-button {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  margin-inline-end: 10px;
+  padding: 6px 11px;
+}
+.field > input[type="file"]::file-selector-button:hover { border-color: var(--border-strong); }

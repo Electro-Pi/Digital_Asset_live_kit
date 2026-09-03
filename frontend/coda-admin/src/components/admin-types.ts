@@ -216,3 +216,67 @@ export interface CreatedApiKey {
   ownerEmail: string;
   key: string;
 }
+
+// ── Podcast ─────────────────────────────────────────────────────────────────
+
+export type PodcastEpisodeStatus = 'draft' | 'scheduled' | 'archived';
+
+export type PodcastSeatStatus = 'new' | 'confirmed' | 'done' | 'canceled';
+
+export interface PodcastEpisode {
+  id: string;
+  titleAr: string;
+  titleEn: string;
+  summaryAr: string | null;
+  summaryEn: string | null;
+  guestName: string | null;
+  videoUrl: string;
+  videoPath: string | null;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  publishAt: string;
+  status: PodcastEpisodeStatus;
+  /** Derived by the RPC: scheduled and its publish instant has passed. */
+  isLive: boolean;
+  notifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PodcastSeat {
+  id: string;
+  userId: string | null;
+  fullName: string;
+  organisation: string | null;
+  mobile: string;
+  dayId: string;
+  slotTime: string;
+  angle: string;
+  lang: 'ar' | 'en';
+  status: PodcastSeatStatus;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PodcastSubscriber {
+  id: string;
+  email: string;
+  lang: 'ar' | 'en';
+  status: 'active' | 'unsubscribed' | 'bounced';
+  source: string;
+  createdAt: string;
+  lastNotifiedAt: string | null;
+  unsubscribedAt: string | null;
+}
+
+export interface PodcastSubscriberPage extends PaginatedData<PodcastSubscriber> {
+  active: number;
+}
+
+export interface PodcastUploadTicket {
+  path: string;
+  signedUrl: string;
+  token: string;
+  publicUrl: string;
+}

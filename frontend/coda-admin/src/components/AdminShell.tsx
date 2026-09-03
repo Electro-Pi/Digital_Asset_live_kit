@@ -17,6 +17,7 @@ const navigation: Array<{
   { href: '/limits', label: 'Limits', description: 'Plan defaults', icon: 'settings' },
   { href: '/keys', label: 'API keys', description: 'Programmatic access', icon: 'shield' },
   { href: '/bookings', label: 'Demo bookings', description: 'Sales pipeline', icon: 'calendar' },
+  { href: '/podcast', label: 'Podcast', description: 'Episodes & alerts', icon: 'wave' },
   { href: '/audit', label: 'Audit log', description: 'Admin activity', icon: 'file' },
 ];
 
