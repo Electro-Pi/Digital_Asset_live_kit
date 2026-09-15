@@ -162,12 +162,13 @@ def test_web_prompt_keeps_leap_grounding_without_the_lead_gate() -> None:
     assert LEAP_WELCOME in LEAP_WEB_SYSTEM_PROMPT
 
 
-def test_web_prompt_is_not_the_saudi_cultural_guide() -> None:
+def test_web_prompt_is_not_the_salla_seller_assistant() -> None:
     from src.prompts.agent_prompt import female_system_prompt
 
-    assert "cultural guide" in female_system_prompt
-    assert "cultural guide" not in LEAP_WEB_SYSTEM_PROMPT
+    assert "store assistant for Salla" in female_system_prompt
+    assert "store assistant for Salla" not in LEAP_WEB_SYSTEM_PROMPT
     assert "LEAP 2026" in LEAP_WEB_SYSTEM_PROMPT
+    assert "cultural guide" not in female_system_prompt
 
 
 def test_web_assistant_drops_the_registration_tool_and_gate(
@@ -190,6 +191,7 @@ def test_web_assistant_drops_the_registration_tool_and_gate(
     # The phone keeps its lead capture; the browser is never offered it, and the
     # weather tool of the retired cultural guide is gone from both.
     assert "save_visitor" in tool_names(telephone)
+    # Weather stays on the Salla Assistant only; LEAP assistants shadow it away.
     assert "lookup_weather" not in tool_names(telephone) | tool_names(web)
 
     # The web session starts past the gate, so a lookup answers on turn one.

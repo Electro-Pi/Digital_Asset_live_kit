@@ -41,22 +41,8 @@ from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
 from src.arabic_text import SPOKEN, WRITTEN, DualFormStream, strip_tashkeel
-from src.leap_rag import (
-    HOME_STAND,
-    LeapRag,
-    VisitorStore,
-    participant_channel,
-    participant_test_mode,
-)
 from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
-from src.prompts.leap_prompt import (
-    LEAP_INTRO,
-    LEAP_NAME_REQUEST,
-    LEAP_REGISTRATION_REMINDER,
-    LEAP_SYSTEM_PROMPT,
-    LEAP_WEB_SYSTEM_PROMPT,
-    LEAP_WELCOME,
-)
+from src.salla_mcp import build_salla_mcp_tools, split_mcp_agent_kwargs
 from src.billing import (
     billing_from_env,
     parse_participant_api_key,
@@ -151,24 +137,6 @@ STT_FOREGROUND_MIN_DURATION = float(
     os.getenv("STT_FOREGROUND_MIN_DURATION", "0.20")
 )
 
-# Load the local exhibitor database and visitor store once per warm worker, so a
-# call never pays database/index startup time. LEAP_ENABLED is the kill switch
-# for both the telephone and browser LEAP assistants.
-LEAP_ENABLED = os.getenv("LEAP_ENABLED", "true").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
-LEAP_REGISTRATION_IDLE_SECONDS = float(
-    os.getenv("LEAP_REGISTRATION_IDLE_SECONDS", "8.0")
-)
-leap_rag: LeapRag | None = None
-leap_visitors: VisitorStore | None = None
-if LEAP_ENABLED:
-    leap_rag = LeapRag()
-    leap_visitors = VisitorStore.from_env()
-
 
 def _preview(value: Any, limit: int = 220) -> str:
     text = " ".join(str(value).split())
@@ -179,31 +147,28 @@ def _preview(value: Any, limit: int = 220) -> str:
 
 class Assistant(Agent):
     def __init__(self, instructions: str) -> None:
-        super().__init__(
-            instructions=instructions,
-        )
+        agent_kwargs: dict[str, Any] = {"instructions": instructions}
+        mcp_kwargs = split_mcp_agent_kwargs(build_salla_mcp_tools())
+        agent_kwargs.update(mcp_kwargs)
+        if mcp_kwargs:
+            logger.info(
+                "Salla MCP attached to assistant keys={}",
+                sorted(mcp_kwargs.keys()),
+            )
+        super().__init__(**agent_kwargs)
 
     async def transcription_node(
         self,
         text: AsyncIterable[Any],
         model_settings: ModelSettings,
     ) -> AsyncIterable[Any]:
-        """Publish the on-screen transcript: written form, and no tashkeel.
-
-        The reply is diacritized deliberately so the TTS voices the vowels, but
-        a reader should not see those marks. For companies, booths and numbers,
-        LEAP writes ``[[written|spoken]]`` and this branch keeps the searchable
-        written half while ``tts_node`` below keeps the speakable half.
-        """
+        """Publish the on-screen transcript without tashkeel."""
         markers = DualFormStream(WRITTEN)
         async for delta in text:
             resolved = markers.feed(delta)
             if not resolved:
                 continue
             bare = strip_tashkeel(resolved)
-            # TimedString is a str subclass carrying word-level alignment. A
-            # resolved marker no longer aligns with the original timing, so
-            # retain timing only when the delta passed through unchanged.
             if isinstance(delta, TimedString) and resolved == delta:
                 yield TimedString(
                     bare,
@@ -222,7 +187,7 @@ class Assistant(Agent):
         text: AsyncIterable[str],
         model_settings: ModelSettings,
     ) -> Any:
-        """Synthesize the spoken half of each LEAP dual-form marker."""
+        """Pass text through to the default TTS node."""
 
         async def spoken() -> AsyncIterable[str]:
             markers = DualFormStream(SPOKEN)
@@ -305,209 +270,6 @@ class Assistant(Agent):
         }
 
 
-class LeapAssistant(Assistant):
-    """Stateful, tool-grounded LEAP assistant with the telephone lead gate."""
-
-    def __init__(
-        self,
-        *,
-        rag: LeapRag,
-        visitors: VisitorStore | None,
-        session_id: str,
-        visitor_source: str = "telephone",
-        instructions: str = LEAP_SYSTEM_PROMPT,
-        registered: bool = False,
-    ) -> None:
-        self._rag = rag
-        self._visitors = visitors
-        self._session_id = session_id
-        self._visitor_source = visitor_source
-        self._visitor_saved = registered
-        super().__init__(instructions=instructions)
-
-    @property
-    def visitor_saved(self) -> bool:
-        return self._visitor_saved
-
-    # Deliberately shadow the cultural guide's decorated weather tool. It is
-    # outside the LEAP call scope and removing it keeps tool selection smaller.
-    async def lookup_weather(self, context: RunContext, location: str) -> dict[str, Any]:
-        del context, location
-        return {"ok": False, "error": "not_available_in_leap_mode"}
-
-    def _registration_required(self) -> dict[str, Any] | None:
-        if self._visitor_saved:
-            return None
-        return {
-            "ok": False,
-            "error": "registration_required",
-            "instruction": "Collect name and phone, then call save_visitor first.",
-        }
-
-    @function_tool()
-    async def save_visitor(
-        self,
-        context: RunContext,
-        name: str,
-        phone_number: str,
-    ) -> dict[str, Any]:
-        """Save the caller's name and mobile number before LEAP assistance.
-
-        Args:
-            name: The caller's stated name, exactly as understood.
-            phone_number: The caller's mobile number, preferably as digits.
-        """
-        del context
-        if self._visitors is None:
-            return {"saved": False, "error": "visitor_store_unavailable"}
-        try:
-            result = await asyncio.to_thread(
-                self._visitors.save,
-                self._session_id,
-                name,
-                phone_number,
-                self._visitor_source,
-            )
-        except ValueError as exc:
-            error = str(exc)
-            logger.info(
-                "LEAP visitor validation rejected session={} field={}",
-                self._session_id,
-                error,
-            )
-            return {
-                "saved": False,
-                "error": error,
-                "instruction": (
-                    "Ask for the name again."
-                    if error == "name_invalid"
-                    else "Ask for the phone number again, digit by digit."
-                ),
-            }
-        self._visitor_saved = True
-        logger.info("LEAP visitor saved session={}", self._session_id)
-        return {
-            **result,
-            "say_next_exactly": LEAP_WELCOME,
-        }
-
-    @function_tool()
-    async def lookup_company(
-        self,
-        context: RunContext,
-        query: str,
-    ) -> dict[str, Any]:
-        """Find LEAP companies by name, booth, sector, service, or sponsor status.
-
-        Args:
-            query: A short company name, booth code, sector, or activity phrase.
-        """
-        del context
-        if blocked := self._registration_required():
-            return blocked
-        result = await self._rag.lookup_company(query, limit=3)
-        logger.info(
-            "LEAP company lookup session={} ok={} matches={} semantic_used={} retrieval_ms={}",
-            self._session_id,
-            result.get("ok"),
-            len(result.get("matches") or []),
-            result.get("semantic_used", False),
-            result.get("retrieval_ms"),
-        )
-        return result
-
-    @function_tool()
-    async def route_to_booth(
-        self,
-        context: RunContext,
-        destination: str,
-        origin: str = HOME_STAND,
-    ) -> dict[str, Any]:
-        """Get a verified shortest walking route to a company or booth.
-
-        Args:
-            destination: Destination company name or booth code.
-            origin: Current company or booth; defaults to Coda booth H2.K30.
-        """
-        del context
-        if blocked := self._registration_required():
-            return blocked
-        result = self._rag.route(origin, destination)
-        logger.info(
-            "LEAP route lookup session={} ok={} error={}",
-            self._session_id,
-            result.get("ok"),
-            result.get("error"),
-        )
-        if not result.get("ok"):
-            return result
-        return {
-            "ok": True,
-            "destination": result.get("destination"),
-            "meters": result.get("meters"),
-            "minutes": result.get("minutes"),
-            "spoken_directions_ar": result.get("spoken_directions_ar"),
-        }
-
-    @function_tool()
-    async def nearest_amenity(
-        self,
-        context: RunContext,
-        kind: str,
-        origin: str = HOME_STAND,
-    ) -> dict[str, Any]:
-        """Get a verified route to a prayer room, clinic, or main entrance.
-
-        Args:
-            kind: One of prayer, prayer_m, prayer_f, medical, or entrance.
-            origin: Current company or booth; defaults to Coda booth H2.K30.
-        """
-        del context
-        if blocked := self._registration_required():
-            return blocked
-        result = self._rag.nearest_amenity(origin, kind)
-        logger.info(
-            "LEAP amenity lookup session={} kind={} ok={} error={}",
-            self._session_id,
-            kind,
-            result.get("ok"),
-            result.get("error"),
-        )
-        if not result.get("ok"):
-            return result
-        return {
-            "ok": True,
-            "destination": result.get("destination"),
-            "meters": result.get("meters"),
-            "minutes": result.get("minutes"),
-            "spoken_directions_ar": result.get("spoken_directions_ar"),
-        }
-
-
-class LeapWebAssistant(LeapAssistant):
-    """The grounded LEAP assistant for signed-in browser sessions."""
-
-    def __init__(self, *, rag: LeapRag, session_id: str) -> None:
-        super().__init__(
-            rag=rag,
-            visitors=None,
-            session_id=session_id,
-            visitor_source="web",
-            instructions=LEAP_WEB_SYSTEM_PROMPT,
-            registered=True,
-        )
-
-    # Shadow the decorated telephone tool so LiveKit never offers lead capture
-    # to a browser visitor who already authenticated to reach the microphone.
-    async def save_visitor(
-        self,
-        context: RunContext,
-        name: str,
-        phone_number: str,
-    ) -> dict[str, Any]:
-        del context, name, phone_number
-        return {"saved": False, "error": "not_available_in_web_mode"}
-
 
 # num_idle_processes defaults to 128 in prod (one warm job process per CPU core,
 # assuming a dedicated box). This is a shared server, so cap it — a few warm
@@ -589,25 +351,7 @@ async def my_agent(ctx: agents.JobContext):
 
     participant_metadata = getattr(_part, "metadata", None) if _part else None
     selected_voice = parse_voice_from_metadata(participant_metadata)
-    channel = participant_channel(participant_metadata)
-    telephone_test_mode = participant_test_mode(participant_metadata)
-    is_leap_telephone = LEAP_ENABLED and channel == "telephone"
-    is_leap_web = LEAP_ENABLED and channel == "web"
-    session_mode = (
-        "leap_telephone"
-        if is_leap_telephone
-        else "leap_web"
-        if is_leap_web
-        else "cultural_web"
-    )
-    # Both LEAP prompts use a female persona. Normalize stale male selections
-    # from older clients before the TTS profile is created.
-    if is_leap_web and selected_voice != "female":
-        logger.info(
-            "LEAP web session requested voice={!r}; using the female voice",
-            selected_voice,
-        )
-        selected_voice = "female"
+    session_mode = "salla_seller"
     profile = voice_profile(
         selected_voice,
         female_tts_voice=TTS_VOICE,
@@ -615,15 +359,13 @@ async def my_agent(ctx: agents.JobContext):
     )
     logger.info(
         "Voice profile selected key={} name_ar={} tts_voice={} has_ref_audio={} "
-        "participant={} channel={} mode={} test_mode={}",
+        "participant={} mode={}",
         profile.key,
         profile.display_name_ar,
         profile.tts_voice,
         bool(TTS_REF_AUDIO),
         getattr(_part, "identity", None),
-        channel,
         session_mode,
-        telephone_test_mode,
     )
 
     voice_tts = VoxCPMTTSPlugin(
@@ -715,17 +457,13 @@ async def my_agent(ctx: agents.JobContext):
                 "false_interruption_timeout": 2.0,
             },
         },
-        user_away_timeout=(
-            LEAP_REGISTRATION_IDLE_SECONDS if is_leap_telephone else 15.0
-        ),
+        user_away_timeout=15.0,
     )
 
 
     last_eou_metrics = None
     collected_metrics = []
     speech_created_count = 0
-    registration_reminders = 0
-    leap_assistant: LeapAssistant | None = None
 
     @session.on("speech_created")
     def _on_speech_created(event: SpeechCreatedEvent):
@@ -762,54 +500,23 @@ async def my_agent(ctx: agents.JobContext):
 
     @session.on("user_input_transcribed")
     def _on_user_input_transcribed(event: UserInputTranscribedEvent):
-        nonlocal registration_reminders
-        transcript_preview = (
-            "<redacted LEAP telephone transcript>"
-            if is_leap_telephone
-            else _preview(event.transcript)
-        )
         logger.info(
             "LiveKit user input transcribed final={} speaker_id={} language={} chars={} transcript={!r}",
             event.is_final,
             event.speaker_id,
             event.language,
             len(event.transcript or ""),
-            transcript_preview,
+            _preview(event.transcript),
         )
-        if (
-            event.is_final
-            and leap_assistant is not None
-            and not leap_assistant.visitor_saved
-        ):
-            registration_reminders = 0
 
     @session.on("user_state_changed")
     def _on_user_state_changed(event: UserStateChangedEvent):
-        nonlocal registration_reminders
         logger.info(
             "LiveKit user state changed old_state={} new_state={} created_at={}",
             event.old_state,
             event.new_state,
             event.created_at,
         )
-        if (
-            event.new_state == "away"
-            and leap_assistant is not None
-            and not leap_assistant.visitor_saved
-            and registration_reminders == 0
-        ):
-            registration_reminders = 1
-            logger.info("LEAP registration idle; scheduling one missing-field reminder")
-            try:
-                session.generate_reply(
-                    instructions=LEAP_REGISTRATION_REMINDER,
-                    allow_interruptions=True,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Could not schedule LEAP registration reminder error_type={}",
-                    type(exc).__name__,
-                )
 
     @session.on("conversation_item_added")
     def _on_conversation_item_added(event: ConversationItemAddedEvent):
@@ -817,16 +524,11 @@ async def my_agent(ctx: agents.JobContext):
         role = getattr(item, "role", None)
         item_type = type(item).__name__
         content = getattr(item, "content", None)
-        content_preview = (
-            "<redacted LEAP telephone conversation item>"
-            if is_leap_telephone and item_type != "AgentHandoff"
-            else _preview(content if content is not None else item)
-        )
         logger.info(
             "LiveKit conversation item added type={} role={} content_preview={!r}",
             item_type,
             role,
-            content_preview,
+            _preview(content if content is not None else item),
         )
 
     @session.on("function_tools_executed")
@@ -899,30 +601,8 @@ async def my_agent(ctx: agents.JobContext):
             except Exception as e:
                 logger.warning(f"Could not calculate EOU latency: {e}")
 
-    if is_leap_telephone:
-        if leap_rag is None or leap_visitors is None:
-            raise RuntimeError("LEAP telephone mode is enabled but its services are unavailable")
-        leap_assistant = LeapAssistant(
-            rag=leap_rag,
-            visitors=leap_visitors,
-            session_id=str(getattr(ctx.room, "name", None) or getattr(job, "id", "unknown")),
-            visitor_source=(
-                "telephone_test" if telephone_test_mode else "telephone"
-            ),
-        )
-        active_agent: Agent = leap_assistant
-        initial_instructions = LEAP_INTRO
-    elif is_leap_web:
-        if leap_rag is None:
-            raise RuntimeError("LEAP web mode is enabled but its services are unavailable")
-        active_agent = LeapWebAssistant(
-            rag=leap_rag,
-            session_id=str(getattr(ctx.room, "name", None) or getattr(job, "id", "unknown")),
-        )
-        initial_instructions = None
-    else:
-        active_agent = Assistant(instructions=prompt_for_voice(profile.key))
-        initial_instructions = intro_for_voice(profile.key)
+    active_agent: Agent = Assistant(instructions=prompt_for_voice(profile.key))
+    initial_instructions = intro_for_voice(profile.key)
 
     logger.info(
         "LiveKit session.start beginning room_name={} assistant_mode={}",
@@ -964,7 +644,7 @@ async def my_agent(ctx: agents.JobContext):
     # Re-read the authoritative number from Supabase and take the tighter of the
     # two, then let every checkpoint below correct it against the live server
     # value.
-    if billing_user_id and billing.enabled and not is_leap_telephone:
+    if billing_user_id and billing.enabled:
         _authoritative = await billing.live_remaining(billing_user_id)
         if _authoritative is not None:
             if billing_remaining is None or _authoritative < billing_remaining:
@@ -975,11 +655,6 @@ async def my_agent(ctx: agents.JobContext):
                     billing_user_id,
                 )
                 billing_remaining = _authoritative
-    elif billing_user_id and billing.enabled and is_leap_telephone:
-        # The bridge mints the token immediately before joining, so this
-        # snapshot is fresh. The five-second meter below corrects concurrent
-        # consumption without adding a database round trip before the greeting.
-        logger.info("Using fresh token budget for low-latency telephone startup")
 
     _meter_start = time.monotonic()
     _billed_seconds = 0
@@ -1064,12 +739,7 @@ async def my_agent(ctx: agents.JobContext):
         profile.display_name_ar,
         session_mode,
     )
-    if is_leap_telephone:
-        await session.say(LEAP_NAME_REQUEST, allow_interruptions=True)
-    elif is_leap_web:
-        await session.say(LEAP_WELCOME, allow_interruptions=True)
-    else:
-        await session.generate_reply(instructions=initial_instructions)
+    await session.generate_reply(instructions=initial_instructions)
     logger.info("LiveKit initial response completed")
 
 
