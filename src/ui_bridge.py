@@ -8,13 +8,51 @@ polling. See FRONTEND_INTEGRATION.md for the handler side.
 
 RPC rather than ``publish_data`` specifically because it **returns a value**. A
 fire-and-forget data message leaves the agent unable to distinguish "the user is
-now looking at the meal page" from "nothing happened", and سلمى is under
-instruction never to claim an action it did not perform. Here a failure comes
-back as a failure, and the tool tells the model to say so.
+now looking at the page" from "nothing happened". Here a failure comes back as
+a failure, and the tool tells the model to say so.
 
 Every call degrades instead of raising: an un-registered method (frontend not
 built yet), a disconnected user, or a timeout all return ``ok=False`` with a
 reason. A voice call must not die because a UI handler is missing.
+
+──────────────────────────────────────────────────────────────────────────────
+RPC CONTRACT
+──────────────────────────────────────────────────────────────────────────────
+
+Every payload is a JSON object. Every response is a JSON string.
+
+1. alawaly.navigate
+   Receives: { "url": "https://www.alawaly.sa/ar/projects" }
+   Returns:  { "ok": true, "url": "https://www.alawaly.sa/ar/projects" }
+
+2. alawaly.showProject
+   Receives: { "projectId": "akam-homes",
+                "url": "https://www.alawaly.sa/ar/project/akam-homes",
+                "name": "آكام هومز" }
+   Returns:  { "ok": true, "projectId": "akam-homes", "url": "..." }
+
+3. alawaly.fillContact
+   Receives: only the fields the caller actually said. Any key may be omitted.
+              { "name": "أحمد محمد",
+                "phone": "0551234567",
+                "identityType": "هوية وطنية",
+                "purchasePlan": "تمويل عقاري",
+                "employer": "أرامكو",
+                "email": "ahmad@example.com",
+                "sakaniEligible": true,
+                "monthlyIncome": "15000",
+                "projectId": "akam-homes",
+                "spaceType": "مكتب",
+                "companySize": "10-50",
+                "purpose": "شراء" }
+   Returns:  { "ok": true }
+
+4. alawaly.getUiState
+   Receives: {}
+   Returns:  { "ok": true,
+                "url": "https://www.alawaly.sa/ar/project/akam-homes",
+                "projectId": "akam-homes" }
+──────────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -30,21 +68,29 @@ from loguru import logger
 from src import turn_ledger
 from src.config import CONFIG
 
-# Method names are a contract with the frontend.
 METHOD_NAVIGATE = "alawaly.navigate"
 METHOD_SHOW_PROJECT = "alawaly.showProject"
-METHOD_SHOW_MEAL = METHOD_SHOW_PROJECT
 METHOD_FILL_CONTACT = "alawaly.fillContact"
 METHOD_GET_UI_STATE = "alawaly.getUiState"
+SITE_ORIGIN = "https://www.alawaly.sa"
 
-# Fallback method names
-LEGACY_NAVIGATE = "luqma.navigate"
-LEGACY_SHOW_MEAL = "luqma.showMeal"
-
-PROTOCOL_VERSION = 1
+_CONTACT_FIELDS = (
+    "name",
+    "phone",
+    "identityType",
+    "purchasePlan",
+    "employer",
+    "email",
+    "sakaniEligible",
+    "monthlyIncome",
+    "projectId",
+    "spaceType",
+    "companySize",
+    "purpose",
+)
 
 DEFAULT_RPC_TIMEOUT = CONFIG.ui.rpc_timeout
-RETRY_RPC_TIMEOUT = CONFIG.ui.rpc_retry_timeout
+RETRY_RPC_TIMEOUT   = CONFIG.ui.rpc_retry_timeout
 
 _TRANSIENT_RPC_CODES = frozenset(
     {
@@ -56,11 +102,8 @@ _TRANSIENT_RPC_CODES = frozenset(
 )
 
 _EFFECTS: dict[str, tuple[str, str]] = {
-    METHOD_NAVIGATE: (turn_ledger.NAVIGATE, "path"),
-    LEGACY_NAVIGATE: (turn_ledger.NAVIGATE, "path"),
-    METHOD_SHOW_PROJECT: (turn_ledger.MEAL_PAGE, "projectId"),
-    LEGACY_SHOW_MEAL: (turn_ledger.MEAL_PAGE, "mealId"),
-    METHOD_FILL_CONTACT: ("contact_fill", ""),
+    METHOD_NAVIGATE: (turn_ledger.NAVIGATE, "url"),
+    METHOD_SHOW_PROJECT: (turn_ledger.NAVIGATE, "url"),
 }
 
 
@@ -73,15 +116,9 @@ class UIResult:
     data: Optional[dict[str, Any]] = None
 
     def as_tool_result(self, *, on_success: str, on_failure: str) -> dict[str, Any]:
-        """Render for the LLM, including what to tell the user.
-
-        The Arabic line matters: without it the model narrates a failure as if
-        it succeeded, or invents an explanation for why it could not.
-        """
+        """Render for the LLM, including what to tell the user."""
         result: dict[str, Any] = {"ok": self.ok}
         if self.ok:
-            # Empty success text is not a script. Facts on the tool result
-            # are what she speaks from (meal includes, price, addons, …).
             if on_success:
                 result["say_to_user_ar"] = on_success
             if self.data:
@@ -93,7 +130,7 @@ class UIResult:
 
 
 class UIBridge:
-    """Sends UI commands to one participant's browser."""
+    """Sends UI commands to one participant's browser over LiveKit RPC."""
 
     def __init__(
         self,
@@ -106,26 +143,19 @@ class UIBridge:
         self._room = room
         self._identity = identity
         self._timeout = timeout
-        # Set by the agent to its TurnLedger.record. Every mutation reports
-        # itself here, so no guard has to infer one from the transcript.
         self.on_effect = on_effect
-        # Do NOT permanently latch UNSUPPORTED_METHOD. A production frontend can
-        # be rebuilt mid-day while the voice session stays up; latching made
-        # getUiState/fillCheckout dead for the whole call after one miss.
 
     @property
     def available(self) -> bool:
         return bool(self._room and self._resolve_identity())
 
     def _resolve_identity(self) -> Optional[str]:
-        """Pick the browser participant to call, right now.
+        """Pick the browser participant to call right now.
 
         The identity captured at session start goes stale the moment the user
-        reloads the page: the tab rejoins the room under a new identity, and
-        every RPC to the old one dies with CONNECTION_TIMEOUT (observed live —
-        showMeal/navigate failing mid-session while the user was right there).
-        So the stored identity is only a preference; whoever is actually in
-        the room wins.
+        reloads the page: the tab rejoins under a new identity, and every RPC
+        to the old one dies with CONNECTION_TIMEOUT. So the stored identity is
+        only a preference; whoever is actually in the room wins.
         """
         if self._room is None:
             return None
@@ -133,12 +163,10 @@ class UIBridge:
         for participant in remotes:
             if participant.identity == self._identity:
                 return self._identity
-        # Stored identity is gone. Prefer a participant that pushes luqma_
-        # attributes (that is the Luqmah tab by definition), else any remote.
         fallback: Optional[str] = None
         for participant in remotes:
             attrs = getattr(participant, "attributes", None) or {}
-            if any(str(k).startswith("luqma_") for k in dict(attrs)):
+            if any(str(k).startswith("alawaly_") or str(k).startswith("luqma_") for k in dict(attrs)):
                 return participant.identity
             if fallback is None:
                 fallback = participant.identity
@@ -152,39 +180,31 @@ class UIBridge:
         for participant in self._room.remote_participants.values():
             if participant.identity == identity:
                 attrs = getattr(participant, "attributes", None) or {}
-                return {str(k): str(v) for k, v in dict(attrs).items() if str(k).startswith("luqma_")}
+                return {str(k): str(v) for k, v in dict(attrs).items()}
         return {}
 
-    async def call(self, method: str, payload: dict[str, Any]) -> UIResult:
-        """Perform one UI call and record what it did to the customer.
-
-        The recording lives here, wrapping every exit path of
-        :meth:`_invoke`, because this is the only place a browser mutation can
-        pass through. Recording in the tools instead would miss the seven
-        places a tool calls another tool internally, which is exactly how the
-        2026-09-21 silent add slipped past the speech guard.
-        """
+    async def call(self, method: str, payload: dict[str, Any] | str) -> UIResult:
+        """Perform one UI call and record what it did."""
         outcome = await self._invoke(method, payload)
         effect = _EFFECTS.get(method)
         if effect is not None and self.on_effect is not None:
             kind, target_key = effect
+            if isinstance(payload, str):
+                target = payload
+            else:
+                target = str(payload.get(target_key) or "") if target_key else ""
             try:
-                self.on_effect(
-                    kind,
-                    target=str(payload.get(target_key) or "") if target_key else "",
-                    ok=outcome.ok,
-                )
-            except Exception as e:  # noqa: BLE001 - bookkeeping must not end a call
+                self.on_effect(kind, target=target, ok=outcome.ok)
+            except Exception as e:  # noqa: BLE001
                 logger.exception("Effect recording failed method={} error={}", method, e)
         return outcome
 
-    async def _invoke(self, method: str, payload: dict[str, Any]) -> UIResult:
+    async def _invoke(self, method: str, payload: dict[str, Any] | str) -> UIResult:
         identity = self._resolve_identity()
         if not identity or self._room is None:
             logger.warning(
                 "UI call skipped, no participant to send to method={} payload={}",
-                method,
-                payload,
+                method, payload,
             )
             return UIResult(ok=False, reason="no_ui_participant")
         if identity != self._identity:
@@ -194,15 +214,11 @@ class UIBridge:
             )
             self._identity = identity
 
-        body = dict(payload)
-        body["v"] = PROTOCOL_VERSION
-        encoded = json.dumps(body, ensure_ascii=False)
+        encoded = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
 
         last_error: Optional[RpcError] = None
         for attempt, timeout in enumerate((self._timeout, RETRY_RPC_TIMEOUT)):
             if attempt:
-                # The target may have changed while the first attempt hung
-                # (e.g. the tab finished reloading under a new identity).
                 identity = self._resolve_identity()
                 if not identity:
                     break
@@ -221,8 +237,8 @@ class UIBridge:
             except RpcError as e:
                 if e.code == RpcError.ErrorCode.UNSUPPORTED_METHOD:
                     logger.error(
-                        "UI method {} is not registered by the frontend (user may "
-                        "need a hard refresh after deploy). See FRONTEND_INTEGRATION.md.",
+                        "UI method {} is not registered by the frontend. "
+                        "See FRONTEND_INTEGRATION.md.",
                         method,
                     )
                     return UIResult(ok=False, reason="frontend_handler_missing")
@@ -234,7 +250,7 @@ class UIBridge:
                 if e.code in _TRANSIENT_RPC_CODES:
                     continue
                 return UIResult(ok=False, reason=f"rpc_error_{e.code}")
-            except Exception as e:  # noqa: BLE001 - a UI failure must not end the call
+            except Exception as e:  # noqa: BLE001
                 logger.exception("UI call raised method={} error={}", method, e)
                 return UIResult(ok=False, reason="rpc_exception")
 
@@ -247,186 +263,40 @@ class UIBridge:
         code = last_error.code if last_error else "unknown"
         return UIResult(ok=False, reason=f"rpc_error_{code}")
 
+    # ── High-level helpers (called by tools) ───────────────────────────────
+
     async def navigate(self, path: str, title: str = "") -> UIResult:
-        res = await self.call(METHOD_NAVIGATE, {"path": path, "title": title})
-        if not res.ok and res.reason == "frontend_handler_missing":
-            res = await self.call(LEGACY_NAVIGATE, {"path": path})
-        return res
+        """``alawaly.navigate`` receives ``{"url": "<absolute url>"}``."""
+        del title
+        return await self.call(METHOD_NAVIGATE, {"url": absolute_url(path)})
 
-    async def show_project(self, project_id: str, path: str = "", title: str = "") -> UIResult:
-        res = await self.call(METHOD_SHOW_PROJECT, {"projectId": project_id, "path": path, "title": title})
-        if not res.ok and res.reason == "frontend_handler_missing":
-            res = await self.call(LEGACY_SHOW_MEAL, {"mealId": project_id, "path": path})
-        return res
-
-    async def show_meal(self, meal_id: str, path: str, reason: str = "") -> UIResult:
-        return await self.show_project(project_id=meal_id, path=path)
-
-    async def fill_contact(self, **kwargs: Any) -> UIResult:
-        return await self.call(METHOD_FILL_CONTACT, kwargs)
-
-    async def set_meal_options(
-        self,
-        *,
-        meal_id: str,
-        quantity: int = 1,
-        spicy: bool = False,
-        addon_ids: Optional[list[str]] = None,
-    ) -> UIResult:
-        """Tick the addon/spicy/quantity controls on the open meal page.
-
-        Deliberately separate from ``add_to_cart``: this only moves the UI, so
-        the user watches the additions appear while سلمى is still asking about
-        them. Nothing is committed to the cart here.
-        """
+    async def show_project(self, project_id: str, path: str, name: str = "") -> UIResult:
+        """``alawaly.showProject`` receives project id, page URL, and Arabic name."""
         return await self.call(
-            METHOD_SET_MEAL_OPTIONS,
-            {
-                "mealId": meal_id,
-                "quantity": quantity,
-                "spicy": spicy,
-                "addonIds": addon_ids or [],
-            },
+            METHOD_SHOW_PROJECT,
+            {"projectId": project_id, "url": absolute_url(path), "name": name},
         )
 
-    async def add_to_cart(
-        self,
-        *,
-        meal_id: str,
-        quantity: int = 1,
-        spicy: bool = False,
-        addon_ids: Optional[list[str]] = None,
-    ) -> UIResult:
-        return await self.call(
-            METHOD_ADD_TO_CART,
-            {
-                "mealId": meal_id,
-                "quantity": quantity,
-                "spicy": spicy,
-                "addonIds": addon_ids or [],
-            },
-        )
-
-    async def set_cart_quantity(
-        self,
-        *,
-        meal_id: str,
-        quantity: int,
-        spicy: bool = False,
-        addon_ids: Optional[list[str]] = None,
-        line_id: str = "",
-    ) -> UIResult:
-        """Set absolute quantity on a cart line. 0 removes the line.
-
-        Distinct from ``add_to_cart``, which *adds* to any existing quantity.
-        Live failure: "اعمل اثنين" called add_to_cart(qty=2) on a line that
-        already had 1 → cart became 3 (231 SAR) while she said 154.
-        """
-        payload: dict[str, Any] = {
-            "mealId": meal_id,
-            "quantity": quantity,
-            "spicy": spicy,
-            "addonIds": addon_ids or [],
-        }
-        if line_id:
-            payload["lineId"] = line_id
-        return await self.call(METHOD_SET_CART_QUANTITY, payload)
-
-    async def set_saved(self, *, meal_id: str, saved: bool = True) -> UIResult:
-        """Set a meal's saved state — deliberately absolute, never a toggle.
-
-        The agent cannot see which hearts are already filled, so "toggle" would
-        mean asking twice unsaves the dish, and a retry after a timeout undoes
-        the save it just made. Sending the desired end state makes the call
-        idempotent: "save this" is safe to repeat.
-        """
-        return await self.call(METHOD_SET_SAVED, {"mealId": meal_id, "saved": saved})
-
-    async def get_cart(self) -> UIResult:
-        return await self.call(METHOD_GET_CART, {})
-
-    async def get_saved(self) -> UIResult:
-        """List meal ids currently in the browser bookmarks.
-
-        Distinct from ``set_saved``: without a read, سلمى invents "empty"
-        after opening /saved (live Bug-004).
-        """
-        return await self.call(METHOD_GET_SAVED, {})
-
-    async def clear_saved(self) -> UIResult:
-        """Remove every saved meal. 0 items is success."""
-        return await self.call(METHOD_CLEAR_SAVED, {})
-
-    async def set_ui_filter(
-        self,
-        *,
-        page: str = "",
-        offers_kind: str = "",
-        query: str = "",
-        restaurants_filter: str = "",
-        cuisine: str = "",
-        cashback: bool = False,
-        menu_tab: str = "",
-        path: str = "",
-    ) -> UIResult:
-        """Flip on-screen chips/tabs the agent cannot reach via navigate alone."""
-        payload: dict[str, Any] = {}
-        if page:
-            payload["page"] = page
-        if offers_kind:
-            payload["offersKind"] = offers_kind
-        if query:
-            payload["query"] = query
-        if restaurants_filter:
-            payload["restaurantsFilter"] = restaurants_filter
-        if cuisine:
-            payload["cuisine"] = cuisine
-        if cashback:
-            payload["cashback"] = True
-        if menu_tab:
-            payload["menuTab"] = menu_tab
-        if path:
-            payload["path"] = path
-        return await self.call(METHOD_SET_UI_FILTER, payload)
+    async def fill_contact(self, **fields: Any) -> UIResult:
+        """``alawaly.fillContact`` receives only the interest-form fields that were given."""
+        payload = {key: value for key, value in fields.items() if key in _CONTACT_FIELDS and value not in (None, "")}
+        return await self.call(METHOD_FILL_CONTACT, payload)
 
     async def get_ui_state(self) -> UIResult:
-        """Ask the browser which page the user is looking at right now."""
+        """``alawaly.getUiState`` receives an empty object and returns the open page."""
         return await self.call(METHOD_GET_UI_STATE, {})
 
-    async def fill_checkout(
-        self,
-        *,
-        name: Optional[str] = None,
-        phone: Optional[str] = None,
-        address: Optional[str] = None,
-    ) -> UIResult:
-        """Fill fields on the open checkout form (page must be mounted)."""
-        payload: dict[str, Any] = {}
-        if name is not None:
-            payload["name"] = name
-        if phone is not None:
-            payload["phone"] = phone
-        if address is not None:
-            payload["address"] = address
-        return await self.call(METHOD_FILL_CHECKOUT, payload)
 
-    async def complete_order(
-        self,
-        *,
-        name: str,
-        phone: str = "",
-        address: str = "",
-        idempotency_key: str = "",
-    ) -> UIResult:
-        """Place the order from the live cart and open the success page."""
-        payload: dict[str, Any] = {
-            "name": name,
-            "phone": phone,
-            "address": address,
-        }
-        if idempotency_key:
-            payload["idempotencyKey"] = idempotency_key
-        return await self.call(METHOD_COMPLETE_ORDER, payload)
+def absolute_url(path: str) -> str:
+    """Turn a site path into the URL the frontend navigates to."""
+    raw = (path or "").strip() or "/ar"
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith("#"):
+        return f"{SITE_ORIGIN}/ar{raw}"
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    return f"{SITE_ORIGIN}{raw}"
 
 
 def _parse_response(method: str, raw: str) -> dict[str, Any]:

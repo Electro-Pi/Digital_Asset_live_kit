@@ -25,8 +25,8 @@ from src.voice_agent.base import Shop
 class FakeUI(UIBridge):
     """Minimal Alawaly frontend stub.
 
-    Handles ``alawaly.*`` RPC methods and the legacy ``luqma.*`` fallbacks so
-    that ``UIBridge.navigate()``'s retry logic works in tests.
+    Handles ``alawaly.navigate``, ``alawaly.showProject``, ``alawaly.fillContact``,
+    and ``alawaly.getUiState``.
     """
 
     def __init__(self, *, fail: Iterable[str] = ()) -> None:
@@ -45,36 +45,29 @@ class FakeUI(UIBridge):
     def methods(self) -> list[str]:
         return [m for m, _ in self.calls]
 
-    async def _invoke(self, method: str, payload: dict[str, Any]) -> UIResult:
-        self.calls.append((method, payload))
+    async def _invoke(self, method: str, payload: dict[str, Any] | str) -> UIResult:
+        recorded = payload if isinstance(payload, dict) else {"url": payload}
+        self.calls.append((method, recorded))
         if method in self.fail:
             return UIResult(ok=False, reason="rpc_error_timeout")
 
-        # ── Navigation ──────────────────────────────────────────────────────
-        if method in ("alawaly.navigate", "luqma.navigate"):
-            self.path = payload.get("path", self.path)
-            self.title = payload.get("title", "")
-            return UIResult(ok=True, data={"path": self.path})
+        if method == "alawaly.navigate":
+            url = payload if isinstance(payload, str) else str(payload.get("url") or "")
+            self.path = url
+            return UIResult(ok=True, data={"url": url})
 
-        # ── Show project card ────────────────────────────────────────────────
-        if method == "alawaly.showProject":
+        if method == "alawaly.showProject" and isinstance(payload, dict):
             self.current_project_id = payload.get("projectId")
-            return UIResult(ok=True, data={"projectId": self.current_project_id})
+            self.path = str(payload.get("url") or self.path)
+            return UIResult(ok=True, data={"projectId": self.current_project_id, "url": self.path})
 
-        # ── Contact / interest form ──────────────────────────────────────────
-        if method == "alawaly.fillContact":
+        if method == "alawaly.fillContact" and isinstance(payload, dict):
             self.form.update(payload)
             return UIResult(ok=True, data={})
 
-        # ── UI state query ───────────────────────────────────────────────────
-        if method in ("alawaly.getUiState", "luqma.getUiState"):
-            return UIResult(ok=True, data={
-                "path": self.path,
-                "title": self.title,
-                "projectId": self.current_project_id,
-            })
+        if method == "alawaly.getUiState":
+            return UIResult(ok=True, data={"url": self.path, "projectId": self.current_project_id})
 
-        # Unknown method — return success so tests don't break on new methods.
         return UIResult(ok=True, data={})
 
 

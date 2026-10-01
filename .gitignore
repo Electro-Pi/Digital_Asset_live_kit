@@ -209,17 +209,3 @@ __marimo__/
 
 # dspy/GEPA optimiser venv (scripts/optimize_sales_prompt.py)
 .venv-optim/
-
-# Shell & IDE dotfiles (should not be committed)
-.bash_history
-.bash_logout
-.bashrc
-.profile
-.cursor/
-
-# Other system/home dotfiles
-.lesshst
-.ssh/
-.sudo_as_admin_successful
-.wget-hsts
-.gitmodules

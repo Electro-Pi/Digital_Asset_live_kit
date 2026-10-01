@@ -61,6 +61,13 @@ class NavigationTools:
                 title = target_proj["name"]
                 key = "project"
 
+        if not path and project_name:
+            article = catalog.get_news_item(project_name)
+            if article:
+                path = article["url"]
+                title = article["title"]
+                key = "news"
+
         if not path:
             resolved = catalog.resolve_page(raw_page)
             if resolved:
@@ -72,15 +79,30 @@ class NavigationTools:
                     title = target_proj["name"]
                     key = "project"
                 else:
-                    path = "/ar"
-                    title = "الرئيسية"
+                    article = catalog.get_news_item(raw_page)
+                    if article:
+                        path = article["url"]
+                        title = article["title"]
+                        key = "news"
+                    else:
+                        path = "/ar"
+                        title = "الرئيسية"
+
+        if path.startswith("#"):
+            base = (self.state.current_page or "/ar/projects").split("#")[0]
+            path = f"{base}{path}"
 
         if section and not path.endswith(f"#{section}"):
             sep = "" if section.startswith("#") else "#"
             path = f"{path}{sep}{section}"
 
         # Trigger screen navigation over LiveKit RPC
-        outcome = self.screen(await self.ui.navigate(path, title=title))
+        if target_proj:
+            outcome = self.screen(
+                await self.ui.show_project(target_proj["id"], path, target_proj["name"])
+            )
+        else:
+            outcome = self.screen(await self.ui.navigate(path))
         self.state.current_page = path
         if target_proj:
             self.state.current_project_id = target_proj["id"]

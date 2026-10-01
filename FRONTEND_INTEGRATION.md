@@ -16,14 +16,20 @@ The assistant runs as a LiveKit agent worker connected to the room. Communicatio
 
 ---
 
-## 2. Registering RPC Handlers in Next.js / React
+## 2. RPC contract
 
-In your voice widget component (e.g. `VoiceWidget.tsx`), after `room.connect(...)` succeeds and before setting the microphone to listening:
+`data.payload` is a JSON string. Parse it. Reply with a JSON string.
+
+| Method | Receives | Returns |
+| :--- | :--- | :--- |
+| `alawaly.navigate` | `{ "url": "https://www.alawaly.sa/ar/projects" }` | `{ "ok": true, "url": "..." }` |
+| `alawaly.showProject` | `{ "projectId": "akam-homes", "url": "https://www.alawaly.sa/ar/project/akam-homes", "name": "آكام هومز" }` | `{ "ok": true, "projectId": "akam-homes", "url": "..." }` |
+| `alawaly.fillContact` | interest-form fields, any of them optional | `{ "ok": true }` |
+| `alawaly.getUiState` | `{}` | `{ "ok": true, "url": "...", "projectId": "akam-homes" }` |
+
+`alawaly.fillContact` keys, only the ones the caller said: `name`, `phone`, `identityType`, `purchasePlan`, `employer`, `email`, `sakaniEligible`, `monthlyIncome`, `projectId`. Office projects may also send `spaceType`, `companySize`, `purpose`.
 
 ```tsx
-import { useRouter } from "next/navigation";
-
-// Helper responses
 function ok(data: Record<string, unknown> = {}) {
   return JSON.stringify({ ok: true, ...data });
 }
@@ -31,61 +37,40 @@ function fail(error: string) {
   return JSON.stringify({ ok: false, error });
 }
 
+function go(router: any, url: string) {
+  const target = new URL(url);
+  if (target.origin === window.location.origin) {
+    router.push(target.pathname + target.search + target.hash);
+  } else {
+    window.location.assign(url);
+  }
+}
+
 export function setupAlawalyVoiceBridge(room: any, router: any) {
   const participant = room.localParticipant;
 
-  // 1. Navigation RPC
   participant.registerRpcMethod("alawaly.navigate", async (data: any) => {
-    try {
-      const { path, title } = JSON.parse(data.payload) as { path: string; title?: string };
-      console.log("[VoiceAgent] Navigating to:", path, title);
-      
-      if (path.startsWith("http://") || path.startsWith("https://")) {
-        window.open(path, "_blank");
-      } else {
-        router.push(path);
-      }
-      return ok({ path });
-    } catch (e: any) {
-      return fail(e.message || "navigation_failed");
-    }
+    const { url } = JSON.parse(data.payload) as { url: string };
+    go(router, url);
+    return ok({ url });
   });
 
-  // 2. Show Specific Project
   participant.registerRpcMethod("alawaly.showProject", async (data: any) => {
-    try {
-      const { projectId, path, title } = JSON.parse(data.payload) as {
-        projectId: string;
-        path: string;
-        title?: string;
-      };
-      const targetPath = path || `/ar/project/${projectId}`;
-      console.log("[VoiceAgent] Showing project:", projectId, targetPath);
-      router.push(targetPath);
-      return ok({ projectId, path: targetPath });
-    } catch (e: any) {
-      return fail(e.message || "project_view_failed");
-    }
+    const body = JSON.parse(data.payload) as { projectId: string; url: string; name?: string };
+    go(router, body.url);
+    return ok({ projectId: body.projectId, url: body.url });
   });
 
-  // 3. Pre-fill Contact & Interest Form
   participant.registerRpcMethod("alawaly.fillContact", async (data: any) => {
-    try {
-      const payload = JSON.parse(data.payload);
-      console.log("[VoiceAgent] Pre-filling contact form:", payload);
-      // Dispatch custom event or set form state
-      window.dispatchEvent(new CustomEvent("alawaly:fill-contact", { detail: payload }));
-      return ok({ filled: true });
-    } catch (e: any) {
-      return fail(e.message || "fill_contact_failed");
-    }
+    const fields = JSON.parse(data.payload);
+    window.dispatchEvent(new CustomEvent("alawaly:fill-contact", { detail: fields }));
+    return ok();
   });
 
-  // 4. Report UI State
   participant.registerRpcMethod("alawaly.getUiState", async () => {
     return ok({
-      currentPath: window.location.pathname,
-      hash: window.location.hash,
+      url: window.location.href,
+      projectId: document.body.dataset.projectId || null,
     });
   });
 }

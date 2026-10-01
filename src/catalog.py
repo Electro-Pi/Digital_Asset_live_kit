@@ -73,6 +73,24 @@ def get_news() -> list[dict[str, Any]]:
     return get_catalog().get("latest_news", [])
 
 
+def get_news_item(identifier: str) -> Optional[dict[str, Any]]:
+    """Look up one article by id, URL, or a piece of its Arabic title."""
+    if not identifier:
+        return None
+    raw = str(identifier).strip()
+    norm = normalize_ar(raw)
+    hits: list[dict[str, Any]] = []
+    for item in get_news():
+        if raw in (item.get("id"), item.get("url")):
+            return item
+        title = normalize_ar(item.get("title", ""))
+        if norm and len(norm) >= 4 and norm in title:
+            hits.append(item)
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
 def get_pages() -> dict[str, Any]:
     return get_catalog().get("navigation_pages", {})
 
@@ -234,6 +252,7 @@ __all__ = [
     "get_all_projects",
     "get_other_projects",
     "get_news",
+    "get_news_item",
     "get_pages",
     "get_project",
     "search_projects",

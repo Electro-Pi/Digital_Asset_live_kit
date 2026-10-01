@@ -60,7 +60,7 @@ from src.spoken_lexicon import strip_speech_artifacts
 from src.tool_call_recovery import collect_requested_calls, contains_text_tool_call, extract_text_tool_calls
 from src.tool_guard import build_tool_specs, plan_turn
 from src.turn_latency import TurnLatency
-from src.turn_ledger import MEAL_PAGE, NAVIGATE, TurnLedger, user_turn_key
+from src.turn_ledger import CART_ADD, MEAL_PAGE, NAVIGATE, ORDER_COMPLETE, TurnLedger, user_turn_key
 from src.ui_bridge import UIBridge, UIResult
 
 

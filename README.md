@@ -30,7 +30,7 @@ Caller Mic ──► BVC Noise Cancellation ──► Silero VAD ──► Coda 
 | `src/voice_agent/assistant.py` | تعريف المساعد الذكي وربطه بالأدوات. |
 | `src/voice_agent/project_tools.py` | أدوات البحث عن المشاريع وتفاصيلها ومعلومات الشركة والتواصل والأخبار. |
 | `src/voice_agent/navigation_tools.py` | أداة التحكم بتنقل الشاشة (`open_page`). |
-| `src/ui_bridge.py` | جسر LiveKit RPC لإرسال أوامر المتصفح (`alawaly.navigate`, `alawaly.showProject`, `alawaly.fillContact`). |
+| `src/ui_bridge.py` | جسر LiveKit RPC: `alawaly.navigate` و`alawaly.showProject` و`alawaly.fillContact` و`alawaly.getUiState`. |
 | `src/flow_say.py` | نصوص الترحيب والردود الثابتة وحماية المساعد من التلاعب. |
 | `src/config.py` | إعدادات البيئة، وعتبات VAD، ونماذج STT/TTS وLiveKit. |
 | `data/alawaly_catalog.json` | ملف البيانات الشامل لمشاريع ومعلومات شركة العوالي العقارية. |
