@@ -1,0 +1,20 @@
+[Unit]
+Description=Digital Asset LiveKit voice agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai2
+Group=ai2
+WorkingDirectory=/home/ai2/Digital_Asset_live_kit
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/ai2/Digital_Asset_live_kit/.env.local
+ExecStart=/home/ai2/Digital_Asset_live_kit/.venv/bin/python /home/ai2/Digital_Asset_live_kit/agent.py start
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+SyslogIdentifier=digital-asset-agent
+
+[Install]
+WantedBy=multi-user.target

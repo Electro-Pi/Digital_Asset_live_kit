@@ -1,0 +1,126 @@
+{
+  "voice": "nouf",
+  "seed": 1234,
+  "samples": [
+    {
+      "name": "greeting",
+      "variant": "baseline",
+      "text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "synthesis_text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "style": null,
+      "file": "greeting-baseline.wav",
+      "seconds": 3.53,
+      "sha256": "d54479958a1883f3521c663f6a23d3f6369c29a5f1f6b39586d8ca2e8e56e5f5"
+    },
+    {
+      "name": "greeting",
+      "variant": "connected",
+      "text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "synthesis_text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ، وِش تِشْتَهي اليَوْم؟",
+      "style": null,
+      "file": "greeting-connected.wav",
+      "seconds": 3.07,
+      "sha256": "0c098ab4f01b73d95a1f4911940497a9987b74ddf3eb4b417b424ef7873915af"
+    },
+    {
+      "name": "greeting",
+      "variant": "sentences",
+      "text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "synthesis_text": "هَلا واللَّه. مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "style": null,
+      "file": "greeting-sentences.wav",
+      "seconds": 4.81,
+      "sha256": "9a5311ea7c5e6bcdf531c4f2b9e1a8d16a7a5d28aa2b5aefadf1ff61dcc825e9"
+    },
+    {
+      "name": "greeting",
+      "variant": "light_vowels",
+      "text": "هَلا واللَّه، مَعَك سَلْمَى مِن لُقْمَهْ. وِش تِشْتَهي اليَوْم؟",
+      "synthesis_text": "هلا واللّه، معك سلمى من لقمه، وش تشتهي اليوم؟",
+      "style": null,
+      "file": "greeting-light_vowels.wav",
+      "seconds": 3.21,
+      "sha256": "1f842665fa5e87f8a1319a6d2db63eae12c4a8a16e884426602fef5769ef1a12"
+    },
+    {
+      "name": "recommendation",
+      "variant": "baseline",
+      "text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "synthesis_text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "style": null,
+      "file": "recommendation-baseline.wav",
+      "seconds": 5.77,
+      "sha256": "a0be3bfad87184833add7c9a1bf8402723d610de2adc60f3835e3937c2288fce"
+    },
+    {
+      "name": "recommendation",
+      "variant": "connected",
+      "text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "synthesis_text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص، وِش رايَك تِجَرِّبُه؟",
+      "style": null,
+      "file": "recommendation-connected.wav",
+      "seconds": 5.34,
+      "sha256": "4d71a62336c8054289382134c18b3ad8a3074357bf79e53e752b3b269154a6dc"
+    },
+    {
+      "name": "recommendation",
+      "variant": "sentences",
+      "text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "synthesis_text": "يا سَلام. عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز. ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "style": null,
+      "file": "recommendation-sentences.wav",
+      "seconds": 5.71,
+      "sha256": "2bf5a7d88e394b76370ef214b99a48ac13e0e8cfee465e70a3a27084a482722a"
+    },
+    {
+      "name": "recommendation",
+      "variant": "light_vowels",
+      "text": "يا سَلام، عِنْدَنا دِجاج مَشْوِي طَعْمُه يِفَوِّز، ومَعَه رِز وصُوص. وِش رايَك تِجَرِّبُه؟",
+      "synthesis_text": "يا سلام، عندنا دجاج مشوي طعمه يفوّز، ومعه رز وصوص، وش رايك تجرّبه؟",
+      "style": null,
+      "file": "recommendation-light_vowels.wav",
+      "seconds": 5.78,
+      "sha256": "61a40416b1d3cd5b34c47b1d7b89ee81420bcaa77b9c59f05afc7d47ad2871cf"
+    },
+    {
+      "name": "confirmation",
+      "variant": "baseline",
+      "text": "أَبْشِر، كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "synthesis_text": "أَبْشِر، كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "style": null,
+      "file": "confirmation-baseline.wav",
+      "seconds": 4.65,
+      "sha256": "d26e881b76a2d0dde22deadf7f0b77e706465c322ec0afa44f9c2b6a2ea80c99"
+    },
+    {
+      "name": "confirmation",
+      "variant": "connected",
+      "text": "أَبْشِر، كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "synthesis_text": "أَبْشِر، كِذا طَلَبَك جاهِز، تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "style": null,
+      "file": "confirmation-connected.wav",
+      "seconds": 3.37,
+      "sha256": "893627d0a1cd2fd2e38b88ba7b62870281160717996742eab6d224b675f6b342"
+    },
+    {
+      "name": "confirmation",
+      "variant": "sentences",
+      "text": "أَبْشِر، كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "synthesis_text": "أَبْشِر. كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "style": null,
+      "file": "confirmation-sentences.wav",
+      "seconds": 3.85,
+      "sha256": "c2fb04c53ed2fd99449b2b91eb22184777725fa0ed5fd5668e3aeeb41edc01c4"
+    },
+    {
+      "name": "confirmation",
+      "variant": "light_vowels",
+      "text": "أَبْشِر، كِذا طَلَبَك جاهِز. تِبِي نِزَوِّد لَك شَي بارِد مَعَه؟",
+      "synthesis_text": "أبشر، كذا طلبك جاهز، تبي نزوّد لك شي بارد معه؟",
+      "style": null,
+      "file": "confirmation-light_vowels.wav",
+      "seconds": 4.17,
+      "sha256": "5d51baae2959ff1f938ca72eb703eb908584b4c9621acdeab34051679343c965"
+    }
+  ]
+}

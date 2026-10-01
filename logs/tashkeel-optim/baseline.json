@@ -1,0 +1,56 @@
+{
+  "old": {
+    "mean": 0.9318,
+    "coverage": 0.9396,
+    "bare_word_rate": 0.053,
+    "final_marked_rate": 0.0853,
+    "wrong_vowel_rate": 0.0438,
+    "tts_coverage": 0.9727,
+    "behaviour": 0.8854,
+    "per_scenario": {
+      "hungry_open": 0.9636,
+      "discover_then_recommend": 0.858,
+      "meal_deal_pitch": 0.9643,
+      "group_dinner": 0.956,
+      "price_objection": 0.9006,
+      "pair_after_add": 0.9427,
+      "complaint": 0.9842,
+      "is_it_good": 0.9829,
+      "recommend_with_taste": 0.9735,
+      "answers_all_at_once": 0.9436,
+      "you_choose": 0.8258,
+      "meal_deal_accept": 0.9474,
+      "in_a_hurry": 0.7759,
+      "think_about_it": 0.9665,
+      "healthy_work_lunch": 0.9757,
+      "two_noes_stop": 0.9488
+    }
+  },
+  "current": {
+    "mean": 0.961,
+    "coverage": 0.9895,
+    "bare_word_rate": 0.0086,
+    "final_marked_rate": 0.03,
+    "wrong_vowel_rate": 0.0365,
+    "tts_coverage": 0.9991,
+    "behaviour": 0.9115,
+    "per_scenario": {
+      "hungry_open": 1.0,
+      "discover_then_recommend": 0.8989,
+      "meal_deal_pitch": 0.9833,
+      "group_dinner": 0.9269,
+      "price_objection": 0.9197,
+      "pair_after_add": 0.9655,
+      "complaint": 0.9692,
+      "is_it_good": 0.9922,
+      "recommend_with_taste": 0.9964,
+      "answers_all_at_once": 0.9738,
+      "you_choose": 0.9111,
+      "meal_deal_accept": 0.9797,
+      "in_a_hurry": 0.9553,
+      "think_about_it": 0.9818,
+      "healthy_work_lunch": 0.9456,
+      "two_noes_stop": 0.977
+    }
+  }
+}

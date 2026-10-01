@@ -1,0 +1,603 @@
+{
+  "company": {
+    "name": "العوالي العقارية",
+    "legal_name": "شركة العوالي العقارية",
+    "founded_year": 2011,
+    "headquarters": "جدة",
+    "website": "https://www.alawaly.sa/ar",
+    "interactive_map_url": "https://alawaly-project.vercel.app/",
+    "ceo": {
+      "name": "سليمان بن رميح الرميح",
+      "title": "الرئيس التنفيذي",
+      "quote": "شغفنا في العوالي هو النهوض بجودة حياة الإنسان والارتقاء بمستوى المعيشة من خلال مشاريع عمرانية عملية ومستدامة."
+    },
+    "overview": "تأسست شركة العوالي العقارية عام 2011، ومنذ انطلاقتها تسهم في تطوير المشهد العمراني في المملكة من خلال مشاريع سكنية وتجارية ومتعددة الاستخدامات، تجمع بين جودة التصميم وكفاءة التنفيذ والقيمة الاستثمارية. وسعت العوالي محفظة مشاريعها في عدد من مدن المملكة مستندة إلى خبرة متراكمة وشراكات استراتيجية ونهج مؤسسي يضع جودة الحياة في صميم التطوير، وتدعم مستهدفات رؤية السعودية 2030.",
+    "stats": {
+      "experience_years": "أكثر من 15 عاماً",
+      "total_signed_projects": "أكثر من 80 مشروعاً",
+      "total_products": "أكثر من 15,000 منتج عقاري مطور",
+      "total_portfolio_value": "أكثر من 16 مليار ريال",
+      "cities_covered": "أكثر من 7 مدن سعودية (الرياض، جدة، مكة المكرمة، الطائف، بريدة، جازان وغيرها)",
+      "riyadh_projects_count": 6,
+      "riyadh_units_count": 1339,
+      "riyadh_area_sqm": 287000,
+      "riyadh_offplan_sales_2024_2025": "تجاوزت مليار ريال"
+    },
+    "strategic_partners": [
+      "الشركة الوطنية للإسكان (NHC)",
+      "مدى العقارية",
+      "GStones Global (شريك دولي لتسويق المشاريع في بريطانيا، دبي، عمان، إسبانيا)",
+      "Global Quantum Intelligence (GQI) للذكاء الكمومي والأبحاث",
+      "منصة ومضات للتدريب والتطوير (Wamadat)",
+      "شركة ستيبس ووتش (Stepswatch) لحلول الذكاء الاصطناعي"
+    ],
+    "awards": [
+      "أفضل سلسلة مشاريع سكنية في المملكة 2023 من Real Estate Asia Awards (سلسلة العوالي هومز)",
+      "أفضل مشروع تطوير سكني لأكثر من 20 وحدة من International Property Awards (مشروع آكام جدة هايتس)",
+      "أفضل مشروع سكني فاخر في المملكة 2024 من The Global Economics (مشروع بولاريس)",
+      "جائزتان لأفضل تصميم معماري لبرج تجاري / برج مكاتب من International Property Awards (مركز العوالي للأعمال)",
+      "جائزتان لأفضل تصميم معماري لبرج تجاري / مكاتب من International Property Awards (العوالي تاور)",
+      "جائزة أفضل سلسلة مشاريع سكنية من قمة البناء والبنية التحتية السعودية (العوالي هومز - المروة)"
+    ]
+  },
+  "contact": {
+    "unified_sales_number": "920016488",
+    "unified_inquiries_number": "8003050004",
+    "email": "info@alawaly.sa",
+    "whatsapp": "+966920016488",
+    "whatsapp_url": "https://wa.me/966920016488",
+    "app_store_url": "https://apps.apple.com/us/app/alawaly-%D8%A7%D9%84%D8%B9%D9%88%D8%A7%D9%84%D9%8A/id6741167067",
+    "google_play_url": "https://play.google.com/store/apps/details?id=com.bim.alawaly&pcampaignid=web_share",
+    "social_media": {
+      "x": "https://x.com/alawalyre?lang=ar",
+      "instagram": "https://www.instagram.com/alawalyre/",
+      "linkedin": "https://www.linkedin.com/company/alawalyre",
+      "youtube": "https://www.youtube.com/@Alawalyre",
+      "snapchat": "https://www.snapchat.com/@alawalyre",
+      "tiktok": "https://www.tiktok.com/@alawalyre"
+    },
+    "app_features": [
+      "استعراض المشاريع",
+      "حجز الوحدات السكنية والتجارية",
+      "متابعة الدفعات والأقساط",
+      "طلب خدمات الصيانة الفورية",
+      "جولات افتراضية بتقنية 360°",
+      "سداد إلكتروني آمن",
+      "تنبيهات الفرص الحصرية"
+    ]
+  },
+  "navigation_pages": {
+    "home": {
+      "title": "الرئيسية",
+      "path": "/ar",
+      "aliases": ["الرئيسية", "الرئيسيه", "الصفحة الرئيسية", "الهوم", "home"]
+    },
+    "about": {
+      "title": "عن العوالي",
+      "path": "/ar/about",
+      "aliases": ["عن العوالي", "من نحن", "عن الشركة", "نبذة عن الشركة", "الشركة", "about", "about us"]
+    },
+    "projects": {
+      "title": "مشاريعنا",
+      "path": "/ar/projects",
+      "aliases": ["مشاريعنا", "المشاريع", "المشاريع الحالية", "مشاريع", "projects"]
+    },
+    "interactive_map": {
+      "title": "الخريطة التفاعلية",
+      "path": "https://alawaly-project.vercel.app/",
+      "external": true,
+      "aliases": ["الخريطة التفاعلية", "الخريطة", "الخريطه التفاعليه", "موقع المشاريع على الخريطة", "map"]
+    },
+    "investor_relations": {
+      "title": "علاقات المساهمين",
+      "path": "/ar",
+      "aliases": ["علاقات المساهمين", "المساهمين", "المستثمرين", "investor relations"]
+    },
+    "contact": {
+      "title": "العناية بالعملاء",
+      "path": "/ar/contact",
+      "aliases": ["العناية بالعملاء", "خدمة العملاء", "تواصل معنا", "معلومات التواصل", "اتصل بنا", "contact"]
+    },
+    "communication_channels": {
+      "title": "قنوات التواصل",
+      "path": "/ar/contact#Communication-channels",
+      "aliases": ["قنوات التواصل", "رقم التواصل", "الواتساب", "الاتصال"]
+    },
+    "mobile_app": {
+      "title": "تطبيق العوالي",
+      "path": "/ar/contact#App",
+      "aliases": ["تطبيق العوالي", "التطبيق", "تحميل التطبيق", "app"]
+    },
+    "news": {
+      "title": "المركز الإعلامي",
+      "path": "/ar/news",
+      "aliases": ["المركز الإعلامي", "المركز الاعلامي", "الأخبار", "الاخبار", "أحدث الأخبار", "news"]
+    },
+    "register_interest": {
+      "title": "سجل اهتمامك",
+      "path": "#contact-section",
+      "aliases": ["سجل اهتمامك", "تسجيل الاهتمام", "حجز", "شراء", "طلب تواصل"]
+    }
+  },
+  "projects": [
+    {
+      "id": "akam-homes",
+      "slug": "akam-homes",
+      "name": "آكام هومز",
+      "name_say_ar": "آكَام هُومْز",
+      "property_type": "residential",
+      "property_type_ar": "سكني",
+      "city": "جدة",
+      "city_ar": "جُدَّة",
+      "location_detail": "شمال مدينة جدة ضمن وجهة جدة هايتس",
+      "buildings_count": 35,
+      "total_units": 750,
+      "available_units": 723,
+      "completion_rate": "0%",
+      "status": "under_construction",
+      "status_ar": "تحت الإنشاء",
+      "sakani_support": true,
+      "page_path": "/ar/project/akam-homes",
+      "virtual_tour_url": "https://maps.app.goo.gl/fRXdKKd3radZsf3a9",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/69ff4392f1cd3_akam-homes.pdf",
+      "tagline": "مشروع سكني عصري صمم ليمنح العائلات مزيدا من الخصوصية والراحة",
+      "description": "مشروع سكني عصري يقع في شمال مدينة جدة ضمن وجهة جدة هايتس، يضم 750 وحدة سكنية موزعة على 35 مبنى. صُمِّم وفق أعلى معايير الجودة العالمية ليوفر حياة متكاملة للعائلات بمرافق حديثة وتقنية ذكية.",
+      "unit_specs": {
+        "unit_type": "شقة",
+        "model": "نموذج 1",
+        "area_sqm": 206.84,
+        "bedrooms": 4,
+        "guest_majlis": 1,
+        "bathrooms": 6,
+        "dining_area": 1,
+        "kitchen": 1,
+        "maid_room": 1,
+        "dressing_room": 1,
+        "balconies": 3
+      },
+      "amenities": [
+        "حديقة مركزية",
+        "ممرات مشاة",
+        "مسطحات خضراء",
+        "محلات تجارية",
+        "مساجد",
+        "ملاعب رياضية"
+      ],
+      "nearby_landmarks": [
+        {"name": "مطار الملك عبدالعزيز الدولي", "time": "8 دقائق"},
+        {"name": "مدينة الملك عبدالله الرياضية", "time": "11 دقيقة"},
+        {"name": "ذا فيليج مول", "time": "12 دقيقة"},
+        {"name": "مجمع الملك عبدالله الطبي", "time": "13 دقيقة"},
+        {"name": "الواجهة البحرية", "time": "14 دقيقة"},
+        {"name": "برج جدة", "time": "16 دقيقة"},
+        {"name": "جامعة الملك عبدالعزيز", "time": "24 دقيقة"}
+      ]
+    },
+    {
+      "id": "alawaly-homes-al-taysir-jeddah",
+      "slug": "alawaly-homes-al-taysir-jeddah",
+      "name": "العوالي هومز – التيسير",
+      "name_say_ar": "العَوَالِي هُومْز التَّيْسِير",
+      "property_type": "residential",
+      "property_type_ar": "سكني",
+      "city": "جدة",
+      "city_ar": "جُدَّة",
+      "location_detail": "حي مريخ ضمن مخطط التيسير في جدة",
+      "buildings_count": 18,
+      "total_units": 180,
+      "available_units": 61,
+      "completion_rate": "100%",
+      "status": "ready",
+      "status_ar": "جاهز للسكن",
+      "sakani_support": true,
+      "award": "أفضل سلسلة مشاريع سكنية في المملكة 2023 من Real Estate Asia Awards",
+      "page_path": "/ar/project/alawaly-homes-al-taysir-jeddah",
+      "virtual_tour_url": "https://maps.app.goo.gl/we6xyN6oj34F8Mm59",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a121e7e2778b_altayseer-m-fimal-full-v2.pdf",
+      "tagline": "أفضل سلسلة مشاريع سكنية حاصلة على جوائز",
+      "description": "مشروع سكني عصري يقع في حي مريخ ضمن مخطط التيسير في جدة، ويضم 180 وحدة سكنية موزعة على 18 مبنى. يجمع المشروع بين موقعه الاستراتيجي وجودة التصميم، ليقدم تجربة سكنية تلائم احتياجات العائلات.",
+      "unit_specs": {
+        "unit_type": "شقة",
+        "model": "نموذج A",
+        "area_sqm": 227.0,
+        "units_per_floor": 2,
+        "bedrooms": 3,
+        "guest_majlis": 1,
+        "living_room": 1,
+        "dining_area": 1,
+        "kitchen": 1,
+        "maid_room": 1,
+        "dressing_room": 1,
+        "bathrooms": 4
+      },
+      "amenities": [
+        "أنظمة ذكية ودخول ذكي للوحدات",
+        "إنتركوم مرئي وصوتي",
+        "تحكم ذكي للإضاءة",
+        "كاميرات مراقبة",
+        "مداخل مكيفة ومسطحات خضراء",
+        "مواقف خاصة وغرفة سائق",
+        "مسجد خاص بالمشروع",
+        "غاز مركزي وخزان أرضي مستقل",
+        "نقاط ألياف ضوئية ونظام دش مركزي"
+      ],
+      "nearby_landmarks": [
+        {"name": "شارع فلسطين", "time": "دقيقتان"},
+        {"name": "جامع اليوسف", "time": "20 متر"},
+        {"name": "حديقة اليوسف", "time": "5 متر"},
+        {"name": "مجمع التيسير التجاري", "time": "3 دقائق"},
+        {"name": "مجمع التيسير بلازا", "time": "4 دقائق"},
+        {"name": "طريق الحرمين السريع", "time": "6 دقائق"},
+        {"name": "مستشفى شرق جدة العام", "time": "12 دقيقة"},
+        {"name": "محطة قطار الحرمين", "time": "13 دقيقة"},
+        {"name": "الأندلس مول", "time": "14 دقيقة"},
+        {"name": "جامعة الملك عبدالعزيز", "time": "14 دقيقة"},
+        {"name": "الواجهة البحرية", "time": "17 دقيقة"}
+      ]
+    },
+    {
+      "id": "akam-jeddah-heights",
+      "slug": "akam-jeddah-heights",
+      "name": "آكام جدة هايتس",
+      "name_say_ar": "آكَام جُدَّة هَايْتْس",
+      "property_type": "residential",
+      "property_type_ar": "سكني (فلل فاخرة)",
+      "city": "جدة",
+      "city_ar": "جُدَّة",
+      "partner": "الشركة الوطنية للإسكان NHC",
+      "location_detail": "شمال مدينة جدة ضمن وجهة جدة هايتس بـ NHC في قلب ضاحية الهضبة",
+      "buildings_count": 152,
+      "total_units": 152,
+      "available_units": 34,
+      "completion_rate": "0%",
+      "status": "under_construction",
+      "status_ar": "تحت الإنشاء",
+      "sakani_support": true,
+      "award": "جائزة أفضل مشروع تطوير سكني لأكثر من 20 وحدة (International Property Awards)",
+      "page_path": "/ar/project/akam-jeddah-heights",
+      "virtual_tour_url": "https://maps.app.goo.gl/7fUCGmzgqNASAkGX6",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a12b32ecb2e0_jeddah-heights-v20.pdf",
+      "tagline": "مجتمع سكني عصري بالشراكة مع الشركة الوطنية للإسكان NHC",
+      "description": "مشروع آكام هايتس السكني وجهة عصرية تقع في شمال مدينة جدة ضمن وجهة جدة هايتس بـ NHC، في قلب ضاحية الهضبة. يضم المشروع 152 فيلا فاخرة بتسعة أنواع تصميمية مميزة، وتمتد ضمن مساحات خضراء تزيد عن 400,000 م².",
+      "unit_specs": {
+        "unit_type": "فيلا عائلية فاخرة",
+        "model": "نموذج C",
+        "area_sqm": 198.08,
+        "bedrooms": 5,
+        "bathrooms": 5,
+        "entrances": 2,
+        "living_room": 1,
+        "guest_majlis": 1,
+        "dining_area": 1,
+        "kitchen": 1,
+        "maid_room": 1,
+        "laundry_room": 1,
+        "dressing_room": 1,
+        "balconies": 1,
+        "garden_green_area": 1,
+        "parking": 1
+      },
+      "amenities": [
+        "مساحات خضراء تزيد عن 400,000 م²",
+        "حديقة مركزية وممرات مشاة",
+        "مساجد ومحلات تجارية",
+        "ملاعب رياضية وحياة مجتمعية آمنة"
+      ],
+      "nearby_landmarks": [
+        {"name": "مطار الملك عبدالعزيز الدولي", "time": "8 دقائق"},
+        {"name": "مدينة الملك عبدالله الرياضية", "time": "11 دقيقة"},
+        {"name": "ذا فيليج مول", "time": "12 دقيقة"},
+        {"name": "مجمع الملك عبدالله الطبي", "time": "13 دقيقة"},
+        {"name": "الواجهة البحرية", "time": "14 دقيقة"},
+        {"name": "برج جدة", "time": "16 دقيقة"},
+        {"name": "جامعة الملك عبدالعزيز", "time": "24 دقيقة"}
+      ]
+    },
+    {
+      "id": "alawaly-rise",
+      "slug": "alawaly-rise",
+      "name": "العوالي رايز",
+      "name_say_ar": "العَوَالِي رَايْز",
+      "property_type": "commercial",
+      "property_type_ar": "مكاتب وتجاري",
+      "city": "الرياض",
+      "city_ar": "الرِّيَاض",
+      "location_detail": "طريق الأمير سلمان بن محمد بن سعود مع طريق الملك فهد وشارع العليا",
+      "buildings_count": 1,
+      "total_units": 73,
+      "available_units": 0,
+      "completion_rate": "60%",
+      "status": "fully_sold",
+      "status_ar": "مباع بالكامل",
+      "sakani_support": false,
+      "page_path": "/ar/project/alawaly-rise",
+      "virtual_tour_url": "https://maps.app.goo.gl/T5jNYiDMDCKs8HN56",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a12b8fe43f84_al-awaly-rise-brochure.pdf",
+      "tagline": "برج تجاري عصري في قلب مدينة الرياض",
+      "description": "برج تجاري عصري في قلب مدينة الرياض، يقع عند نقطة اتصال استراتيجية بين طريق الأمير سلمان بن محمد بن سعود وطريق الملك فهد وشارع العليا. يمتد المشروع على مساحة 106,000 م² ويضم 17 دوراً تشمل صالات عرض ومكاتب احترافية.",
+      "unit_specs": {
+        "unit_type": "صالة عرض / مكتب",
+        "floor": "الطابق الأرضي",
+        "area_sqm": 414.67,
+        "entrances": "مدخل رئيسي",
+        "lobby": "لوبي فاخر",
+        "parking": "متوفر",
+        "elevators": "متوفرة"
+      },
+      "amenities": [
+        "صالات عرض راقية ومكاتب احترافية",
+        "مقاهي ومطاعم ولوبي راقي",
+        "شبكة مصاعد سريعة ومواقف سيارات",
+        "مساحات اجتماعات وتراس مفتوح للأعمال"
+      ],
+      "nearby_landmarks": [
+        {"name": "منتزه الرياض", "time": "7 دقائق"},
+        {"name": "مركز الملك عبدالله المالي (كافد)", "time": "9 دقائق"},
+        {"name": "المدينة الرقمية", "time": "10 دقائق"},
+        {"name": "جامعة الملك سعود", "time": "10 دقائق"},
+        {"name": "بوليفارد وورلد", "time": "13 دقيقة"},
+        {"name": "الدرعية", "time": "16 دقيقة"},
+        {"name": "مطار الملك خالد الدولي", "time": "25 دقيقة"}
+      ]
+    },
+    {
+      "id": "polaris",
+      "slug": "polaris",
+      "name": "بولاريس",
+      "name_say_ar": "بُولَارِيس",
+      "property_type": "residential",
+      "property_type_ar": "سكني فاخر (شقق، فلل، بنتهاوس)",
+      "city": "الرياض",
+      "city_ar": "الرِّيَاض",
+      "location_detail": "أحد أحياء الرياض المميزة بالقرب من محاور شمال الرياض",
+      "buildings_count": 1,
+      "total_units": 37,
+      "available_units": 0,
+      "completion_rate": "25%",
+      "status": "fully_sold",
+      "status_ar": "مباع بالكامل",
+      "sakani_support": false,
+      "award": "جائزة أفضل مشروع سكني فاخر في المملكة 2024 من The Global Economics",
+      "page_path": "/ar/project/polaris",
+      "virtual_tour_url": "https://maps.app.goo.gl/hhqcvz2rWiqRVNzc6",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a12bbbb13363_polaris-810-brochure.pdf",
+      "tagline": "جائزة أفضل مشروع سكني فاخر في المملكة 2024",
+      "description": "برج سكني في أحد أحياء الرياض المميزة، يضم 37 وحدة بتصاميم متنوعة تشمل الشقق والفلل والبنتهاوس، ويجمع بين جودة التصميم والإطلالات الواسعة والموقع القريب من أبرز محاور شمال الرياض.",
+      "unit_specs": {
+        "unit_type": "شقة سكنية TYPE 1 - A",
+        "area_sqm": 146.72,
+        "bedrooms": 2,
+        "living_room": 1,
+        "guest_majlis": 1,
+        "kitchen": 1,
+        "bathrooms": 2
+      },
+      "amenities": [
+        "نادي رياضي للرجال والنساء",
+        "صالة استقبال ولاونج فاخر ولوبي مميز",
+        "4 أدوار مواقف سيارات",
+        "مسطحات على السطح بإطلالات بانورامية",
+        "بنتهاوس وفلل بمسبح خاص",
+        "ضمانات شاملة على المشروع"
+      ],
+      "nearby_landmarks": [
+        {"name": "طريق الملك خالد (الدائري الشمالي)", "time": "10 دقائق"},
+        {"name": "منتزه الرياض", "time": "10 دقائق"},
+        {"name": "مركز الملك عبدالله المالي (كافد)", "time": "12 دقيقة"},
+        {"name": "جامعة الملك سعود", "time": "15 دقيقة"},
+        {"name": "طريق الملك سلمان", "time": "17 دقيقة"},
+        {"name": "بوليفارد وورلد", "time": "18 دقيقة"},
+        {"name": "مطار الملك خالد الدولي", "time": "25 دقيقة"}
+      ]
+    },
+    {
+      "id": "alawaly-business-center",
+      "slug": "alawaly-business-center",
+      "name": "مركز العوالي للأعمال",
+      "name_say_ar": "مَرْكَز العَوَالِي لِلأَعْمَال",
+      "property_type": "commercial",
+      "property_type_ar": "مكاتب ومساحات تجارية",
+      "partner": "مدى العقارية",
+      "city": "الرياض",
+      "city_ar": "الرِّيَاض",
+      "location_detail": "حي الصحافة شمال الرياض بالقرب من طريق الملك سلمان وكافد",
+      "buildings_count": 1,
+      "total_units": 98,
+      "available_units": 57,
+      "completion_rate": "18%",
+      "status": "under_construction",
+      "status_ar": "تحت الإنشاء",
+      "sakani_support": false,
+      "award": "جائزتان لأفضل تصميم معماري لبرج تجاري / برج مكاتب من International Property Awards",
+      "page_path": "/ar/project/alawaly-business-center",
+      "virtual_tour_url": "https://maps.app.goo.gl/hhqcvz2rWiqRVNzc6",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a43d2e39346e_al-awaly-buisness-center-2-1.pdf",
+      "tagline": "رؤية تجمع بين الجودة والابتكار بالطراز السلماني العصري",
+      "description": "يقع مركز العوالي للأعمال في حي الصحافة شمال الرياض، بالقرب من طريق الملك سلمان ومركز الملك عبدالله المالي. ويضم مساحات مكتبية وتجارية بتكوينات مرنة تلائم احتياجات الأعمال المختلفة، ضمن بيئة عصرية تجمع سهولة الوصول وتكامل الخدمات.",
+      "unit_specs": {
+        "unit_type": "استقبال ومحلات وصالات عرض",
+        "floor": "الطابق الأرضي والأقبية",
+        "reception_lounge": 1,
+        "showrooms": "متعددة",
+        "retail_shops": "متعددة",
+        "parking": "6 قبو مواقف سيارات + 12 موقف أرضي",
+        "elevators": 4
+      },
+      "amenities": [
+        "مصاعد عالية السرعة",
+        "غرف اجتماعات مجهزة وصالات استقبال وانتظار",
+        "أنظمة أمن وحماية متكاملة",
+        "6 قبو مواقف سيارات",
+        "مقاهي ومطاعم وصالات عرض ومحلات تجارية",
+        "تصميم سلماني عصري"
+      ],
+      "nearby_landmarks": [
+        {"name": "مستشفى المملكة", "time": "7 دقائق"},
+        {"name": "منتزه الرياض", "time": "8 دقائق"},
+        {"name": "مركز الملك عبدالله المالي (كافد)", "time": "10 دقائق"},
+        {"name": "طريق الملك سلمان", "time": "12 دقيقة"},
+        {"name": "بوليفارد وورلد", "time": "15 دقيقة"},
+        {"name": "الدرعية", "time": "18 دقيقة"},
+        {"name": "مطار الملك خالد الدولي", "time": "25 دقيقة"}
+      ]
+    },
+    {
+      "id": "alawaly-homes-al-marwa",
+      "slug": "alawaly-homes-al-marwa",
+      "name": "العوالي هومز – المروة",
+      "name_say_ar": "العَوَالِي هُومْز المَرْوَة",
+      "property_type": "residential",
+      "property_type_ar": "سكني",
+      "city": "جدة",
+      "city_ar": "جُدَّة",
+      "location_detail": "قلب جدة بحي المروة",
+      "buildings_count": 36,
+      "total_units": 480,
+      "available_units": 360,
+      "completion_rate": "100%",
+      "status": "ready",
+      "status_ar": "جاهز للسكن 100%",
+      "sakani_support": true,
+      "award": "أفضل سلسلة مشاريع سكنية في المملكة 2023 من Real Estate Asia Awards وجائزة قمة البناء والبنية التحتية السعودية",
+      "page_path": "/ar/project/alawaly-homes-al-marwa",
+      "virtual_tour_url": "https://alawaly.sa/",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a43bbc589fdb_almro.pdf",
+      "tagline": "مشروع سكني جاهز في قلب حي المروة بجدة",
+      "description": "مشروع سكني عصري يقع في قلب جدة بحي المروة، يضم 480 وحدة سكنية موزعة على 36 مبنى. صُمِّم وفق أعلى معايير الجودة العالمية ليوفر حياة متكاملة للعائلات بمرافق حديثة، تقنيات ذكية، وأسلوب حياة راقٍ يجمع بين الرفاهية والأمان.",
+      "unit_specs": {
+        "unit_type": "شقة روف + تراس (نموذج A)",
+        "area_sqm": 185.0,
+        "bedrooms": "3 (رئيسية + 2)",
+        "guest_majlis": "مجلس رجال",
+        "living_room": 1,
+        "kitchen": 1,
+        "maid_room": 1,
+        "dressing_room": 1,
+        "bathrooms": 3,
+        "laundry_area": 1,
+        "roof_terrace": 1,
+        "entrances": 2
+      },
+      "amenities": [
+        "نظام دخول ذكي وكاميرات مراقبة وإنتركوم مرئي",
+        "مساحات خضراء ومداخل مكيفة",
+        "نادي رياضي للرجال ولاونج فاخر",
+        "منطقة ترفيهية ومكتبة"
+      ],
+      "nearby_landmarks": [
+        {"name": "طريق الحرمين السريع", "time": "4 دقائق"},
+        {"name": "لولو هايبر ماركت", "time": "4 دقائق"},
+        {"name": "طريق الأمير ماجد", "time": "6 دقائق"},
+        {"name": "مطار الملك عبدالعزيز", "time": "9 دقائق"},
+        {"name": "مول العرب", "time": "12 دقيقة"},
+        {"name": "محطة قطار الحرمين", "time": "15 دقيقة"},
+        {"name": "مستشفى الملك فهد العام", "time": "16 دقيقة"},
+        {"name": "جامعة الملك عبدالعزيز", "time": "20 دقيقة"},
+        {"name": "الواجهة البحرية", "time": "21 دقيقة"}
+      ]
+    },
+    {
+      "id": "alawaly-tower",
+      "slug": "alawaly-tower",
+      "name": "العوالي تاور",
+      "name_say_ar": "العَوَالِي تَاوَرْ",
+      "property_type": "commercial",
+      "property_type_ar": "مكاتب ومعارض إدارية فاخرة",
+      "city": "الرياض",
+      "city_ar": "الرِّيَاض",
+      "location_detail": "قلب العاصمة الرياض",
+      "buildings_count": 1,
+      "total_units": 192,
+      "available_units": 53,
+      "completion_rate": "تحت الإنشاء",
+      "status": "under_construction",
+      "status_ar": "تحت الإنشاء",
+      "sakani_support": false,
+      "award": "جائزتان لأفضل تصميم معماري لبرج تجاري / مكاتب من International Property Awards",
+      "page_path": "/ar/project/alawaly-tower",
+      "virtual_tour_url": "https://www.google.com/maps/place/24%C2%B048'12.5%22N+46%C2%B037'30.1%22E/@24.803318,46.6247142,200m/data=!3m1!1e3!4m4!3m3!8m2!3d24.803475!4d46.625026!5m1!1e1?entry=ttu&g_ep=EgoyMDI2MDYxMC4wIKXMDSoASAFQAw%3D%3D",
+      "brochure_url": "https://alawalycp.sys.newtouch.sa/public/uploads/dynamic-pages/6a901816dd50a_al-awaly-tower-brochure2.pdf",
+      "tagline": "أيقونة معمارية بارتفاع 45 طابقاً تجمع بين الطراز السلماني والحداثة العالمية",
+      "description": "يأتي العوالي تاور ليقدم مفهوماً جديداً للمكاتب الإدارية الفاخرة في قلب العاصمة الرياض، ويشكل نقلة نوعية للشركات الطموحة. رمز متكامل للفخامة على مساحة إجمالية 3,600 م² وامتداد 45 طابقاً، مستوحى من الطراز السلماني العريق.",
+      "unit_specs": {
+        "unit_type": "معارض تجارية ومكاتب إدارية",
+        "floor": "الطابق الأرضي والأدوار الإدارية",
+        "showrooms": 2,
+        "entrances": "مدخل رئيسي",
+        "lobby": "لوبي فاخر",
+        "reception": "متوفرة",
+        "elevators": "7 مصاعد ذكية",
+        "parking": "7 أبراج مواقف ذكية + خدمة فاليه"
+      },
+      "amenities": [
+        "أنظمة تكييف وإضاءة ذكية",
+        "قاعات استقبال واجتماعات ذكية وقاعة متعددة الاستخدامات",
+        "7 مصاعد ذكية و7 أبراج مواقف ذكية مع خدمة الڤاليه",
+        "لاونج خاص بمستخدمي البرج ومصليات منفصلة للرجال والنساء",
+        "تراس خارجي وإدارة احترافية متكاملة"
+      ],
+      "nearby_landmarks": [
+        {"name": "نادي الشباب", "time": "5 دقائق"},
+        {"name": "المستشفى السعودي الألماني", "time": "5 دقائق"},
+        {"name": "مستشفى الدكتور سليمان فقيه", "time": "6 دقائق"},
+        {"name": "مستشفى الدكتور سليمان الحبيب", "time": "7 دقائق"},
+        {"name": "محطة مترو مستشفى د. سليمان الحبيب", "time": "8 دقائق"},
+        {"name": "ملعب المملكة – أرينا", "time": "10 دقائق"},
+        {"name": "مجمع أفنيوز – الأكبر في الرياض", "time": "11 دقيقة"},
+        {"name": "بوليفارد وورلد", "time": "13 دقيقة"},
+        {"name": "المربع الجديد", "time": "15 دقيقة"},
+        {"name": "الدرعية", "time": "15 دقيقة"},
+        {"name": "مركز الملك عبدالله المالي – كافد", "time": "16 دقيقة"},
+        {"name": "بوليفارد الرياض", "time": "17 دقيقة"},
+        {"name": "جامعة الأميرة نورة بنت عبدالرحمن", "time": "21 دقيقة"},
+        {"name": "مطار الملك خالد الدولي", "time": "21 دقيقة"}
+      ]
+    }
+  ],
+  "other_projects": [
+    {"name": "العوالي هيلز", "city": "مكة المكرمة"},
+    {"name": "ربوة العوالي", "city": "مكة المكرمة"},
+    {"name": "العوالي رايز مكة", "city": "مكة المكرمة"},
+    {"name": "أكام مكة هيلز", "city": "مكة المكرمة", "partner": "الشركة الوطنية للإسكان NHC"},
+    {"name": "مشاريع الطائف", "city": "الطائف"},
+    {"name": "مشاريع بريدة", "city": "بريدة"},
+    {"name": "مشاريع جازان", "city": "جازان"}
+  ],
+  "latest_news": [
+    {
+      "id": "quantum-ai-paris",
+      "date": "2026-09-16",
+      "title": "«العوالي» توقع مذكرات تعاون في الذكاء الكمومي والذكاء الاصطناعي وتطوير القدرات ضمن ملتقى الاستثمار العالمي بباريس",
+      "summary": "وقعت شركة العوالي مجموعة مذكرات تعاون في باريس مع شركة الذكاء الكمومي العالمي (GQI)، ومنصة ومضات للتدريب والتطوير، وشركة ستيبس ووتش (Stepswatch) لإدخال حلول الذكاء الكمومي والاصطناعي وتأهيل الكوادر بما يخدم رؤية السعودية 2030.",
+      "url": "https://www.alawaly.sa/ar/news/alawaly-real-estate-signs-strategic-agreements-in-quantum-intelligence-al-and-talent-development-at-global-investment-summit-in-paris"
+    },
+    {
+      "id": "gstones-partnership",
+      "date": "2026-08-28",
+      "title": "العوالي العقارية توقّع شراكة استراتيجية مع GStones Global لتسويق مشاريعها في الأسواق الدولية",
+      "summary": "شراكة استراتيجية لنقل مشاريع العوالي إلى جمهور استثماري عالمي في أسواق المملكة المتحدة، دبي، سلطنة عُمان، وإسبانيا.",
+      "url": "https://www.alawaly.sa/ar/news/alawaly-realestate-signs-strategic-partnership-with-gstones-global-to-market-its-projects-internationally"
+    },
+    {
+      "id": "london-exhibition",
+      "date": "2026-08-04",
+      "title": "شراكات استراتيجية وزيارات رسمية في جناح العوالي العقارية في المعرض السعودي البريطاني للعقار بلندن",
+      "summary": "زيارات رفيعة المستوى من وزراء ومسؤولين، وتحقيق مبيعات وحجوزات عقارية تجاوزت 687.2 مليون ريال سعودي (136 مليون جنيه إسترليني).",
+      "url": "https://www.alawaly.sa/ar/news/strategic-partnerships-and-official-visits-at-the-awaly-real-estate-pavilion-at-the-saudi-british-real-estate-exhibition"
+    },
+    {
+      "id": "al-nassr-almeria-sponsor",
+      "date": "2026-08-04",
+      "title": "العوالي العقارية راعٍ رسمي لمواجهة النصر السعودي وألميريا الإسباني في لشبونة",
+      "summary": "رعاية رسمية للمباراة التي جمعت نادي النصر السعودي وألميريا الإسباني في لشبونة بالبرتغال لتعزيز الحضور الرياضي والمجتمعي وجودة الحياة.",
+      "url": "https://www.alawaly.sa/ar/news/alawaly-real-estate-is-an-official-sponsor-to-face-the-saudi-victory-and-the-spanish-almeria-in-lisb"
+    },
+    {
+      "id": "london-market-open",
+      "date": "2026-08-03",
+      "title": "من لندن.. «العوالي العقارية» تفتح آفاق الاستثمار البريطاني في السوق السعودية",
+      "summary": "مشاركة استراتيجية ضمن خمسة مطورين سعوديين فقط لتعريف المستثمر البريطاني والدولي بالفرص العقارية الواعدة وتنظيم تملك غير السعوديين في المملكة.",
+      "url": "https://www.alawaly.sa/ar/news/from-london-al-awaly-real-estate-opens-up-new-horizons-for-british-investment-in-the-saudi-market"
+    }
+  ]
+}

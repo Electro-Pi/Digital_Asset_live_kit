@@ -1,0 +1,22 @@
+[project]
+name = "alawaly-voice-agent"
+version = "0.2.0"
+description = "المساعد الذكي لشركة العوالي العقارية: Arabic real estate voice assistant on LiveKit Agents."
+requires-python = ">=3.12"
+dependencies = [
+    "livekit-agents[openai,silero,turn-detector]==1.8.3",
+    "livekit-plugins-noise-cancellation==0.3.2",
+    "aiohttp>=3.10",
+    "httpx>=0.28.1",
+    "loguru>=0.7.3",
+    "numpy>=1.26",
+    "openai>=2.15.0",
+    "python-dotenv>=1.2.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pyflakes>=3",
+]

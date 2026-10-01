@@ -1,0 +1,23 @@
+[Unit]
+Description=CODA Next.js frontend (coda-next playground)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-frontend/coda-next
+Environment=NODE_ENV=production
+# Loads LIVEKIT_* (token route, runtime) and PORT. NEXT_PUBLIC_LIVEKIT_URL is
+# baked in at build time, so rebuild after changing it.
+EnvironmentFile=/home/Coda-digital-asset/Digital_Asset_live_kit/frontend/coda-frontend/coda-next/.env.local
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -p 8090
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=coda-next-frontend
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,40 @@
+{
+  "current": {
+    "mean": 0.9787,
+    "checks": 1.0,
+    "voice": 0.9987,
+    "judge": 0.93,
+    "per_scenario": {
+      "hungry_open": 1.0,
+      "discover_then_recommend": 1.0,
+      "recommend_with_taste": 1.0,
+      "answers_all_at_once": 0.88,
+      "you_choose": 1.0,
+      "meal_deal_pitch": 0.97,
+      "meal_deal_accept": 1.0,
+      "meal_deal_decline": 0.97,
+      "group_dinner": 1.0,
+      "budget_lunch": 1.0,
+      "price_objection": 0.97,
+      "in_a_hurry": 1.0,
+      "delivery_question": 1.0,
+      "think_about_it": 1.0,
+      "complaint": 1.0,
+      "just_browsing": 1.0,
+      "pair_after_add": 1.0,
+      "pair_declined_close": 1.0,
+      "healthy_work_lunch": 1.0,
+      "dessert_yes_yes": 1.0,
+      "is_it_good": 0.97,
+      "done_now": 0.85,
+      "family_gathering": 0.8967,
+      "calories_side_question": 1.0,
+      "two_noes_stop": 0.97
+    },
+    "failures": {
+      "family_gathering": [
+        "turn 3: short enough for voice (36 words, limit 32)"
+      ]
+    }
+  }
+}
