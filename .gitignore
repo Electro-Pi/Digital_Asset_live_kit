@@ -216,3 +216,10 @@ __marimo__/
 .bashrc
 .profile
 .cursor/
+
+# Other system/home dotfiles
+.lesshst
+.ssh/
+.sudo_as_admin_successful
+.wget-hsts
+.gitmodules
