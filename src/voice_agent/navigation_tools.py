@@ -39,10 +39,11 @@ class NavigationTools:
                   - "project" (صفحة مشروع معين: /ar/project/<slug>)
                   - "map" (الخريطة التفاعلية: https://alawaly-project.vercel.app/)
                   - "contact" (العناية بالعملاء: /ar/contact)
-                  - "communication_channels" (قنوات التواصل: /ar/contact#Communication-channels)
-                  - "mobile_app" (تطبيق العوالي: /ar/contact#App)
-                  - "news" (المركز الإعلامي: /ar/news)
-                  - "register_interest" (سجل اهتمامك: #contact-section)
+                  - "news" (المركز الإعلامي: /ar/news/latest)
+                  - "privacy" (سياسة الخصوصية: /ar/legal/privacy-policy)
+                  - "terms" (الشروط والأحكام: /ar/legal/terms-conditions)
+                  - "disclaimers" (إخلاء المسؤولية: /ar/legal/disclaimers)
+                  - "register_interest" (يفتح فورم سجل اهتمامك داخل القائمة الجانبية، بدون انتقال لصفحة)
             project_name: With page "project": the project name or slug (e.g. "آكام هومز", "العوالي تاور", "التيسير", "المروة", "بولاريس").
             section: Optional section hash (e.g. "contact-section", "Communication-channels", "App").
         """
@@ -57,14 +58,14 @@ class NavigationTools:
             search_term = project_name or raw_page
             target_proj = catalog.get_project(search_term)
             if target_proj:
-                path = target_proj["page_path"]
-                title = target_proj["name"]
-                key = "project"
+                path = "/ar/projects"
+                title = "مشاريعنا"
+                key = "projects"
 
         if not path and project_name:
             article = catalog.get_news_item(project_name)
             if article:
-                path = article["url"]
+                path = "/ar/news/latest"
                 title = article["title"]
                 key = "news"
 
@@ -75,34 +76,40 @@ class NavigationTools:
             else:
                 target_proj = catalog.get_project(raw_page)
                 if target_proj:
-                    path = target_proj["page_path"]
-                    title = target_proj["name"]
-                    key = "project"
+                    path = "/ar/projects"
+                    title = "مشاريعنا"
+                    key = "projects"
                 else:
                     article = catalog.get_news_item(raw_page)
                     if article:
-                        path = article["url"]
+                        path = "/ar/news/latest"
                         title = article["title"]
                         key = "news"
                     else:
                         path = "/ar"
                         title = "الرئيسية"
 
-        if path.startswith("#"):
-            base = (self.state.current_page or "/ar/projects").split("#")[0]
-            path = f"{base}{path}"
+        if path == "sidebar:interest" or key in ("register_interest", "سجل اهتمامك"):
+            outcome = self.screen(await self.ui.fill_contact())
+            logger.info("Opened sidebar interest form ok={}", outcome.ok)
+            return {
+                "ok": outcome.ok,
+                "page": "register_interest",
+                "form": "sidebar",
+                "title": "سجل اهتمامك",
+                "say_to_user_ar": "فتحت لك نموذج سجل اهتمامك في القائمة الجانبية.",
+            }
 
-        if section and not path.endswith(f"#{section}"):
+        if target_proj:
+            path = "/ar/projects"
+            title = "مشاريعنا"
+            key = "projects"
+
+        if section and path.startswith("/") and not path.endswith(f"#{section}"):
             sep = "" if section.startswith("#") else "#"
             path = f"{path}{sep}{section}"
 
-        # Trigger screen navigation over LiveKit RPC
-        if target_proj:
-            outcome = self.screen(
-                await self.ui.show_project(target_proj["id"], path, target_proj["name"])
-            )
-        else:
-            outcome = self.screen(await self.ui.navigate(path))
+        outcome = self.screen(await self.ui.navigate(path))
         self.state.current_page = path
         if target_proj:
             self.state.current_project_id = target_proj["id"]
@@ -131,4 +138,66 @@ class NavigationTools:
             "title": title,
             "project": target_proj["name"] if target_proj else None,
             "about_guidance": about_company_prompt,
+        }
+
+    @function_tool()
+    async def fill_interest_form(
+        self,
+        context: RunContext,
+        name: str = "",
+        phone: str = "",
+        identity_type: str = "",
+        email: str = "",
+        property_type: str = "",
+        project_type: str = "",
+        location: str = "",
+        budget: str = "",
+        submit: bool = False,
+    ) -> dict[str, Any]:
+        """Open «سجل اهتمامك» in the sidebar and fill the fields the caller said.
+
+        The form stays in the sidebar. It does not navigate to another page.
+        Call this as soon as the caller gives any field, and again as more fields arrive.
+        Set submit=True only after the caller explicitly asks to send the form.
+
+        Args:
+            name: الاسم الكامل.
+            phone: رقم الجوال.
+            identity_type: نوع الهوية.
+            email: البريد الإلكتروني.
+            property_type: نوع العقار الذي يبحث عنه.
+            project_type: نوع المشروع الذي يناسبه.
+            location: أين يبحث عن العقار.
+            budget: ميزانية الشراء.
+            submit: True only when the caller says to send the form.
+        """
+        del context
+        outcome = self.screen(
+            await self.ui.fill_contact(
+                submit=submit,
+                name=name,
+                phone=phone,
+                identityType=identity_type,
+                email=email,
+                propertyType=property_type,
+                projectType=project_type,
+                location=location,
+                budget=budget,
+            )
+        )
+        logger.info("Sidebar interest form filled ok={} submit={}", outcome.ok, submit)
+        return {
+            "ok": outcome.ok,
+            "form": "sidebar",
+            "submitted": bool(submit),
+            "filled": {
+                "name": name,
+                "phone": phone,
+                "identityType": identity_type,
+                "email": email,
+                "propertyType": property_type,
+                "projectType": project_type,
+                "location": location,
+                "budget": budget,
+            },
         }

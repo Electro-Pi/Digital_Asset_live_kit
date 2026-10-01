@@ -1,9 +1,4 @@
-"""Arabic text folding and word matching shared by the catalog and its tools.
-
-Kept apart from ``src.catalog`` so offline scripts (``scripts/annotate_catalog.py``)
-and the search engine (``src.search``) can use the same folding without loading
-the catalog.
-"""
+"""Arabic text folding and word matching shared by the catalog and its tools."""
 
 from __future__ import annotations
 

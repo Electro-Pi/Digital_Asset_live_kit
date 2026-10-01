@@ -32,19 +32,17 @@ Every payload is a JSON object. Every response is a JSON string.
    Returns:  { "ok": true, "projectId": "akam-homes", "url": "..." }
 
 3. alawaly.fillContact
-   Receives: only the fields the caller actually said. Any key may be omitted.
-              { "name": "أحمد محمد",
+   Opens the sidebar form «سجل اهتمامك» and fills only the fields that were said.
+              { "open": true,
+                "name": "أحمد محمد",
                 "phone": "0551234567",
                 "identityType": "هوية وطنية",
-                "purchasePlan": "تمويل عقاري",
-                "employer": "أرامكو",
                 "email": "ahmad@example.com",
-                "sakaniEligible": true,
-                "monthlyIncome": "15000",
-                "projectId": "akam-homes",
-                "spaceType": "مكتب",
-                "companySize": "10-50",
-                "purpose": "شراء" }
+                "propertyType": "سكني",
+                "projectType": "شقق",
+                "location": "جدة",
+                "budget": "مليون ريال",
+                "submit": false }
    Returns:  { "ok": true }
 
 4. alawaly.getUiState
@@ -78,15 +76,11 @@ _CONTACT_FIELDS = (
     "name",
     "phone",
     "identityType",
-    "purchasePlan",
-    "employer",
     "email",
-    "sakaniEligible",
-    "monthlyIncome",
-    "projectId",
-    "spaceType",
-    "companySize",
-    "purpose",
+    "propertyType",
+    "projectType",
+    "location",
+    "budget",
 )
 
 DEFAULT_RPC_TIMEOUT = CONFIG.ui.rpc_timeout
@@ -166,7 +160,7 @@ class UIBridge:
         fallback: Optional[str] = None
         for participant in remotes:
             attrs = getattr(participant, "attributes", None) or {}
-            if any(str(k).startswith("alawaly_") or str(k).startswith("luqma_") for k in dict(attrs)):
+            if any(str(k).startswith("alawaly_") for k in dict(attrs)):
                 return participant.identity
             if fallback is None:
                 fallback = participant.identity
@@ -277,9 +271,17 @@ class UIBridge:
             {"projectId": project_id, "url": absolute_url(path), "name": name},
         )
 
-    async def fill_contact(self, **fields: Any) -> UIResult:
-        """``alawaly.fillContact`` receives only the interest-form fields that were given."""
-        payload = {key: value for key, value in fields.items() if key in _CONTACT_FIELDS and value not in (None, "")}
+    async def fill_contact(self, *, submit: bool = False, **fields: Any) -> UIResult:
+        """Open the sidebar interest form and fill the fields the caller gave.
+
+        ``submit`` is sent only when the caller asked to send the form.
+        """
+        payload: dict[str, Any] = {"open": True}
+        for key, value in fields.items():
+            if key in _CONTACT_FIELDS and value not in (None, ""):
+                payload[key] = value
+        if submit:
+            payload["submit"] = True
         return await self.call(METHOD_FILL_CONTACT, payload)
 
     async def get_ui_state(self) -> UIResult:

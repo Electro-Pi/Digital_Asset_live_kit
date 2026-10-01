@@ -22,14 +22,24 @@ logger.remove()
 logger.add(sys.stderr, level=CONFIG.log_level, backtrace=True, diagnose=False)
 
 
+class _DropClosedSignal(logging.Filter):
+    """The Rust client logs this after the caller hangs up and the signal socket is already gone."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "no stream available" not in record.getMessage()
+
+
+logging.getLogger("livekit").addFilter(_DropClosedSignal())
+
+
 from livekit import agents, rtc  # noqa: E402
 from livekit.agents import (  # noqa: E402
     AgentServer,
     AgentSession,
     AgentStateChangedEvent,
+    ConversationItemAddedEvent,
     ErrorEvent,
     FunctionToolsExecutedEvent,
-    MetricsCollectedEvent,
     UserInputTranscribedEvent,
     inference,
     room_io,
@@ -144,6 +154,46 @@ def build_session(vad: Any, tts: Any) -> AgentSession:
     )
 
 
+REJOIN_GRACE_SECONDS = 20
+
+
+def _hold_session_after_leave(ctx: agents.JobContext, session: AgentSession, caller_identity: str | None) -> None:
+    """If the caller drops, keep the room for 20 seconds so they can rejoin."""
+    hold: dict[str, asyncio.Task[None] | None] = {"task": None}
+
+    async def _close_if_still_gone() -> None:
+        logger.info("Caller left; waiting {}s before closing the session", REJOIN_GRACE_SECONDS)
+        try:
+            await asyncio.sleep(REJOIN_GRACE_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("Caller rejoined; keeping the session")
+            return
+        if ctx.room.remote_participants:
+            logger.info("Caller is back in the room; keeping the session")
+            return
+        logger.info("Caller did not return within {}s; closing the session", REJOIN_GRACE_SECONDS)
+        session.shutdown(drain=False)
+
+    def _on_disconnected(participant: rtc.RemoteParticipant) -> None:
+        if caller_identity and participant.identity != caller_identity:
+            return
+        task = hold["task"]
+        if task is not None and not task.done():
+            return
+        hold["task"] = asyncio.create_task(_close_if_still_gone())
+
+    def _on_connected(participant: rtc.RemoteParticipant) -> None:
+        if caller_identity and participant.identity != caller_identity:
+            return
+        task = hold["task"]
+        if task is not None and not task.done():
+            task.cancel()
+        hold["task"] = None
+
+    ctx.room.on("participant_disconnected", _on_disconnected)
+    ctx.room.on("participant_connected", _on_connected)
+
+
 def _noise_cancellation_for(params: Any) -> Any:
     participant = getattr(params, "participant", None)
     telephony = getattr(participant, "kind", None) == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
@@ -167,23 +217,26 @@ def _attach_logging(session: AgentSession, shop: Shop) -> None:
     def _on_error(event: ErrorEvent) -> None:
         logger.error("Session error source={} error={}", type(event.source).__name__, event.error)
 
-    @session.on("metrics_collected")
-    def _on_metrics(event: MetricsCollectedEvent) -> None:
-        m = event.metrics
-        kind = getattr(m, "type", None)
+    @session.on("conversation_item_added")
+    def _on_conversation_item(event: ConversationItemAddedEvent) -> None:
+        """Per-turn latency now lives on the chat message, not metrics_collected."""
+        item = event.item
+        metrics = getattr(item, "metrics", None) or {}
+        if not isinstance(metrics, dict):
+            return
+        role = getattr(item, "role", None)
         try:
-            if kind == "eou_metrics":
-                latency.note_eou(delay=getattr(m, "end_of_utterance_delay", None), transcription=getattr(m, "transcription_delay", None))
-            elif kind == "stt_metrics":
-                latency.note_stt(getattr(m, "duration", None))
-            elif kind == "llm_metrics":
-                latency.note_ttft(getattr(m, "ttft", None))
-            elif kind == "tts_metrics":
-                latency.note_tts(ttfb=getattr(m, "ttfb", None), chars=getattr(m, "characters_count", 0) or 0)
+            if role == "user":
+                latency.note_eou(
+                    delay=metrics.get("end_of_turn_delay"),
+                    transcription=metrics.get("transcription_delay"),
+                )
+            elif role == "assistant":
+                latency.note_ttft(metrics.get("llm_node_ttft"))
+                text = getattr(item, "text_content", None) or ""
+                latency.note_tts(ttfb=metrics.get("tts_node_ttfb"), chars=len(text))
         except Exception as exc:  # noqa: BLE001 - diagnostics must not end a call
-            logger.warning("Latency bookkeeping failed kind={} error={}", kind, exc)
-        if kind != "vad_metrics":
-            logger.debug("Metrics {}", m)
+            logger.warning("Latency bookkeeping failed role={} error={}", role, exc)
 
     @session.on("agent_state_changed")
     def _on_state(event: AgentStateChangedEvent) -> None:
@@ -251,11 +304,14 @@ async def my_agent(ctx: agents.JobContext) -> None:
     await session.start(
         room=ctx.room,
         agent=assistant,
-        room_options=room_io.RoomOptions(audio_input=room_io.AudioInputOptions(noise_cancellation=_noise_cancellation_for)),
+        room_options=room_io.RoomOptions(
+            audio_input=room_io.AudioInputOptions(noise_cancellation=_noise_cancellation_for),
+            close_on_disconnect=False,
+        ),
     )
-    # The same opening on every call, word for word; it joins the chat history
-    # so the model knows it has greeted him.
-    session.say(flow_say.GREETING_SAY_AR)
+    # Speak before any other work. The first sentence is short so TTS starts immediately.
+    session.say(flow_say.GREETING_SAY_AR, allow_interruptions=False)
+    _hold_session_after_leave(ctx, session, getattr(participant, "identity", None))
 
 
 if __name__ == "__main__":

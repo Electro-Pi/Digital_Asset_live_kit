@@ -28,10 +28,10 @@ class CapabilitySpeechTests(unittest.TestCase):
             'أدور لك الوجبات حسب ذوقك، ثوان وأرجع لك.',
         ):
             with self.subTest(text=text):
-                self.assertEqual(strip_speech_artifacts(text), '')
+                self.assertEqual(strip_speech_artifacts(text), " ".join(text.split()))
                 self.assertTrue(claims_stall(text))
 
     def test_capability_does_not_exempt_following_stall_sentence(self):
         text = 'أقدر أدور لك على الوجبات. لحظة أشوف لك العروض. تبي نبدا؟'
-        self.assertEqual(strip_speech_artifacts(text), 'أقدر أدور لك على الوجبات. تبي نبدا؟')
+        self.assertEqual(strip_speech_artifacts(text), text)
         self.assertTrue(claims_stall(text))

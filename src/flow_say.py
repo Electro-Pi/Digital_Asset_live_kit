@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-# Spoken on call start: greeting + company introduction and brief.
+# Spoken the moment the call connects. First sentence is short so audio starts at once.
 GREETING_SAY_AR = (
-    "مَرْحَبَاً بِكَ فِي العَوَالِي العَقَارِيَّة، أَنَا مُسَاعِدُكَ الذَّكِي. "
-    "شَرِكَةُ العَوَالِي العَقَارِيَّة رَائِدَةٌ فِي التَّطْوِيرِ العَقَارِيِّ فِي المَمْلَكَةِ مُنْذُ عَامِ 2011، "
-    "نُقَدِّمُ مَشَارِيعَ سَكَنِيَّةً وَتِجَارِيَّةً نَوْعِيَّةً فِي جُدَّةَ وَالرِّيَاضِ وَعِدَّةِ مُدُن. "
-    "كَيْفَ أَقْدِرُ أَخْدِمَك اليَوْم؟"
+    "مرحباً بك في العوالي العقارية، أنا مساعدك الذكي. "
+    "شركة العوالي العقارية رائدة في التطوير العقاري في المملكة منذ عام 2011، "
+    "وتقدم مشاريع سكنية وتجارية في جدة والرياض وعدة مدن. "
+    "كيف أقدر أخدمك اليوم؟"
 )
 
 # Detailed overview spoken when navigating to or discussing About Us

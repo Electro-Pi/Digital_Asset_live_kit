@@ -1,0 +1,68 @@
+---
+pid: 35697
+cwd: /home/bassem
+last_command: mkdir coda-jahez-agent-backend
+last_exit_code: 0
+---
+bassem@srv1928909:~$ git fetch origin
+fatal: not a git repository (or any of the parent directories): .git
+bassem@srv1928909:~$ git init
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: is subject to change. To configure the initial branch name to use in all
+hint: of your new repositories, which will suppress this warning, call:
+hint: 
+hint:   git config --global init.defaultBranch <name>
+hint: 
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint: 
+hint:   git branch -m <name>
+Initialized empty Git repository in /home/bassem/.git/
+bassem@srv1928909:~$ git remote add origin
+usage: git remote add [<options>] <name> <url>
+
+    -f, --[no-]fetch      fetch the remote branches
+    --[no-]tags           import all tags and associated objects when fetching
+                          or do not fetch any tag at all (--no-tags)
+    -t, --[no-]track <branch>
+                          branch(es) to track
+    -m, --[no-]master <branch>
+                          master branch
+    --[no-]mirror[=(push|fetch)]
+                          set up remote as a mirror to push to or fetch from
+
+bassem@srv1928909:~$ git remote add origin https://github.com/Electro-Pi/Digital_Asset_live_kit.git
+bassem@srv1928909:~$ git branch -M jahez-coda-voxcpm
+bassem@srv1928909:~$ git fetch origin
+remote: Enumerating objects: 1223, done.
+remote: Counting objects: 100% (134/134), done.
+remote: Compressing objects: 100% (113/113), done.
+remote: Total 1223 (delta 17), reused 95 (delta 10), pack-reused 1089 (from 1)
+Receiving objects: 100% (1223/1223), 66.06 MiB | 20.08 MiB/s, done.
+Resolving deltas: 100% (338/338), done.
+From https://github.com/Electro-Pi/Digital_Asset_live_kit
+ * [new branch]      Coda-Moss-TTS     -> origin/Coda-Moss-TTS
+ * [new branch]      Coda-voxcpm-TTS   -> origin/Coda-voxcpm-TTS
+ * [new branch]      MOSS-TTS-livekit  -> origin/MOSS-TTS-livekit
+ * [new branch]      Medical-Coda      -> origin/Medical-Coda
+ * [new branch]      gemma-4           -> origin/gemma-4
+ * [new branch]      jahez-coda-voxcpm -> origin/jahez-coda-voxcpm
+ * [new branch]      main              -> origin/main
+ * [new branch]      navigator-coda    -> origin/navigator-coda
+ * [new branch]      restaurant_agent  -> origin/restaurant_agent
+ * [new branch]      resturant-avatar  -> origin/resturant-avatar
+ * [new branch]      resturant-ron     -> origin/resturant-ron
+ * [new branch]      sala-coda         -> origin/sala-coda
+ * [new branch]      sera-with-mcp     -> origin/sera-with-mcp
+ * [new branch]      sera_agent        -> origin/sera_agent
+bassem@srv1928909:~$ git checkout jahez-coda-voxcpm
+branch 'jahez-coda-voxcpm' set up to track 'origin/jahez-coda-voxcpm'.
+Already on 'jahez-coda-voxcpm'
+bassem@srv1928909:~$ ls
+ Dockerfile                README.md             check.sh       logs               "resturant's-catalog"   src       uv.lock
+ FRONTEND_INTEGRATION.md   RESTART_SERVICES.md   deploy.sh      moss_tts_local.md   script.sh              systemd
+ Jenkinsfile               agent.py              livekit.toml   pyproject.toml      speech.wav             tests
+bassem@srv1928909:~$ mkdir coda-jahez-agent-backend
+bassem@srv1928909:~$ shopt -s dotglob
+mv * coda-jahez-agent-backend/
+shopt -u dotglob

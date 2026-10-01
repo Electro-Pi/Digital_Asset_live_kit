@@ -164,11 +164,6 @@ class Endpoints:
 class UISettings:
     rpc_timeout: float = 4.0
     rpc_retry_timeout: float = 3.0
-    # When the browser does not answer, report the failure (default). Demo
-    # setups without a frontend can set UI_MOCK_ON_FAILURE=1: results are then
-    # marked ``"mocked": true`` so neither the model nor the logs mistake them
-    # for real screen changes.
-    mock_on_failure: bool = False
 
 
 @dataclass(frozen=True)
@@ -254,7 +249,6 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
         ui=UISettings(
             rpc_timeout=_float(env, "UI_RPC_TIMEOUT", d_ui.rpc_timeout),
             rpc_retry_timeout=_float(env, "UI_RPC_RETRY_TIMEOUT", d_ui.rpc_retry_timeout),
-            mock_on_failure=_bool(env, "UI_MOCK_ON_FAILURE", d_ui.mock_on_failure),
         ),
     )
 

@@ -180,18 +180,8 @@ class HarnessNodes:
         return self.shop.ui
 
     def screen(self, outcome: UIResult) -> UIResult:
-        """The browser's answer, or a clearly marked mock when configured.
-
-        Failures are reported as failures. Only UI_MOCK_ON_FAILURE=1 (demo
-        setups with no frontend) turns one into success, and then the data
-        says ``"mocked": true`` so nobody mistakes it for a real screen change.
-        """
-        if outcome.ok or not CONFIG.ui.mock_on_failure:
-            return outcome
-        promoted = self.shop.ledger.promote_last_failure()
-        logger.warning("UI call failed reason={}; UI_MOCK_ON_FAILURE is on, treating as done effect={}",
-                       outcome.reason, promoted.kind if promoted else None)
-        return UIResult(ok=True, reason="mocked", data={**(outcome.data or {}), "mocked": True})
+        """The browser's real RPC result. A failed call stays a failure."""
+        return outcome
 
     @staticmethod
     def no_interruptions(context: Any) -> None:

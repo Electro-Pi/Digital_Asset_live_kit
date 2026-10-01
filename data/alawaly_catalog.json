@@ -44,8 +44,8 @@
     "unified_sales_number": "920016488",
     "unified_inquiries_number": "8003050004",
     "email": "info@alawaly.sa",
-    "whatsapp": "+966920016488",
-    "whatsapp_url": "https://wa.me/966920016488",
+    "whatsapp": "+966122603800",
+    "whatsapp_url": "https://wa.me/966122603800",
     "app_store_url": "https://apps.apple.com/us/app/alawaly-%D8%A7%D9%84%D8%B9%D9%88%D8%A7%D9%84%D9%8A/id6741167067",
     "google_play_url": "https://play.google.com/store/apps/details?id=com.bim.alawaly&pcampaignid=web_share",
     "social_media": {
@@ -88,35 +88,36 @@
       "external": true,
       "aliases": ["الخريطة التفاعلية", "الخريطة", "الخريطه التفاعليه", "موقع المشاريع على الخريطة", "map"]
     },
-    "investor_relations": {
-      "title": "علاقات المساهمين",
-      "path": "/ar",
-      "aliases": ["علاقات المساهمين", "المساهمين", "المستثمرين", "investor relations"]
-    },
     "contact": {
       "title": "العناية بالعملاء",
       "path": "/ar/contact",
       "aliases": ["العناية بالعملاء", "خدمة العملاء", "تواصل معنا", "معلومات التواصل", "اتصل بنا", "contact"]
     },
-    "communication_channels": {
-      "title": "قنوات التواصل",
-      "path": "/ar/contact#Communication-channels",
-      "aliases": ["قنوات التواصل", "رقم التواصل", "الواتساب", "الاتصال"]
-    },
-    "mobile_app": {
-      "title": "تطبيق العوالي",
-      "path": "/ar/contact#App",
-      "aliases": ["تطبيق العوالي", "التطبيق", "تحميل التطبيق", "app"]
-    },
     "news": {
       "title": "المركز الإعلامي",
-      "path": "/ar/news",
+      "path": "/ar/news/latest",
       "aliases": ["المركز الإعلامي", "المركز الاعلامي", "الأخبار", "الاخبار", "أحدث الأخبار", "news"]
+    },
+    "privacy": {
+      "title": "سياسة الخصوصية",
+      "path": "/ar/legal/privacy-policy",
+      "aliases": ["سياسة الخصوصية", "الخصوصية", "privacy"]
+    },
+    "terms": {
+      "title": "الشروط والأحكام",
+      "path": "/ar/legal/terms-conditions",
+      "aliases": ["الشروط والأحكام", "الشروط والاحكام", "terms"]
+    },
+    "disclaimers": {
+      "title": "إخلاء المسؤولية",
+      "path": "/ar/legal/disclaimers",
+      "aliases": ["إخلاء المسؤولية", "اخلاء المسؤوليه", "disclaimer", "disclaimers"]
     },
     "register_interest": {
       "title": "سجل اهتمامك",
-      "path": "#contact-section",
-      "aliases": ["سجل اهتمامك", "تسجيل الاهتمام", "حجز", "شراء", "طلب تواصل"]
+      "path": "sidebar:interest",
+      "sidebar_form": true,
+      "aliases": ["سجل اهتمامك", "تسجيل الاهتمام", "فورم الاهتمام", "نموذج الاهتمام", "سجل اهتمام"]
     }
   },
   "projects": [

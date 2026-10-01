@@ -24,10 +24,10 @@ The assistant runs as a LiveKit agent worker connected to the room. Communicatio
 | :--- | :--- | :--- |
 | `alawaly.navigate` | `{ "url": "https://www.alawaly.sa/ar/projects" }` | `{ "ok": true, "url": "..." }` |
 | `alawaly.showProject` | `{ "projectId": "akam-homes", "url": "https://www.alawaly.sa/ar/project/akam-homes", "name": "آكام هومز" }` | `{ "ok": true, "projectId": "akam-homes", "url": "..." }` |
-| `alawaly.fillContact` | interest-form fields, any of them optional | `{ "ok": true }` |
+| `alawaly.fillContact` | `{ "open": true, "name": "أحمد محمد", "phone": "0551234567", "identityType": "هوية وطنية", "email": "ahmad@example.com", "propertyType": "سكني", "projectType": "شقق", "location": "جدة", "budget": "مليون ريال", "submit": false }` | `{ "ok": true }` |
 | `alawaly.getUiState` | `{}` | `{ "ok": true, "url": "...", "projectId": "akam-homes" }` |
 
-`alawaly.fillContact` keys, only the ones the caller said: `name`, `phone`, `identityType`, `purchasePlan`, `employer`, `email`, `sakaniEligible`, `monthlyIncome`, `projectId`. Office projects may also send `spaceType`, `companySize`, `purpose`.
+`alawaly.fillContact` opens the sidebar form «سجل اهتمامك» on the same menu. Keys, only the ones the caller said: `name`, `phone`, `identityType`, `email`, `propertyType`, `projectType`, `location`, `budget`. `open` is always `true`. `submit` is `true` only when the caller asks to send.
 
 ```tsx
 function ok(data: Record<string, unknown> = {}) {
@@ -85,20 +85,16 @@ export function setupAlawalyVoiceBridge(room: any, router: any) {
 | **الرئيسية (Home)** | `/ar` | Official homepage of Alawaly |
 | **عن العوالي (About Us)** | `/ar/about` | History since 2011, CEO Sulaiman Al-Rumaih, Vision 2030, +16B SAR portfolio |
 | **مشاريعنا (Projects)** | `/ar/projects` | Full projects gallery with filters |
-| **آكام هومز** | `/ar/project/akam-homes` | Residential apartments in North Jeddah (750 units, 206.84m²) |
-| **العوالي هومز – التيسير** | `/ar/project/alawaly-homes-al-taysir-jeddah` | 100% Ready residential apartments (227m²), Real Estate Asia Award winner |
-| **آكام جدة هايتس** | `/ar/project/akam-jeddah-heights` | 152 luxury villas with NHC partnership in Al-Hadaba |
-| **العوالي رايز** | `/ar/project/alawaly-rise` | Commercial tower in Riyadh (106,000m² on King Fahd / Olaya) |
-| **بولاريس** | `/ar/project/polaris` | Luxury residences & penthouses with private pool in North Riyadh |
-| **مركز العوالي للأعمال** | `/ar/project/alawaly-business-center` | Salmanian modern offices in Al-Sahafa with Mada partnership |
-| **العوالي هومز – المروة** | `/ar/project/alawaly-homes-al-marwa` | 100% Ready residential in Al-Marwa, Jeddah with roof terrace |
-| **العوالي تاور** | `/ar/project/alawaly-tower` | 45-storey iconic Salmanian tower in Riyadh with 7 smart parking towers |
-| **الخريطة التفاعلية** | `https://alawaly-project.vercel.app/` | 3D Interactive Map |
-| **العناية بالعملاء** | `/ar/contact` | Customer care, 920016488, 8003050004, WhatsApp |
-| **قنوات التواصل** | `/ar/contact#Communication-channels` | Phone & WhatsApp channels |
-| **تطبيق العوالي** | `/ar/contact#App` | App Store & Google Play links |
-| **المركز الإعلامي** | `/ar/news` | Latest company news, Paris summit, London exhibition |
-| **سجل اهتمامك** | `#contact-section` | Lead capture & booking form |
+| **الخريطة التفاعلية** | `https://alawaly-project.vercel.app/` | Interactive map (different origin) |
+| **العناية بالعملاء** | `/ar/contact` | Customer care: sales 920016488, inquiries 8003050004, WhatsApp +966122603800, info@alawaly.sa |
+| **المركز الإعلامي** | `/ar/news/latest` | Media center. There is no `/ar/news` page. |
+| **سياسة الخصوصية** | `/ar/legal/privacy-policy` | Privacy policy |
+| **الشروط والأحكام** | `/ar/legal/terms-conditions` | Terms and conditions |
+| **إخلاء المسؤولية** | `/ar/legal/disclaimers` | Disclaimers |
+| **سجل اهتمامك** | sidebar form | Opens inside the same three-dot menu. Filled by `alawaly.fillContact`. |
+| **English home** | `/en` | English homepage |
+
+There are no separate project detail URLs in the current site map. Asking to see a project opens `/ar/projects`. Menu labels without their own page: علاقات المساهمين, انضم إلينا.
 
 ---
 

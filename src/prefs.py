@@ -56,10 +56,13 @@ def parse_prefs_from_metadata(metadata: Optional[str]) -> Optional[dict[str, Any
     shape. A bad payload must not take the session down, so every failure here
     degrades to "no preferences" and is logged.
     """
-    if not metadata:
+    raw = str(metadata).strip() if metadata is not None else ""
+    # The Alawaly page joins with no onboarding JSON. Blank or non-JSON
+    # metadata is the normal case, not a bad payload.
+    if not raw or raw[0] not in "{[":
         return None
     try:
-        meta = json.loads(metadata)
+        meta = json.loads(raw)
     except (ValueError, TypeError) as e:
         logger.warning("Participant metadata is not valid JSON: {}", e)
         return None
