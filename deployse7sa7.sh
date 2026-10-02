@@ -18,3 +18,4 @@ echo "⏳ Restarting service..."
 sudo /usr/bin/systemctl restart alawaly-agent.service
 
 echo "✅ Deployment complete"
+#test
