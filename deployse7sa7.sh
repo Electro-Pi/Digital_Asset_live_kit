@@ -2,7 +2,7 @@
 set -e
 
 APP_DIR="/home/ubuntu/projects/Digital_Asset_live_kit"
-
+export PATH="/home/ubuntu/.local/bin:$PATH"
 cd "$APP_DIR"
 
 echo "⏳ Pulling latest code..."
