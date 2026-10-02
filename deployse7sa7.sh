@@ -7,7 +7,7 @@ cd "$APP_DIR"
 
 echo "⏳ Pulling latest code..."
 /usr/bin/git restore .
-/usr/bin/git pull origin main
+/usr/bin/git pull origin alawaly-voice-agent
 
 echo "⏳ Installing dependencies..."
 uv sync --active
