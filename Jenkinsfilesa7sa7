@@ -3,7 +3,7 @@ pipeline {
     environment {
         HOST = "187.124.20.36"
         USER = "ubuntu"
-        SCRIPT = "/home/ubuntu/projects/Digital_Asset_live_kit/deploy.sh"
+        SCRIPT = "/home/ubuntu/projects/Digital_Asset_live_kit/deployse7sa7.sh"
     }
     stages {
         stage('Deploy') {
