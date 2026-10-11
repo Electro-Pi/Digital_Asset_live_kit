@@ -3,11 +3,10 @@ from dotenv import load_dotenv
 from typing import Any, Optional
 
 import asyncio
+import json
 import os
 import time
 from loguru import logger
-
-import httpx
 
 from livekit import agents, rtc
 from livekit.agents import stt as livekit_stt
@@ -40,9 +39,9 @@ from src.plugins.custom_f5_tts_plugin import F5FastAPIPlugin
 from src.plugins.qwen_asr_streaming_stt import QwenASRStreamingSTT
 from src.plugins.cohere_asr_streaming_stt import CohereASRStreamingSTT
 from src.plugins.voxcpm_tts_plugin import VoxCPMTTSPlugin
-from src.arabic_text import SPOKEN, WRITTEN, DualFormStream, strip_tashkeel
-from src.prompts.agent_prompt import intro_for_voice, prompt_for_voice
-from src.salla_mcp import build_salla_mcp_tools, split_mcp_agent_kwargs
+from src.arabic_text import SPOKEN, WRITTEN, DualFormStream, resolve_dual_form, strip_tashkeel
+from src.prompts.sppc_prompt import INTRO as SPPC_INTRO, SYSTEM_PROMPT as SPPC_PROMPT
+from src import sppc_crm
 from src.billing import (
     billing_from_env,
     parse_participant_api_key,
@@ -51,7 +50,6 @@ from src.billing import (
 from src.voice_profile import (
     DEFAULT_FEMALE_VOICE,
     DEFAULT_MALE_VOICE,
-    parse_voice_from_metadata,
     voice_profile,
 )
 
@@ -93,7 +91,7 @@ TTS_SEED = int(os.getenv("TTS_SEED", "1234"))
 # VoxCPM2's `hoda` already speaks 21% slower than the human reference recording,
 # so the extra slow-down bought nothing and cost the artifact.
 TTS_SPEED = float(os.getenv("TTS_SPEED", "1.0"))
-TTS_SENTENCE_MIN_LEN = int(os.getenv("TTS_SENTENCE_MIN_LEN", "300"))
+TTS_SENTENCE_MIN_LEN = int(os.getenv("TTS_SENTENCE_MIN_LEN", "1"))
 
 # ─── LLM / STT backends ──────────────────────────────────────────────────────
 # Both are OpenAI-compatible routes on the gateway. The gateway authenticates
@@ -145,17 +143,52 @@ def _preview(value: Any, limit: int = 220) -> str:
     return f"{text[:limit]}..."
 
 
-class Assistant(Agent):
-    def __init__(self, instructions: str) -> None:
-        agent_kwargs: dict[str, Any] = {"instructions": instructions}
-        mcp_kwargs = split_mcp_agent_kwargs(build_salla_mcp_tools())
-        agent_kwargs.update(mcp_kwargs)
-        if mcp_kwargs:
-            logger.info(
-                "Salla MCP attached to assistant keys={}",
-                sorted(mcp_kwargs.keys()),
+def _caller_from_metadata(metadata: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Caller number + label the dialer's "My card" setting stamped on the token."""
+    if not metadata:
+        return None, None
+    try:
+        meta = json.loads(metadata)
+    except (ValueError, TypeError):
+        return None, None
+    if not isinstance(meta, dict):
+        return None, None
+    number = str(meta.get("callerNumber") or "").strip()[:32] or None
+    label = str(meta.get("callerLabel") or "").strip()[:80] or None
+    return number, label
+
+
+def _transcript_from(session: AgentSession) -> list[dict[str, Any]]:
+    """Plain-text turns for the CRM, with tashkeel and dual-form markers resolved."""
+    turns: list[dict[str, Any]] = []
+    for item in session.history.items:
+        role = getattr(item, "role", None)
+        if getattr(item, "type", None) != "message" or role not in ("user", "assistant"):
+            continue
+        text = sppc_crm.strip_model_tokens(item.text_content or "")
+        if role == "assistant":
+            text = strip_tashkeel(resolve_dual_form(text, WRITTEN))
+        text = text.strip()
+        if text:
+            turns.append(
+                {
+                    "role": role,
+                    "text": text,
+                    "at": getattr(item, "created_at", None),
+                    "interrupted": bool(getattr(item, "interrupted", False)),
+                }
             )
-        super().__init__(**agent_kwargs)
+    return turns
+
+
+class Assistant(Agent):
+    def __init__(self, instructions: str, call_id: str) -> None:
+        super().__init__(instructions=instructions)
+        # The room name doubles as the CRM call id: the dialer uploads the
+        # recording under the same id, so the CRM can join all three.
+        self.call_id = call_id
+        self.tickets: list[str] = []
+        self.ticket_serials: list[str] = []
 
     async def transcription_node(
         self,
@@ -164,8 +197,17 @@ class Assistant(Agent):
     ) -> AsyncIterable[Any]:
         """Publish the on-screen transcript without tashkeel."""
         markers = DualFormStream(WRITTEN)
+        tokens = sppc_crm.ModelTokenFilter()
         async for delta in text:
-            resolved = markers.feed(delta)
+            raw = delta if isinstance(delta, str) else str(delta)
+            cleaned = tokens.feed(raw)
+            if cleaned != raw:
+                # A leaked model token was in this delta; its timing no longer
+                # matches the text, so publish it as plain text.
+                delta = cleaned
+            if not cleaned:
+                continue
+            resolved = markers.feed(cleaned)
             if not resolved:
                 continue
             bare = strip_tashkeel(resolved)
@@ -179,7 +221,7 @@ class Assistant(Agent):
                 )
             else:
                 yield bare
-        if tail := markers.flush():
+        if tail := markers.feed(tokens.flush()) + markers.flush():
             yield strip_tashkeel(tail)
 
     def tts_node(
@@ -191,84 +233,96 @@ class Assistant(Agent):
 
         async def spoken() -> AsyncIterable[str]:
             markers = DualFormStream(SPOKEN)
+            # Leaked model tokens are never voiced, and ticket numbers are
+            # voiced by code, never by the model.
+            tokens = sppc_crm.ModelTokenFilter()
+            tickets = sppc_crm.TicketSpeechStream(self.ticket_serials)
             async for delta in text:
-                if resolved := markers.feed(delta):
-                    yield resolved
-            if tail := markers.flush():
-                yield tail
+                if resolved := markers.feed(tokens.feed(delta)):
+                    if out := tickets.feed(resolved):
+                        yield out
+            if tail := markers.feed(tokens.flush()) + markers.flush():
+                if out := tickets.feed(tail):
+                    yield out
+            if out := tickets.flush():
+                yield out
 
         return Agent.default.tts_node(self, spoken(), model_settings)
 
     @function_tool()
-    async def lookup_weather(
+    async def submit_ticket(
         self,
         context: RunContext,
-        location: str,
+        type: str,
+        category: str,
+        title: str,
+        description: str,
+        summary: str,
+        priority: str,
+        sentiment: str,
+        caller_name: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Look up weather information for a given location.
+        Register the caller's complaint, suggestion or question in the CRM.
+        Call it once per issue, after the caller confirmed your summary.
 
         Args:
-            location: The location to look up weather information for.
+            type: "complaint" (شكوى), "suggestion" (مقترح) or "inquiry" (استفسار).
+            category: One category from the list in your instructions, in Arabic.
+            title: Short Arabic title of the issue, at most eight words, no tashkeel.
+            description: The issue in the caller's own terms, in Arabic, no tashkeel.
+            summary: One or two Arabic sentences summarising the call so far, no tashkeel.
+            priority: "high", "medium" or "low".
+            sentiment: Caller tone: "angry", "upset", "neutral" or "satisfied".
+            caller_name: The name the caller said, in Arabic without tashkeel. Null if they did not give one or refused.
         """
-        
-        # await context.session.say("هشفهولك حالا.")
-
-        async with httpx.AsyncClient(timeout=4.0) as client:
-
-            # ---------------------------
-            # 1. Geocoding
-            # ---------------------------
-            geo_response = await client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={
-                    "name": location,
-                    "count": 1,
-                    "language": "en",
-                },
+        fields = {
+            "type": sppc_crm.normalize_type(type),
+            "category": strip_tashkeel(category or "أخرى"),
+            "title": strip_tashkeel(title or ""),
+            "description": strip_tashkeel(description or ""),
+            "summary": strip_tashkeel(summary or ""),
+            "priority": sppc_crm.normalize_priority(priority),
+            "sentiment": sppc_crm.normalize_sentiment(sentiment),
+            "callerName": sppc_crm.clean_name(caller_name),
+        }
+        logger.info("submit_ticket call_id={} fields={}", self.call_id, fields)
+        if not sppc_crm.has_substance(fields["title"], fields["description"]):
+            logger.info("submit_ticket refused: no content yet call_id={}", self.call_id)
+            noun = "مقترحك" if fields["type"] == "suggestion" else "شكواك" if fields["type"] == "complaint" else "استفسارك"
+            raise ToolError(
+                "Not saved: the caller has not said what the issue is yet. Do not "
+                "confirm or save. Ask them for it now, e.g. «تفضل، وش " + noun + "؟», "
+                "and call submit_ticket again only after they explain it, using "
+                "their own words."
             )
-
-            if geo_response.status_code != 200:
-                raise ToolError(f"Geocoding API failed for: {location}")
-
-            geo_data = geo_response.json()
-
-            results = geo_data.get("results")
-            if not results:
-                raise ToolError(f"Could not find location: {location}")
-
-            lat = results[0]["latitude"]
-            lon = results[0]["longitude"]
-            place_name = results[0]["name"]
-
-            # ---------------------------
-            # 2. Weather API
-            # ---------------------------
-            weather_response = await client.get(
-                "https://api.open-meteo.com/v1/forecast",
-                params={
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": ["temperature_2m", "weathercode"],
-                    "temperature_unit": "celsius",
-                },
-            )
-
-            if weather_response.status_code != 200:
-                raise ToolError(f"Weather API failed for: {location}")
-
-            weather_data = weather_response.json()
-
-            current = weather_data.get("current", {})
-
-            if not current:
-                raise ToolError("No current weather data returned")
-
+        result = await sppc_crm.create_ticket(self.call_id, fields)
+        if not result or not result.get("number"):
+            raise ToolError("تعذّر حفظ البلاغ في النظام الآن")
+        number = str(result["number"])
+        self.tickets.append(number)
+        self.ticket_serials.append(sppc_crm.ticket_serial(number))
         return {
-            "location": place_name,
-            "summary": f"{current.get('temperature_2m')}°C",
+            "saved": True,
+            "ticket_number": number,
+            "how_to_say_it": f"Write exactly {number} in Latin letters and digits. Do not spell, translate or transliterate it; the voice system pronounces it.",
+            "saved_with_name": fields["callerName"] or "غير معروف",
         }
 
+    @function_tool()
+    async def update_caller_name(self, context: RunContext, name: str) -> dict[str, Any]:
+        """
+        Attach the caller's name to this call's records when they give it after
+        the ticket was already saved.
+
+        Args:
+            name: The name the caller said, in Arabic without tashkeel.
+        """
+        cleaned = sppc_crm.clean_name(name)
+        if not cleaned:
+            raise ToolError("no name given")
+        await sppc_crm.set_caller_name(self.call_id, cleaned)
+        return {"updated": True, "name": cleaned}
 
 
 # num_idle_processes defaults to 128 in prod (one warm job process per CPU core,
@@ -280,9 +334,14 @@ class Assistant(Agent):
 # alongside another deployment) needs a free port set in .env.local.
 AGENT_PORT = int(os.getenv("AGENT_PORT", "2952"))
 AGENT_LOAD_THRESHOLD = float(os.getenv("AGENT_LOAD_THRESHOLD", "0.95"))
+# Named dispatch: the token route asks LiveKit for exactly this agent, so a
+# worker registered under a name never picks up rooms meant for the other
+# agents sharing the LiveKit project.
+AGENT_NAME = os.getenv("AGENT_NAME", "").strip()
+AGENT_IDLE_PROCESSES = int(os.getenv("AGENT_IDLE_PROCESSES", "2"))
 server = AgentServer(
     port=AGENT_PORT,
-    num_idle_processes=3,
+    num_idle_processes=AGENT_IDLE_PROCESSES,
     load_threshold=AGENT_LOAD_THRESHOLD,
 )
 
@@ -292,7 +351,7 @@ server = AgentServer(
 billing = billing_from_env()
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=AGENT_NAME)
 async def my_agent(ctx: agents.JobContext):
     job = getattr(ctx, "job", None)
     logger.info(
@@ -350,8 +409,11 @@ async def my_agent(ctx: agents.JobContext):
         logger.warning("Could not resolve the calling participant: {}", e)
 
     participant_metadata = getattr(_part, "metadata", None) if _part else None
-    selected_voice = parse_voice_from_metadata(participant_metadata)
-    session_mode = "salla_seller"
+    # The SPPC line always answers as نوف.
+    selected_voice = "female"
+    session_mode = "sppc_support"
+    call_id = getattr(ctx.room, "name", None) or f"call-{int(time.time())}"
+    caller_number, caller_label = _caller_from_metadata(participant_metadata)
     profile = voice_profile(
         selected_voice,
         female_tts_voice=TTS_VOICE,
@@ -431,11 +493,8 @@ async def my_agent(ctx: agents.JobContext):
             model=LLM_MODEL,
             api_key=LLM_API_KEY,
         ),
-        # The TTS re-rolls the speaker slightly on every request, so synthesizing
-        # sentence-by-sentence makes the voice audibly shift mid-reply. The
-        # StreamAdapter below batches the reply into ~300+ char chunks so a
-        # typical turn is one continuous generation (which holds the voice
-        # steady), at the cost of TTS starting after the LLM finishes the turn.
+        # Release complete sentences promptly. The plugin splits clauses,
+        # smooths each phrase and inserts punctuation-based breathing pauses.
         tts=StreamAdapter(
             tts=voice_tts,
             sentence_tokenizer=tokenize.basic.SentenceTokenizer(
@@ -601,8 +660,8 @@ async def my_agent(ctx: agents.JobContext):
             except Exception as e:
                 logger.warning(f"Could not calculate EOU latency: {e}")
 
-    active_agent: Agent = Assistant(instructions=prompt_for_voice(profile.key))
-    initial_instructions = intro_for_voice(profile.key)
+    active_agent = Assistant(instructions=SPPC_PROMPT, call_id=call_id)
+    initial_instructions = SPPC_INTRO
 
     logger.info(
         "LiveKit session.start beginning room_name={} assistant_mode={}",
@@ -619,6 +678,55 @@ async def my_agent(ctx: agents.JobContext):
         ),
     )
     logger.info("LiveKit session.start completed room_name={}", getattr(ctx.room, "name", None))
+
+    await sppc_crm.call_started(call_id, caller_number, caller_label)
+    # The caller's clock starts when the agent picks up and stops when they
+    # hang up; job teardown after that is not talk time.
+    call_started_at = time.monotonic()
+    caller_left_at: Optional[float] = None
+
+    @ctx.room.on("participant_disconnected")
+    def _on_caller_left(participant: rtc.RemoteParticipant) -> None:
+        nonlocal caller_left_at
+        if caller_left_at is None and participant.kind != rtc.ParticipantKind.PARTICIPANT_KIND_AGENT:
+            caller_left_at = time.monotonic()
+
+    async def _report_call_to_crm() -> None:
+        transcript = _transcript_from(session)
+        duration = int((caller_left_at or time.monotonic()) - call_started_at)
+        outcome = "ticket" if active_agent.tickets else "no_ticket"
+        if not active_agent.tickets and any(t["role"] == "user" for t in transcript):
+            # The model never reached submit_ticket (hang-up mid-flow, a tool
+            # failure). Recover the ticket from the transcript so a complaint
+            # raised on the call is never lost.
+            extracted = await sppc_crm.extract_ticket(
+                transcript, base_url=LLM_BASE_URL, model=LLM_MODEL, api_key=LLM_API_KEY
+            )
+            logger.info("Post-call extraction call_id={} result={}", call_id, extracted)
+            if (
+                extracted
+                and extracted.get("register")
+                and sppc_crm.has_substance(extracted.get("title") or "", extracted.get("description") or "")
+            ):
+                created = await sppc_crm.create_ticket(
+                    call_id,
+                    {
+                        "type": sppc_crm.normalize_type(extracted.get("type")),
+                        "category": extracted.get("category") or "أخرى",
+                        "title": extracted.get("title") or "",
+                        "description": extracted.get("description") or "",
+                        "summary": extracted.get("summary") or "",
+                        "priority": sppc_crm.normalize_priority(extracted.get("priority")),
+                        "sentiment": sppc_crm.normalize_sentiment(extracted.get("sentiment")),
+                        "callerName": sppc_crm.clean_name(extracted.get("caller_name")),
+                        "autoCreated": True,
+                    },
+                )
+                if created:
+                    outcome = "auto_ticket"
+        await sppc_crm.call_ended(call_id, duration, transcript, outcome)
+
+    ctx.add_shutdown_callback(_report_call_to_crm)
 
     # ─── Per-user live-minutes budget (authoritative meter) ──────────────────
     # The /api/connection-details token route stamped the Supabase user id +

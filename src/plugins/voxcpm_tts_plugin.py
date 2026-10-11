@@ -8,7 +8,8 @@ The server exposes an OpenAI-style endpoint:
 With ``stream: true`` the response is ``Transfer-Encoding: chunked`` and the
 first audio arrives in ~75ms on an idle server, then streams faster than
 real-time (a 3.7s utterance completes in ~0.46s). Without it the server buffers
-the whole utterance. We always stream so the agent starts speaking fast.
+the whole utterance. We receive streamed PCM, buffer one short phrase for
+level matching and edge fades, then emit it with a punctuation-based pause.
 
 Audio is 48 kHz, 16-bit, **mono** — the same format the previous MOSS server
 emitted, so the rest of the pipeline is unchanged. Unlike MOSS, VoxCPM2 is mono
@@ -48,6 +49,8 @@ try:
 except Exception:  # pragma: no cover - diagnostics only
     np = None
 from loguru import logger
+
+from .tts_prosody import gap_after, smooth_pcm, speech_chunks
 
 from livekit.agents import tts, utils
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
@@ -532,8 +535,25 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         self._tts = tts
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
+        output_emitter.initialize(
+            request_id=f"voxcpm-{utils.shortuuid()}",
+            sample_rate=SERVER_SAMPLE_RATE,
+            num_channels=SERVER_CHANNELS,
+            mime_type="audio/pcm",
+        )
+        for text in speech_chunks(normalize_arabic(self.input_text)):
+            pcm = smooth_pcm(await self._synthesize_phrase(text), SERVER_SAMPLE_RATE)
+            if pcm:
+                output_emitter.push(pcm)
+                # Include the final boundary: StreamAdapter may supply the next
+                # sentence as a separate synthesize() call.
+                samples = SERVER_SAMPLE_RATE * gap_after(text) // 1000
+                output_emitter.push(bytes(samples * SERVER_CHANNELS * 2))
+                output_emitter.flush()
+
+    async def _synthesize_phrase(self, raw_input: str) -> bytes:
+        audio_parts: list[bytes] = []
         request_id = f"voxcpm-{utils.shortuuid()}"
-        raw_input = self.input_text
         sanitized_input = normalize_arabic(raw_input)
         payload = {
             "model": self._tts._model,
@@ -612,13 +632,6 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             self._tts._voice_min_f0,
             self._tts._voice_max_f0,
             self._conn_options.timeout,
-        )
-
-        output_emitter.initialize(
-            request_id=request_id,
-            sample_rate=SERVER_SAMPLE_RATE,
-            num_channels=1,
-            mime_type="audio/pcm",
         )
 
         try:
@@ -706,21 +719,20 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                     )
                     if emitted:
                         bytes_pushed += len(emitted)
-                        output_emitter.push(emitted)
+                        audio_parts.append(emitted)
 
             if stretcher is not None:
                 emitted = stretcher.flush()
                 if emitted:
                     bytes_pushed += len(emitted)
-                    output_emitter.push(emitted)
+                    audio_parts.append(emitted)
 
-            output_emitter.flush()
             elapsed = time.perf_counter() - started_at
             f0, rms, peak = _median_f0(bytes(analysis_audio))
             audio_seconds = bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2)
             logger.info(
                 "VoxCPM TTS request complete request_id={} seed={} chunks={} bytes={} "
-                "audio_seconds={:.3f} speed={} emitted_bytes={} emitted_seconds={:.3f} "
+                "audio_seconds={:.3f} speed={} buffered_bytes={} buffered_seconds={:.3f} "
                 "elapsed={:.3f}s first_audio_latency={} "
                 "max_chunk_bytes={} odd_boundary_events={} final_remainder_bytes={} "
                 "analysis_seconds={:.3f} median_f0_hz={} rms={} peak={} "
@@ -746,13 +758,13 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             if f0 is None:
                 logger.warning(
                     "VoxCPM TTS diagnostic could not estimate first-audio F0 request_id={}; "
-                    "audio was already emitted because this path has no gate",
+                    "audio is buffered for the phrase join; this path has no pitch gate",
                     request_id,
                 )
             elif not (self._tts._voice_min_f0 <= f0 <= self._tts._voice_max_f0):
                 logger.error(
                     "VoxCPM TTS diagnostic out-of-range request_id={} seed={} median_f0_hz={:.1f} "
-                    "expected_range={:.0f}-{:.0f}; audio was emitted because this path has "
+                    "expected_range={:.0f}-{:.0f}; audio is buffered and this path has "
                     "no gate/retry",
                     request_id,
                     payload.get("seed"),
@@ -768,3 +780,5 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 time.perf_counter() - started_at,
             )
             raise APIConnectionError("failed to reach VoxCPM TTS server") from e
+
+        return b"".join(audio_parts)
