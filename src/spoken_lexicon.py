@@ -34,6 +34,10 @@ _LETTER_FOLDS = str.maketrans(
 )
 _WORD_RE = re.compile(r"[ؠ-ٰٟ]+")
 _TASHKEEL_CODEPOINTS = frozenset(range(0x064B, 0x0653))
+# fathatan / dammatan / kasratan. إعراب, not dialect; live logs still emit
+# "أَهْلًا" and "مَعْذِرَةً" even though the last-letter rule should have
+# caught some of them (tanween often sits on the letter *before* a final alef).
+_TANWEEN_CODEPOINTS = frozenset({0x064B, 0x064C, 0x064D})
 _SUKUN = 0x0652
 
 
@@ -54,129 +58,129 @@ def _is_arabic_letter(ch: str) -> bool:
 # Values follow the TTS rule: every letter diacritized except the last of each word.
 SPOKEN_PHRASES: dict[str, str] = {
     # restaurants
-    "بيت الشوايه": "بَيْت الشَّوايَة",
-    "مذاق الشام": "مَذاق الشام",
+    "بيت الشوايه": "بَيْت الشَّوَايَة",
+    "مذاق الشام": "مَذَاق الشَام",
     "اصيل برجر": "أَصِيل بَرْجَر",
     "سوشي نوي": "سُوشِي نُوي",
-    "حلويات الرياض": "حَلَوِيّات الرِّياض",
-    "بيتزا روما": "بِيتْزا رُومَا",
-    "هندي ماسالا": "هِنْدِي ماسالَا",
-    "دار الكبسه": "دار الكَبْسَة",
-    "ساحل الماكولات البحريه": "ساحِل المَأْكُولات البَحْرِيَّة",
+    "حلويات الرياض": "حَلَوِيّات الرِّيَاض",
+    "بيتزا روما": "بِيتْزَا رُومَا",
+    "هندي ماسالا": "هِنْدِي مَاسَالَا",
+    "دار الكبسه": "دَار الكَبْسَة",
+    "ساحل الماكولات البحريه": "سَاحِل المَأْكُولَات البَحْرِيَّة",
     "بول الصحيه": "بُول الصِّحِّيَّة",
-    "ماركت لقمه": "مارْكِت لُقْمَة",
-    "مختبر الستربس": "مُخْتَبَر الستربس",
-    "بيت الباكت": "بَيْت الباكت",
-    "كريسبي باكت": "كْريسْبي باكت",
-    "ساحه المقرمش": "ساحَة المُقَرْمَش",
-    "فرايد العائله": "فرايد العائِلَة",
-    "فخذ النار": "فَخْذ النار",
-    "الجناح الذهبي": "الجَناح الذَّهَبِي",
-    "شارع الوينجز": "شارِع الوينجز",
-    "ستربس دجاج": "أَسْتِرِبس دَجاج",
-    "وينجز حاره": "وينجز حارَّة",
+    "ماركت لقمه": "مَارْكِت لُقْمَة",
+    "مختبر الستربس": "مُخْتَبَر السِّتْرِبْس",
+    "بيت الباكت": "بَيْت البَاكِت",
+    "كريسبي باكت": "كْرِيسْبِي بَاكِت",
+    "ساحه المقرمش": "سَاحَة المُقَرْمَش",
+    "فرايد العائله": "فْرَايْد العَائِلَة",
+    "فخذ النار": "فَخْذ النَار",
+    "الجناح الذهبي": "الجَنَاح الذَّهَبِي",
+    "شارع الوينجز": "شَارِع الوِينْجِز",
+    "ستربس دجاج": "أَسْتِرِبْس دِجَاج",
+    "وينجز حاره": "وِينْجِز حَارَّة",
     # common multi-word meals / loan phrases
     "ميلك شيك": "مِيلْك شِيك",
-    "ميلك شيك فانيلا": "مِيلْك شِيك فانِيلَا",
-    "برجر دجاج مقرمش": "بَرْجَر دَجاج مُقَرْمَش",
-    "برجر كلاسيك": "بَرْجَر كْلاسِيك",
-    "برجر باربكيو": "بَرْجَر بارْبِكْيُو",
+    "ميلك شيك فانيلا": "مِيلْك شِيك فَانِيلَا",
+    "برجر دجاج مقرمش": "بَرْجَر دِجَاج مُقَرْمَش",
+    "برجر كلاسيك": "بَرْجَر كْلَاسِيك",
+    "برجر باربكيو": "بَرْجَر بَارْبِكْيُو",
     "برجر مشروم": "بَرْجَر مَشْرُوم",
     "دبل تشيز": "دَبِل تْشِيز",
     "بطر تشيكن": "بَطَر تْشِيكِن",
-    "طبق مشاوي عائلي": "طَبَق مَشاوِي عائِلِي",
-    "مشكل مشاوي": "مُشَكَّل مَشاوِي",
-    "مشكل مقبلات": "مُشَكَّل مُقَبِّلات",
+    "طبق مشاوي عائلي": "طَبَق مَشَاوِي عَائِلِي",
+    "مشكل مشاوي": "مُشَكَّل مَشَاوِي",
+    "مشكل مقبلات": "مُشَكَّل مُقَبِّلَات",
     "مشكل بحري": "مُشَكَّل بَحْرِي",
-    "شاورما دجاج": "شاوِرْما دَجاج",
-    "شاورما لحم": "شاوِرْما لَحْم",
-    "كبسه دجاج": "كَبْسَة دَجاج",
+    "شاورما دجاج": "شَاوِرْمَا دِجَاج",
+    "شاورما لحم": "شَاوِرْمَا لَحْم",
+    "كبسه دجاج": "كَبْسَة دِجَاج",
     "كبسه لحم": "كَبْسَة لَحْم",
-    "كبسه عائليه": "كَبْسَة عائِلِيَّة",
-    "مندي دجاج": "مَنْدِي دَجاج",
-    "تكه دجاج": "تِكَّة دَجاج",
-    "دجاج علي الفحم": "دَجاج عَلَى الفَحْم",
+    "كبسه عائليه": "كَبْسَة عَائِلِيَّة",
+    "مندي دجاج": "مَنْدِي دِجَاج",
+    "تكه دجاج": "تِكَّة دِجَاج",
+    "دجاج علي الفحم": "دِجَاج عَلَى الفَحْم",
     "كفته لحم": "كُفْتَة لَحْم",
-    "ارز بخاري": "أَرُز بُخارِي",
-    "كباب حلبي": "كَباب حَلَبِي",
+    "ارز بخاري": "أُرْز بُخَارِي",
+    "كباب حلبي": "كَبَاب حَلَبِي",
     "كبده مشويه": "كِبْدَة مَشْوِيَّة",
     "شوربه حريره": "شُورْبَة حَرِيرَة",
-    "صحن فلافل": "صَحْن فَلافِل",
-    "حمص باللحمه": "حُمُّص باللَّحْمَة",
+    "صحن فلافل": "صَحْن فَلَافِل",
+    "حمص باللحمه": "حُمُّص بِاللَّحْمَة",
     "كبه مقليه": "كِبَّة مَقْلِيَّة",
-    "مناقيش زعتر": "مَناقِيش زَعْتَر",
+    "مناقيش زعتر": "مَنَاقِيش زَعْتَر",
     "فول مدمس": "فُول مُدَمَّس",
     "شوربه عدس": "شُورْبَة عَدَس",
-    "بطاطس مقليه": "بَطاطِس مَقْلِيَّة",
-    "حلقات بصل": "حَلَقات بَصَل",
+    "بطاطس مقليه": "بَطَاطِس مَقْلِيَّة",
+    "حلقات بصل": "حَلَقَات بَصَل",
     "وجبه كومبو": "وَجْبَة كُومْبُو",
-    "وجبه اطفال": "وَجْبَة أَطْفال",
+    "وجبه اطفال": "وَجْبَة أَطْفَال",
     "رول سلمون": "رُول سَلَمُون",
     "نينيري تونا": "نِينِيرِي تُونَا",
     "رول تمبورا": "رُول تَمْبُورَا",
     "شوربه ميسو": "شُورْبَة مِيسُو",
-    "دراغون رول": "دْراغُون رُول",
-    "رول خضار": "رُول خُضار",
+    "دراغون رول": "دْرَاغُون رُول",
+    "رول خضار": "رُول خُضَار",
     "سيت سوشي": "سِيت سُوشِي",
-    "رامن دجاج": "رامِن دَجاج",
-    "كنافه نابلسيه": "كُنافَة نابُلْسِيَّة",
-    "بسبوسه بالقشطه": "بَسْبُوسَة بالقِشْطَة",
-    "بقلاوه مشكله": "بَقْلاوَة مُشَكَّلَة",
-    "تشيز كيك فراوله": "تْشِيز كِيك فَراوْلَة",
+    "رامن دجاج": "رَامِن دِجَاج",
+    "كنافه نابلسيه": "كُنَافَة نَابُلْسِيَّة",
+    "بسبوسه بالقشطه": "بَسْبُوسَة بِالقِشْطَة",
+    "بقلاوه مشكله": "بَقْلَاوَة مُشَكَّلَة",
+    "تشيز كيك فراوله": "تْشِيز كِيك فَرَاوْلَة",
     "ام علي": "أُم عَلِي",
     "معمول تمر": "مَعْمُول تَمْر",
-    "بوكس حلويات": "بُوكس حَلَوِيّات",
+    "بوكس حلويات": "بُوكْس حَلَوِيّات",
     "قهوه عربيه": "قَهْوَة عَرَبِيَّة",
-    "ايس كريم فستق": "آيس كْرِيم فُسْتُق",
-    "اربع اجبان": "أَرْبَع أَجْبان",
-    "بيتزا خضار": "بِيتْزا خُضار",
-    "باستا بولونيز": "باسْتَا بُولُونِيز",
+    "ايس كريم فستق": "آيْس كْرِيم فُسْتُق",
+    "اربع اجبان": "أَرْبَع أَجْبَان",
+    "بيتزا خضار": "بِيتْزَا خُضَار",
+    "باستا بولونيز": "بَاسْتَا بُولُونِيز",
     "فيتوتشيني الفريدو": "فِيتُوتْشِينِي أَلْفَرِيدُو",
-    "خبز بالثوم": "خُبْز بالثُّوم",
-    "بيتزا عائليه": "بِيتْزا عائِلِيَّة",
-    "برياني دجاج": "بِرْيانِي دَجاج",
-    "تكا مسايا": "تِكَّا مَسايَا",
+    "خبز بالثوم": "خُبْز بِالثُّوم",
+    "بيتزا عائليه": "بِيتْزَا عَائِلِيَّة",
+    "برياني دجاج": "بِرْيَانِي دِجَاج",
+    "تكا مسايا": "تِكَّا مَسَايَا",
     "سمبوسه هنديه": "سَمْبُوسَة هِنْدِيَّة",
-    "خبز نان": "خُبْز نان",
-    "دال هندي": "دال هِنْدِي",
-    "بانير تكا": "بانِير تِكَّا",
-    "ثالي هندي": "ثالِي هِنْدِي",
-    "لاسي مانجو": "لاسِي مانْجُو",
-    "فيندالو لحم": "فِيندالُو لَحْم",
+    "خبز نان": "خُبْز نَان",
+    "دال هندي": "دَال هِنْدِي",
+    "بانير تكا": "بَانِير تِكَّا",
+    "ثالي هندي": "ثَالِي هِنْدِي",
+    "لاسي مانجو": "لَاسِي مَانْجُو",
+    "فيندالو لحم": "فِينْدَالُو لَحْم",
     "مطبق لحم": "مُطَبَّق لَحْم",
-    "تمر بالقشطه": "تَمْر بالقِشْطَة",
-    "لبن طازج": "لَبَن طازِج",
-    "روبيان مشوي": "رُوبْيان مَشْوِي",
-    "سمك هامور": "سَمَك هامُور",
-    "كاليماري مقلي": "كالِيمارِي مَقْلِي",
-    "ساندويتش سمك": "سانْدَوِيتْش سَمَك",
+    "تمر بالقشطه": "تَمْر بِالقِشْطَة",
+    "لبن طازج": "لَبَن طَازِج",
+    "روبيان مشوي": "رُوبْيَان مَشْوِي",
+    "سمك هامور": "سَمَك هَامُور",
+    "كاليماري مقلي": "كَالِيمَارِي مَقْلِي",
+    "ساندويتش سمك": "سَانْدَوِيتْش سَمَك",
     "شوربه سمك": "شُورْبَة سَمَك",
     "سلمون مشوي": "سَلَمُون مَشْوِي",
-    "ارز بالروبيان": "أَرُز بالرُّوبْيان",
-    "بطاطس ساحليه": "بَطاطِس ساحِلِيَّة",
-    "بول كينوا": "بُول كِينْوا",
-    "سلطه دجاج مشوي": "سَلَطَة دَجاج مَشْوِي",
-    "توست افوكادو": "تُوست أَفُوكادُو",
-    "سموذي اخضر": "سْمُوذِي أَخْضَر",
+    "ارز بالروبيان": "أُرْز بِالرُّوبْيَان",
+    "بطاطس ساحليه": "بَطَاطِس سَاحِلِيَّة",
+    "بول كينوا": "بُول كِينْوَا",
+    "سلطه دجاج مشوي": "سَلَطَة دِجَاج مَشْوِي",
+    "توست افوكادو": "تُوسْت أَفُوكَادُو",
+    "سموذي اخضر": "سَمُوذِي أَخْضَر",
     "بوكيه سلمون": "بُوكِيه سَلَمُون",
-    "راب دجاج صحي": "راب دَجاج صِحِّي",
-    "شوربه خضار": "شُورْبَة خُضار",
-    "وجبه طاقه": "وَجْبَة طاقَة",
-    "بول فلافل": "بُول فَلافِل",
-    "زبادي بالعسل": "زَبادِي بالعَسَل",
+    "راب دجاج صحي": "رَاب دِجَاج صِحِّي",
+    "شوربه خضار": "شُورْبَة خُضَار",
+    "وجبه طاقه": "وَجْبَة طَاقَة",
+    "بول فلافل": "بُول فَلَافِل",
+    "زبادي بالعسل": "زَبَادِي بِالعَسَل",
     "ريش غنم": "رِيش غَنَم",
-    "صلصه اضافيه": "صَلْصَة إِضافِيَّة",
-    "خبز اضافي": "خُبْز إِضافِي",
+    "صلصه اضافيه": "صَلْصَة إِضَافِيَّة",
+    "خبز اضافي": "خُبْز إِضَافِي",
 }
 
 # Single-token overrides. Keys are normalize_key results (no tashkeel, folded).
 WORD_FIXES: dict[str, str] = {
     # existing production fixes
     # Prosthetic alef + interior vowels: bare "استربس" still makes VoxCPM stumble.
-    "ستربس": "أَسْتِرِبس",
-    "ستريبس": "أَسْتِرِبس",
-    "ستريب": "أَسْتِرِبس",
-    "استربس": "أَسْتِرِبس",
+    "ستربس": "أَسْتِرِبْس",
+    "ستريبس": "أَسْتِرِبْس",
+    "ستريب": "أَسْتِرِبْس",
+    "استربس": "أَسْتِرِبْس",
     "برجر": "بَرْجَر",
     "مقرمش": "مُقَرْمَش",
     # Words that make up the offer and family-meal titles. These are read out
@@ -185,8 +189,8 @@ WORD_FIXES: dict[str, str] = {
     # what makes the delivery wobble in the middle of a name. Catalog names
     # carry no diacritics of their own, so the recurring words are pinned here.
     "عرض": "عَرْض",
-    "عايليه": "عائِلِيَّة",
-    "اشخاص": "أَشْخاص",
+    "عايليه": "عَائِلِيَّة",
+    "اشخاص": "أَشْخَاص",
     "شخص": "شَخْص",
     "مع": "مَع",
     "اشتري": "اِشْتَرِي",
@@ -194,67 +198,67 @@ WORD_FIXES: dict[str, str] = {
     # "على" is deliberately absent: it folds to the same key as the given name
     # علي, and pinning it would respell someone's name back at them. An
     # everyday particle the TTS already reads correctly is not worth that.
-    "مجانا": "مَجّانا",
+    "مجانا": "مَجّانَا",
     "الثاني": "الثَّانِي",
     "الثانيه": "الثَّانِيَة",
-    "كامله": "كامِلَة",
+    "كامله": "كَامِلَة",
     "فرديه": "فَرْدِيَّة",
     "بسعر": "بِسِعْر",
-    "ثابت": "ثابِت",
+    "ثابت": "ثَابِت",
     "تشكيله": "تَشْكِيلَة",
     "خفيفه": "خَفِيفَة",
-    "مياه": "مِياه",
+    "مياه": "مِيَاه",
     "عصير": "عَصِير",
-    "حلا": "حَلا",
+    "حلا": "حَلَا",
     "فطور": "فُطُور",
     "مطبخ": "مَطْبَخ",
     "وجبه": "وَجْبَة",
-    "اضافي": "إِضافِي",
-    "اضافيه": "إِضافِيَّة",
+    "اضافي": "إِضَافِي",
+    "اضافيه": "إِضَافِيَّة",
     # Addon and side-dish vocabulary. Addons repeat on every meal, so these are
     # the words سلمى reads most often after the dish names themselves.
     "مخلل": "مُخَلَّل",
     "صغيره": "صَغِيرَة",
     "مشروب": "مَشْرُوب",
-    "غازي": "غازِي",
+    "غازي": "غَازِي",
     "جبنه": "جِبْنَة",
-    "زياده": "زِيادَة",
+    "زياده": "زِيَادَة",
     "كبيره": "كَبِيرَة",
-    "مكسرات": "مُكَسَّرات",
+    "مكسرات": "مُكَسَّرَات",
     "خبز": "خُبْز",
     "عربي": "عَرَبِي",
     "بيض": "بَيْض",
     "مسلوق": "مَسْلُوق",
-    "يوناني": "يُونانِي",
+    "يوناني": "يُونَانِي",
     "زنجبيل": "زَنْجَبِيل",
     "ليمون": "لَيْمُون",
     "مختبر": "مُخْتَبَر",
-    "شارع": "شارِع",
+    "شارع": "شَارِع",
     "فحم": "فَحْم",
     "ركن": "رُكْن",
-    "زقاق": "زُقاق",
+    "زقاق": "زُقَاق",
     # Restaurant-name vocabulary from the 119-restaurant catalog. Stored bare;
     # the proclitic path re-attaches ال and the sun-letter pass restores the
     # shadda (دخان → الدُّخان).
-    "طاوله": "طاوِلَة",
+    "طاوله": "طَاوِلَة",
     "صندوق": "صُنْدُوق",
-    "مجالس": "مَجالِس",
-    "دخان": "دُخان",
+    "مجالس": "مَجَالِس",
+    "دخان": "دُخَان",
     "سريع": "سَرِيع",
     "جمر": "جَمْر",
     "قصر": "قَصْر",
-    "وادي": "وادِي",
+    "وادي": "وَادِي",
     "نخيل": "نَخِيل",
     "فرن": "فُرْن",
     "خفيف": "خَفِيف",
     "مقرمشه": "مُقَرْمَشَة",
-    "مقرمشات": "مُقَرْمَشات",
+    "مقرمشات": "مُقَرْمَشَات",
     # Common turn words the model misvowels (seen in live logs).
     "كثيره": "كَثِيرَة",
     "كثير": "كَثِير",
-    "عندنا": "عِنْدَنا",
+    "عندنا": "عِنْدَنَا",
     "عندك": "عِنْدَك",
-    "عندهم": "عِنْدَهم",
+    "عندهم": "عِنْدَهُم",
     "ابشر": "أَبْشِر",
     "تبي": "تِبِي",
     "تبيه": "تِبِيه",
@@ -262,54 +266,54 @@ WORD_FIXES: dict[str, str] = {
     "معين": "مُعَيَّن",
     "صنف": "صِنْف",
     # loanwords / brand-ish food terms
-    "بيتزا": "بِيتْزا",
+    "بيتزا": "بِيتْزَا",
     "سوشي": "سُوشِي",
-    "كولا": "كُولا",
+    "كولا": "كُولَا",
     "ميلك": "مِيلْك",
     "شيك": "شِيك",
     "تشيز": "تْشِيز",
     "كيك": "كِيك",
-    "باربكيو": "بارْبِكْيُو",
+    "باربكيو": "بَارْبِكْيُو",
     "مشروم": "مَشْرُوم",
     "تمبورا": "تَمْبُورَا",
-    "رامن": "رامِن",
-    "كينوا": "كِينْوا",
-    "افوكادو": "أَفُوكادُو",
+    "رامن": "رَامِن",
+    "كينوا": "كِينْوَا",
+    "افوكادو": "أَفُوكَادُو",
     "بيبروني": "بِيبَرُونِي",
-    "مارغريتا": "مارْغَرِيتَا",
-    "تيراميسو": "تِيرامِيسُو",
-    "برياني": "بِرْيانِي",
-    "بانير": "بانِير",
-    "لاسي": "لاسِي",
-    "فيندالو": "فِيندالُو",
-    "كاليماري": "كالِيمارِي",
-    "هامور": "هامُور",
+    "مارغريتا": "مَارْغَرِيتَا",
+    "تيراميسو": "تِيرَامِيسُو",
+    "برياني": "بِرْيَانِي",
+    "بانير": "بَانِير",
+    "لاسي": "لَاسِي",
+    "فيندالو": "فِينْدَالُو",
+    "كاليماري": "كَالِيمَارِي",
+    "هامور": "هَامُور",
     "غيوزا": "غْيُوزَا",
-    "ادمامي": "إِدامامِي",
+    "ادمامي": "إِدَامَامِي",
     "نينيري": "نِينِيرِي",
-    "دراغون": "دْراغُون",
+    "دراغون": "دْرَاغُون",
     "سيت": "سِيت",
     "ميسو": "مِيسُو",
     "فيتوتشيني": "فِيتُوتْشِينِي",
     "الفريدو": "أَلْفَرِيدُو",
     "بولونيز": "بُولُونِيز",
-    "كالزوني": "كالْزُونِي",
-    "سموذي": "سْمُوذِي",
-    "توست": "تُوست",
+    "كالزوني": "كَالْزُونِي",
+    "سموذي": "سَمُوذِي",
+    "توست": "تُوسْت",
     "كومبو": "كُومْبُو",
-    "كلاسيك": "كْلاسِيك",
+    "كلاسيك": "كْلَاسِيك",
     "دبل": "دَبِل",
     "تشيكن": "تْشِيكِن",
     "بوكيه": "بُوكِيه",
-    "ساندويتش": "سانْدَوِيتْش",
-    "فانيلا": "فانِيلَا",
-    "مانجو": "مانْجُو",
-    "فراوله": "فَراوْلَة",
-    "بوكس": "بُوكس",
+    "ساندويتش": "سَانْدَوِيتْش",
+    "فانيلا": "فَانِيلَا",
+    "مانجو": "مَانْجُو",
+    "فراوله": "فَرَاوْلَة",
+    "بوكس": "بُوكْس",
     "رول": "رُول",
     "بول": "بُول",
-    "ماركت": "مارْكِت",
-    "ماسالا": "ماسالَا",
+    "ماركت": "مَارْكِت",
+    "ماسالا": "مَاسَالَا",
     "نوي": "نُوي",
     "روما": "رُومَا",
     # Arabic food terms the model often misvowels
@@ -327,16 +331,16 @@ WORD_FIXES: dict[str, str] = {
     "مدمس": "مُدَمَّس",
     "كبسه": "كَبْسَة",
     "مندي": "مَنْدِي",
-    "شاورما": "شاوِرْما",
+    "شاورما": "شَاوِرْمَا",
     "كفته": "كُفْتَة",
-    "كباب": "كَباب",
+    "كباب": "كَبَاب",
     "حمص": "حُمُّص",
-    "فلافل": "فَلافِل",
+    "فلافل": "فَلَافِل",
     "فتوش": "فَتُّوش",
-    "مناقيش": "مَناقِيش",
-    "لقيمات": "لُقَيْمات",
-    "كنافه": "كُنافَة",
-    "بقلاوه": "بَقْلاوَة",
+    "مناقيش": "مَنَاقِيش",
+    "لقيمات": "لُقَيْمَات",
+    "كنافه": "كُنَافَة",
+    "بقلاوه": "بَقْلَاوَة",
     "بسبوسه": "بَسْبُوسَة",
     "معمول": "مَعْمُول",
     "مظبي": "مَظْبِي",
@@ -349,34 +353,34 @@ WORD_FIXES: dict[str, str] = {
     "كبه": "كِبَّة",
     "تكه": "تِكَّة",
     "تكا": "تِكَّا",
-    "بخاري": "بُخارِي",
+    "بخاري": "بُخَارِي",
     "كبده": "كِبْدَة",
     "ريش": "رِيش",
     "غنم": "غَنَم",
-    "مشاوي": "مَشاوِي",
-    "مقبلات": "مُقَبِّلات",
+    "مشاوي": "مَشَاوِي",
+    "مقبلات": "مُقَبِّلَات",
     "عدس": "عَدَس",
     "شوربه": "شُورْبَة",
     "زعتر": "زَعْتَر",
     "قشطه": "قِشْطَة",
-    "روبيان": "رُوبْيان",
+    "روبيان": "رُوبْيَان",
     "سلمون": "سَلَمُون",
     "تونا": "تُونَا",
-    "بطاطس": "بَطاطِس",
-    "دجاج": "دَجاج",
+    "بطاطس": "بَطَاطِس",
+    "دجاج": "دِجَاج",
     "لحم": "لَحْم",
     "لحمه": "لَحْمَة",
     "سمك": "سَمَك",
-    "خضار": "خُضار",
+    "خضار": "خُضَار",
     "سلطه": "سَلَطَة",
-    "عائلي": "عائِلِي",
-    "عائليه": "عائِلِيَّة",
+    "عائلي": "عَائِلِي",
+    "عائليه": "عَائِلِيَّة",
     "لقمه": "لُقْمَة",
     "اصيل": "أَصِيل",
     # Stored bare (no leading shadda): standalone "شواية القصر" must not start
     # with a doubling mark. The ال re-attachment path below adds the sun-letter
     # shadda, so "الشوايه" still comes out "الشَّوايَة".
-    "شوايه": "شَوايَة",
+    "شوايه": "شَوَايَة",
     "حلويات": "حَلَوِيّات",
     "هندي": "هِنْدِي",
     "هنديه": "هِنْدِيَّة",
@@ -384,47 +388,91 @@ WORD_FIXES: dict[str, str] = {
     "بحريه": "بَحْرِيَّة",
     "صحي": "صِحِّي",
     "صحيه": "صِحِّيَّة",
-    "اضافي": "إِضافِي",
-    "اضافيه": "إِضافِيَّة",
+    "اضافي": "إِضَافِي",
+    "اضافيه": "إِضَافِيَّة",
     "صلصه": "صَلْصَة",
     "فستق": "فُسْتُق",
     "تمر": "تَمْر",
-    "زبادي": "زَبادِي",
+    "زبادي": "زَبَادِي",
     "عسل": "عَسَل",
     "ثوم": "ثُوم",
     "بصل": "بَصَل",
-    "نان": "نان",
-    "دال": "دال",
-    "ثالي": "ثالِي",
-    "مسابا": "مَسايَا",
-    "مسايا": "مَسايَا",
+    "نان": "نَان",
+    "دال": "دَال",
+    "ثالي": "ثَالِي",
+    "مسابا": "مَسَايَا",
+    "مسايا": "مَسَايَا",
     "سمبوسه": "سَمْبُوسَة",
-    "نابلسيه": "نابُلْسِيَّة",
+    "نابلسيه": "نَابُلْسِيَّة",
     "عربيه": "عَرَبِيَّة",
     "قهوه": "قَهْوَة",
-    "ارز": "أَرُز",
+    "ارز": "أُرْز",
     "صحن": "صَحْن",
     "طبق": "طَبَق",
     "وجبه": "وَجْبَة",
-    "حلقات": "حَلَقات",
-    "اطفال": "أَطْفال",
-    "طاقه": "طاقَة",
+    "حلقات": "حَلَقَات",
+    "اطفال": "أَطْفَال",
+    "طاقه": "طَاقَة",
     "اخضر": "أَخْضَر",
-    "طازج": "طازِج",
-    "ساحليه": "ساحِلِيَّة",
-    "ساحل": "ساحِل",
-    "ماكولات": "مَأْكُولات",
-    "الرياض": "الرِّياض",
-    "الشام": "الشام",
+    "طازج": "طَازِج",
+    "ساحليه": "سَاحِلِيَّة",
+    "ساحل": "سَاحِل",
+    "ماكولات": "مَأْكُولَات",
+    "الرياض": "الرِّيَاض",
+    "الشام": "الشَام",
     "بيت": "بَيْت",
-    "مذاق": "مَذاق",
-    "دار": "دار",
-    "راب": "راب",
+    "مذاق": "مَذَاق",
+    "دار": "دَار",
+    "راب": "رَاب",
     "بطر": "بَطَر",
-    "باستا": "باسْتَا",
-    "ايس": "آيس",
+    "باستا": "بَاسْتَا",
+    "ايس": "آيْس",
     "كريم": "كْرِيم",
 }
+
+
+def _is_pausal_taa(word: str) -> bool:
+    """True when this word ends in a تاء مربوطة, written ة or already pausal.
+
+    Checked on the word as it arrives, before any marks are stripped, so that
+    re-running the sanitizer on its own output is a no-op. A bare final ``ه``
+    is a root consonant (وَجْه, فِيه) and does not qualify — only a ``ه`` this
+    module already marked with a sukun.
+    """
+    letters = [i for i, c in enumerate(word) if _is_arabic_letter(c)]
+    if not letters:
+        return False
+    last = letters[-1]
+    if word[last] == "ة":
+        return True
+    return word[last] == "ه" and chr(_SUKUN) in word[last + 1 :]
+
+
+def _write_pausal_taa(word: str) -> str:
+    """Rewrite the final letter as ``هْ``. The caller has checked the word."""
+    letters = [i for i, c in enumerate(word) if _is_arabic_letter(c)]
+    if not letters:
+        return word
+    last = letters[-1]
+    # Drop whatever the model put after the letter, then write the sukun, so a
+    # stray vowel cannot survive beside it.
+    return word[:last] + "ه" + chr(_SUKUN) + _MARKS.sub("", word[last + 1 :])
+
+
+def _pause_taa_marbuta(word: str) -> str:
+    """Write a word-final تاء مربوطة as a pausal ``هْ``, when the word has one.
+
+    Two rules meet on this letter. Word-final ة is pause /h/, not /t/, or the
+    TTS flips between them. And it is the one final letter that carries a mark:
+    every other word ends bare, because a vowel there is إعراب and makes the
+    delivery sound like a news broadcast, while a sukun on the pausal haa says
+    the opposite — stop here, no vowel — which is how a Najdi speaker ends the
+    word. Left bare, VoxCPM guesses a vowel and reads لُقْمَه as "luqmat".
+
+    Safe on any word: one that does not end in ة is returned untouched, so this
+    may be mapped over a whole sentence.
+    """
+    return _write_pausal_taa(word) if _is_pausal_taa(word) else word
 
 
 def _strip_final_marks(word: str) -> str:
@@ -438,6 +486,7 @@ def _strip_final_marks(word: str) -> str:
 
 def sanitize_tashkeel(text: str) -> str:
     """Enforce last-letter bare + drop phonotactically broken words to bare."""
+    text = "".join(ch for ch in text if ord(ch) not in _TANWEEN_CODEPOINTS)
 
     def fix_word(match: re.Match[str]) -> str:
         word = match.group(0)
@@ -459,9 +508,12 @@ def sanitize_tashkeel(text: str) -> str:
             _SUKUN in marks[i] and _SUKUN in marks[i + 1]
             for i in range(len(marks) - 1)
         )
+        pausal_taa = _is_pausal_taa(word)
         if starts_with_sukun or double_sukun:
-            return _MARKS.sub("", word)
-        return _strip_final_marks(word)
+            word = _MARKS.sub("", word)
+        else:
+            word = _strip_final_marks(word)
+        return _write_pausal_taa(word) if pausal_taa else word
 
     return _WORD_RE.sub(fix_word, text)
 
@@ -548,8 +600,26 @@ def _original_prefix(word: str, prefix_letters: str) -> str:
         else:
             i += 1
     # Do not strip marks on the prefix: وَ / بِ / فَ are real vowels on a
-    # one-letter proclitic, not إعراب on a finished word.
-    return word[:i] if i else prefix_letters
+    # one-letter proclitic, not إعراب on a finished word. A bare one gets its
+    # vowel: «وخمسين» copied bare from a tool was read with a bare و.
+    prefix = word[:i] if i else prefix_letters
+    if any(ord(c) in _TASHKEEL_CODEPOINTS for c in prefix):
+        return prefix
+    return _vowel_bare_prefix(prefix)
+
+
+_PROCLITIC_VOWEL = {"و": "\u064e", "ف": "\u064e", "ك": "\u064e", "ب": "\u0650", "ل": "\u0650"}
+
+
+def _vowel_bare_prefix(prefix: str) -> str:
+    """وَ فَ كَ بِ لِ on a bare proclitic; the ال (or لل's article lam) stays bare."""
+    if prefix.endswith("ال"):
+        head = prefix[:-2]
+    elif prefix == "لل":
+        head = "ل"
+    else:
+        head = prefix
+    return "".join(ch + _PROCLITIC_VOWEL.get(ch, "") for ch in head) + prefix[len(head):]
 
 
 def fix_pronunciation(text: str) -> str:
@@ -591,7 +661,7 @@ def fix_pronunciation(text: str) -> str:
 _TAG_QUESTION_RE = re.compile(
     r"[،,]\s*(?=(?:تِ?بِ?(?:ي|يه)|وِ?ش|تَب(?:غى|ي)|ودّ?ك|تِرِيد))"
 )
-_TRAILING_OPEN_RE = re.compile(r"[،,;…]+(?:\s*[\"'»«)])*\s*$")
+_TRAILING_OPEN_RE = re.compile(r"[،,;؛…]+(?:\s*[\"'»«)])*\s*$")
 _HAS_TERMINAL_RE = re.compile(r"[.!?؟۔]\s*$")
 
 # Stall phrases and leaked prompt text the model sometimes speaks before a tool
@@ -604,7 +674,7 @@ _STALL_FOLDED_RE = re.compile(
     r"(?:ارجع|ارد)\s+لك|"
     r"انتظرني|"
     r"لحظ(?:ه|ات)\s+و|"
-    r"لحظ(?:ه|ة)\s+اشوف|"
+    r"\bلحظ(?:ه|ة)\b|"
     r"اشوف\s+لك|"
     r"ادور\s+لك|"
     r"ممنوع\s+الوعد|"
@@ -614,6 +684,31 @@ _STALL_FOLDED_RE = re.compile(
     r"انت\s+قلت\s+سته"
     r")"
 )
+
+# A capability ("I can look for meals") is not a promise to return later.
+# Mask only an immediately modal lookup for stall detection, never the whole
+# sentence: "أقدر أدور لك... انتظرني" must still trigger the wait rule.
+_CAPABILITY_LOOKUP_RE = re.compile(
+    r"\b(?:و?اقدر|و?نقدر|يمكنني|بامكاني)\s+"
+    r"(?:(?:اني|ان|كمان|بعد|ايضا)\s+)?"
+    r"(?:ادور\s+لك|اشوف\s+(?:لك|العروض)|اشيك(?:\s+لك)?)\b"
+)
+
+# Descriptions of how meal selection works are capabilities even without
+# "أقدر". Match just the lookup words so explicit waits in the same sentence
+# remain visible to the stall rules. Do not exempt a bare lookup promise.
+_DESCRIPTIVE_LOOKUP_RE = re.compile(
+    r"\b(?:ادور\s+لك|اشوف\s+لك|اشيك\s+لك)\b"
+    r"(?=\s+(?:(?:على|علي)\s+)?(?:احسن\s+)?"
+    r"(?:الوجبات|الوجبه|الخيارات|العروض)\s+حسب\b)"
+)
+
+
+def mask_capability_lookups(folded: str) -> str:
+    """Exclude capability wording from stall checks, not from speech."""
+    return _DESCRIPTIVE_LOOKUP_RE.sub(" ", _CAPABILITY_LOOKUP_RE.sub(" ", folded))
+
+
 _BARE_TEMPLATE_WORDS = frozenset(
     {"thought", "analysis", "commentary", "final", "channel", "assistant", "system"}
 )
@@ -625,13 +720,40 @@ _TOOL_CALL_MARKER_RE = re.compile(r"<\s*tool_call\b", re.IGNORECASE)
 _SENTENCE_PIECES_RE = re.compile(r"([.!?؟۔]+)")
 # VoxCPM sometimes appends a ghost word after the falling breath at the end of
 # a turn. The user hears it as "تابونة". Drop it from the text if the model
-# ever writes it; the audio trimmer cuts the same tail if it is only in the
-# waveform.
+# ever writes it. Waveform energy cannot reliably identify a ghost word;
+# the audio path preserves final speech instead of guessing.
 _WEIRD_SPOKEN_RE = re.compile(
     r"(?:^|\s)(?:تابون[ةه]|طابون[ةه]|taboo?nah?|tabuna)(?:\s|$)",
     re.IGNORECASE,
 )
 _BRACE_JUNK_RE = re.compile(r"[{}|<>]+")
+_LATEX_DISPLAY_RE = re.compile(r"\$\$(.*?)\$\$", re.DOTALL)
+_LATEX_INLINE_RE = re.compile(r"\$(.*?)\$", re.DOTALL)
+_LATEX_TEXT_CMD_RE = re.compile(r"\\text\s*\{(.*?)\}", re.DOTALL)
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
+_MD_BOLD_RE = re.compile(r"\*\*(.*?)\*\*", re.DOTALL)
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", re.DOTALL)
+_MD_CODE_RE = re.compile(r"`{1,3}")
+_MD_HEADER_RE = re.compile(r"^#+\s+", re.MULTILINE)
+
+
+def strip_markup_for_speech(text: str) -> str:
+    """Drop LaTeX/markdown so TTS never reads $$\\text{...}$$ aloud."""
+    out = str(text or "")
+    if not out:
+        return ""
+    out = _LATEX_DISPLAY_RE.sub(lambda m: m.group(1), out)
+    out = _LATEX_TEXT_CMD_RE.sub(lambda m: m.group(1), out)
+    out = _LATEX_INLINE_RE.sub(lambda m: m.group(1), out)
+    out = _LATEX_CMD_RE.sub("", out)
+    out = _MD_BOLD_RE.sub(lambda m: m.group(1), out)
+    out = _MD_ITALIC_RE.sub(lambda m: m.group(1), out)
+    out = _MD_CODE_RE.sub("", out)
+    out = _MD_HEADER_RE.sub("", out)
+    out = out.replace("$$", " ").replace("$", " ")
+    return " ".join(out.split()).strip()
+
+
 # Live 2026-08-16: the model spoke the tool field wrapper itself —
 # `{ "say_to_user_ar": "شِلْت لَك …" }` — instead of the Arabic alone.
 _SAY_TO_USER_JSON_RE = re.compile(
@@ -649,6 +771,21 @@ _THOUGHT_LEAK_RE = re.compile(
     r"|思考完毕|思考中|思考",
     re.IGNORECASE,
 )
+# Live 2026-08-30: pair TTS started with "arرِيّضْ مَضْبُوطَة" — a language
+# tag glued onto the first Arabic word.
+_LATIN_GLUED_TO_ARABIC_RE = re.compile(
+    r"(?i)(?:^|\s)[a-z]{1,6}(?=[\u0600-\u06FF])"
+)
+# Live 2026-08-30: ASR junk echoed back as English ("socio-nanny") and
+# latinize_loanwords used to inject muffin/sushi/barger mid-sentence.
+# After we stopped that swap, leftover Latin tokens are still garbage.
+_STRAY_LATIN_TOKEN_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9\-]{2,}(?![A-Za-z0-9])"
+)
+# Hyphenated English is ASR/channel junk (socio-nanny). Bare pizza/burger stays.
+_HYPHEN_LATIN_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])[A-Za-z]+-[A-Za-z0-9\-]+(?![A-Za-z0-9])"
+)
 
 
 def strip_speech_artifacts(text: str) -> str:
@@ -661,6 +798,9 @@ def strip_speech_artifacts(text: str) -> str:
     raw = " ".join(str(text or "").split())
     if not raw:
         return ""
+    raw = strip_markup_for_speech(raw)
+    if not raw:
+        return ""
     # Prefer the Arabic payload if the whole turn is a tool-field JSON blob.
     say_match = _SAY_TO_USER_JSON_RE.search(raw)
     if say_match:
@@ -668,8 +808,10 @@ def strip_speech_artifacts(text: str) -> str:
     raw = _JSON_KEY_NOISE_RE.sub(" ", raw)
     raw = _CJK_RE.sub(" ", raw)
     raw = _THOUGHT_LEAK_RE.sub(" ", raw)
+    raw = _LATIN_GLUED_TO_ARABIC_RE.sub(" ", raw)
     raw = _WEIRD_SPOKEN_RE.sub(" ", raw)
     raw = _BRACE_JUNK_RE.sub(" ", raw)
+    raw = raw.replace("\"", " ").replace("'", " ").replace("«", " ").replace("»", " ")
     raw = " ".join(raw.split())
     if not raw:
         return ""
@@ -687,7 +829,7 @@ def strip_speech_artifacts(text: str) -> str:
         delim = pieces[i + 1] if i + 1 < len(pieces) else ""
         if chunk:
             folded = normalize_key(chunk)
-            if folded and not _STALL_FOLDED_RE.search(folded):
+            if folded and not _STALL_FOLDED_RE.search(mask_capability_lookups(folded)):
                 kept.append(chunk + delim)
         i += 2 if delim else 1
 
@@ -695,16 +837,12 @@ def strip_speech_artifacts(text: str) -> str:
 
 
 def finalize_prosody(text: str) -> str:
-    """Force falling/closed contour so turns do not end on a continuation rise.
-
-    Live failure mode: "...مُقَرْمَش، تِبِيه؟" — the Arabic comma keeps the pitch
-    up after مقرمش, and the question mark adds another rise, so playback feels
-    like she is about to continue and then just stops. Split the tag question
-    onto its own sentence, and never leave a turn ending on a comma/ellipsis.
-    """
+    """Close unfinished text while preserving intentional ellipsis pauses."""
     text = " ".join(str(text or "").split())
     if not text:
         return text
+    # Use the requested three-dot pause spelling; leave decimals intact.
+    text = re.sub(r"\.{2,}|…+", "...", text)
     text = _TAG_QUESTION_RE.sub(". ", text)
     text = _TRAILING_OPEN_RE.sub(".", text)
     if not _HAS_TERMINAL_RE.search(text):
@@ -712,17 +850,13 @@ def finalize_prosody(text: str) -> str:
     return text
 
 
-# ── Loanwords the voice should read as English, not as diacritized Arabic ────
+# ── Loanwords pair-pitch treats as English stems (do not inject into TTS) ────
 #
 # The catalog writes borrowed dish names in Arabic script (برجر, تشيز كيك,
-# رامن). Diacritizing those is the wrong tool: the vowels describe an Arabic
-# word that does not exist, and VoxCPM reads the invention literally. Handing
-# the model's own spelling to the TTS in Latin letters lets it use its English
-# phonetics instead.
-#
-# This runs ONLY inside clean_for_speech — the TTS boundary. Tool payloads,
-# `name_say_ar`, and the transcript keep the Arabic spelling, because those are
-# read by the user and by the model, not spoken.
+# رامن). Live 2026-08-30: swapping them to muffin / sushi / barger mid-sentence
+# made VoxCPM (language=Arabic) throw garbage. ``clean_for_speech`` keeps the
+# Arabic spelling. This table is only for ``_tts_latinizes`` so pair-pitch
+# says «مشروب» then the Arabic name after a pause — one language at a time.
 #
 # Entries are keyed on normalize_key output, and every one is a word that
 # actually appears in the catalog. False friends are deliberately absent:
@@ -734,9 +868,15 @@ def finalize_prosody(text: str) -> str:
 # voice as "وَال protein ثَلاثين" mid-answer. The test is whether the word names
 # food on a menu, not whether it was borrowed.
 LATIN_PHRASES: dict[str, str] = {
-    "ايس كريم": "ice cream",
+    # Live 2026-08-30: extras «آيس كريم / شوكولاتة / كريمة / دجاج» read as
+    # English mid-Arabic and the customer could not understand the upsell.
     "تشيز كيك": "cheesecake",
+    "تشيزكيك": "cheesecake",
+    "كول سلو": "coleslaw",
+    "دبل ديك": "double deck",
+    "تشيز ستاك": "cheese stack",
     "ميلك شيك": "milkshake",
+    "ميلكشيك": "milkshake",
     "باد تاي": "pad thai",
     "فيتوتشيني الفريدو": "fettuccine alfredo",
     "دبل تشيز": "double cheese",
@@ -746,14 +886,20 @@ LATIN_PHRASES: dict[str, str] = {
     "تكا مسايا": "tikka masala",
     "فاير جرل": "fire grill",
     "اوربان بان": "urban bun",
+    "ريب آي": "ribeye",
+    "ريب اي": "ribeye",
+    "ريب آي ستيك": "ribeye steak",
+    "ريب اي ستيك": "ribeye steak",
+    "فرنش فرايز": "french fries",
+    "سلطة سيزر": "caesar salad",
 }
 
 LATIN_WORDS: dict[str, str] = {
-    "برجر": "barger",
+    "برجر": "burger",
+    "برغر": "burger",
     # Soft-j /dʒ/. Latin "dajaaj" still came out hard-g on Hoda under
     # language=Arabic (same trap as Arabic دَجاج). The English lexicon word
     # is the one spelling that reliably keeps the soft ج.
-    "دجاج": "chicken",
     "بيتزا": "pizza",
     "باستا": "pasta",
     "سوشي": "sushi",
@@ -763,6 +909,15 @@ LATIN_WORDS: dict[str, str] = {
     "ساشيمي": "sashimi",
     "جيوزا": "gyoza",
     "ادامامي": "edamame",
+    "إدامامي": "edamame",
+    "ستيك": "steak",
+    "ستاك": "steak",
+    "تريب": "steak",
+    "تيرب": "steak",
+    "ريستورانت": "restaurant",
+    "ريستورنت": "restaurant",
+    "ساندوتش": "sandwich",
+    "ساندويتش": "sandwich",
     "ترياكي": "teriyaki",
     "كاتسو": "katsu",
     "تونكوستو": "tonkotsu",
@@ -775,16 +930,14 @@ LATIN_WORDS: dict[str, str] = {
     "كيك": "cake",
     "تشيز": "cheese",
     "لاتيه": "latte",
-    "سموذي": "smoothie",
-    "كينوا": "quinoa",
-    "افوكادو": "avocado",
-    "بول": "bowl",
     "راب": "wrap",
+    "سماش": "smash",
+    "كينوا": "quinoa",
+    "بول": "bowl",
     "ستاك": "steak",
     "تاكو": "taco",
     "كلاسيك": "classic",
     "كرسبي": "crispy",
-    "سماش": "smash",
     "ماشروم": "mushroom",
     "مشروم": "mushroom",
     "سويس": "swiss",
@@ -795,6 +948,8 @@ LATIN_WORDS: dict[str, str] = {
     "رانش": "ranch",
     "باربكيو": "barbecue",
     "تشيكن": "chicken",
+    "تشيكين": "chicken",
+    "كولسلو": "coleslaw",
     "فانيلا": "vanilla",
     "مارغريتا": "margherita",
     "بيبروني": "pepperoni",
@@ -816,6 +971,8 @@ LATIN_WORDS: dict[str, str] = {
     "كومبو": "combo",
     "سيت": "set",
     "ميسو": "miso",
+    "سموذي": "smoothie",
+    "سموزي": "smoothie",
     # Fried chicken strips: the single word this table was originally built to
     # rescue. WORD_FIXES still respells it in Arabic first, so the post-fix key
     # "استربس" has to be here too or the Arabic spelling wins.
@@ -827,12 +984,9 @@ LATIN_WORDS: dict[str, str] = {
     "باكت": "bucket",
     "فرايد": "fried",
     "كريسبي": "crispy",
-    # High-frequency addon vocabulary — صوص alone appears 1079 times.
-    "صوص": "sauce",
+    # High-frequency addon vocabulary. صوص / آيس كريم / دجاج stay Arabic —
+    # live extras read as "sauce chocolate, scoop ice cream, chicken".
     "كولا": "cola",
-    "سكوب": "scoop",
-    "كريمه": "cream",
-    "شوكولاته": "chocolate",
     "بارميزان": "parmesan",
     "صويا": "soya",
     "سويا": "soya",
@@ -887,6 +1041,8 @@ LATIN_WORDS: dict[str, str] = {
     "كرواسون": "croissant",
     "سينابون": "cinnabon",
     "دونات": "donut",
+    "دوناتس": "donut",
+    "دونتس": "donut",
     "مافن": "muffin",
     "مولتن": "molten",
     "نوتيلا": "nutella",
@@ -985,12 +1141,20 @@ def latinize_loanwords(text: str) -> str:
 # Values carry the canonical vowels, which also fixes the commoner case of the
 # right word with the wrong tashkeel.
 NUMBER_WORDS: dict[str, str] = {
-    "واحد": "واحِد", "اثنين": "اثْنين", "ثلاثه": "ثَلاثَة", "اربعه": "أَرْبَعَة",
-    "خمسه": "خَمْسَة", "سته": "سِتَّة", "سبعه": "سَبْعَة", "ثمانيه": "ثَمانِيَة",
-    "تسعه": "تِسْعَة", "عشره": "عَشَرَة", "عشرين": "عِشْرين", "ثلاثين": "ثَلاثين",
-    "اربعين": "أَرْبَعين", "خمسين": "خَمْسين", "ستين": "سِتِّين", "سبعين": "سَبْعين",
-    "ثمانين": "ثَمانين", "تسعين": "تِسْعين", "مياه": "مِئَة", "مئه": "مِئَة",
-    "مئتين": "مِئْتين", "الف": "أَلْف", "الفين": "أَلْفين", "الاف": "آلاف",
+    "واحد": "وَاحِد", "اثنين": "اثْنَيْن", "ثلاثه": "ثَلَاثَة", "اربعه": "أَرْبَعَة",
+    "خمسه": "خَمْسَة", "سته": "سِتَّة", "سبعه": "سَبْعَة", "ثمانيه": "ثَمَانِيَة",
+    "تسعه": "تِسْعَة", "عشره": "عَشَرَة", "عشرين": "عِشْرِين", "ثلاثين": "ثَلَاثِين",
+    "اربعين": "أَرْبَعِين", "خمسين": "خَمْسِين", "ستين": "سِتِّين", "سبعين": "سَبْعِين",
+    "ثمانين": "ثَمَانِين", "تسعين": "تِسْعِين", "الف": "أَلْف", "الفين": "أَلْفَيْن", "الاف": "آلَاف",
+    # Keys are normalize_key forms: ئ folds to ي, so مئة/مية is "ميه" and مائة
+    # "مايه". The key used to be "مياه", which is water: «تبي مياه معدنية؟»
+    # was read «تِبِي مِئَهْ». Hundreds are said the Saudi way, مِيَّة / مِيتَيْن.
+    "ميه": "مِيَّة", "مايه": "مِيَّة", "ميتين": "مِيتَيْن", "مايتين": "مِيتَيْن",
+    # The rest of what number_to_arabic_words and sar_words emit («أحد عشر»,
+    # «ثلاث مئة», «ريالين»), so a price copied bare from a tool is completed.
+    "احد": "أَحَد", "اثنا": "اثْنَا", "عشر": "عَشَر", "ثلاث": "ثَلَاث", "اربع": "أَرْبَع",
+    "خمس": "خَمْس", "ست": "سِت", "سبع": "سَبْع", "ثمان": "ثَمَان", "تسع": "تِسْع",
+    "ريال": "رِيَال", "ريالين": "رِيَالَيْن",
 }
 
 # Observed corruptions, listed one by one. Nothing is guessed.
@@ -1002,7 +1166,7 @@ NUMBER_WORDS: dict[str, str] = {
 # fixing, and no length or uniqueness guard rules it out, because both words
 # are ordinary. Add entries here as they are seen in the logs.
 NUMBER_TYPOS: dict[str, str] = {
-    "ثمسين": "خَمْسين",
+    "ثمسين": "خَمْسِين",
 }
 
 
@@ -1018,11 +1182,15 @@ def repair_number_words(text: str) -> str:
         fixed = lookup(key)
         if fixed is not None:
             return fixed
-        # "وخمسين" is one word to the tokenizer but و + number to the lexicon.
-        if key.startswith("و") and len(key) > 1:
-            fixed = lookup(key[1:])
+        # "وخمسين" / "بمية" are one word to the tokenizer but a proclitic +
+        # number to the lexicon. Stems under three letters stay out: «بست»
+        # is not «بِسِت».
+        for prefix, rest in _prefix_splits(key):
+            if "ال" in prefix or len(rest) < 3:
+                continue
+            fixed = lookup(rest)
             if fixed is not None:
-                return f"{_original_prefix(word, 'و')}{fixed}"
+                return f"{_original_prefix(word, prefix)}{fixed}"
         return word
 
     return _WORD_RE.sub(replace, text)
@@ -1036,11 +1204,11 @@ def repair_number_words(text: str) -> str:
 # runs. Listed explicitly, and kept disjoint from the words we deliberately
 # romanise, so this never fights LATIN_WORDS.
 ROMAN_STRAYS: dict[str, str] = {
-    "protin": "بروتين",
-    "protein": "بروتين",
+    "protin": "بْرُوتِين",
+    "protein": "بْرُوتِين",
     "calories": "سُعْرَة",
-    "riyal": "رِيال",
-    "sar": "رِيال",
+    "riyal": "رِيَال",
+    "sar": "رِيَال",
 }
 
 _ROMAN_STRAY_RE = re.compile(r"(?<![A-Za-z])[A-Za-z]+(?![A-Za-z])")
@@ -1071,12 +1239,32 @@ def deromanize_strays(text: str) -> str:
 # Running last also keeps phrase lookup intact: SPOKEN_PHRASES entries such as
 # "شاورما دجاج" still match on the plain spelling before it is replaced.
 DIALECT_RESPELL: dict[str, str] = {
+    # Najdi pronunciation: دِجاج (di-JAJ) with kasra, never Modern Standard Arabic دَجاج
+    "دجاج": "دِجَاج",
+    "دجاجه": "دِجَاجَه",
+    "دجاجة": "دِجَاجَه",
     # Model typos for words it must not mangle, same principle as NUMBER_TYPOS:
     # observed in the logs, never guessed. "رِجَّعْت لَك صَفْحَة المَطَاعِع".
     # Stored bare: the ال in "المطاعع" is re-attached by the proclitic path.
     "مطاعع": "مَطَاعِم",
     "اضضت": "أَضَفْت",
     "أضضت": "أَضَفْت",
+    # Interior vowels the model gets wrong. sanitize_tashkeel only strips marks
+    # off the *last* letter, so a wrong vowel in the middle survives every pass
+    # and the TTS reads a different word. Counted over 198 live lines on
+    # 2026-09-16: شَيء 28, كِل 5, مَن 3, كِلها 2, أُعَطِيك 1.
+    "من": "مِن",          # "مَن كْرِيسْبِي يَارْد" was read /man/, not /min/
+    "كل": "كُل",
+    "كلها": "كِلَّهَا",     # missing shadda: read /kilha/
+    "اعطيك": "أَعْطِيك",
+    "أعطيك": "أَعْطِيك",
+    # MSA/Egyptian forms of words سلمى already has a Najdi spelling for. The
+    # prompt bans these and they still came through, so they are pinned here
+    # too — same principle as دجاج above.
+    "شيء": "شَي",
+    "هذه": "هَذِي",
+    "كده": "كِذَا",
+    "كمان": "بَعَد",
 }
 
 
@@ -1123,20 +1311,72 @@ def dialect_respell(text: str) -> str:
     return _WORD_RE.sub(replace, text)
 
 
+# Feminine customer addressing patterns that should always be converted to masculine
+_FEMININE_ADDRESS_RE = (
+    (re.compile(r"\bأَبْ?شِري\b", re.IGNORECASE), "أَبْشِر"),
+    (re.compile(r"\bأبْ?شِري\b", re.IGNORECASE), "أَبْشِر"),
+    (re.compile(r"\bيَا\s+حَبِيبَ[ةه]\b", re.IGNORECASE), "يا غالي"),
+    (re.compile(r"\bالسِّ?مَاحَ[ةه]\s+مِنِّ?كِ?\b", re.IGNORECASE), "السماحة منك"),
+    (re.compile(r"\bحَقَّ?كِ?\s+عَلَيَّ?\b", re.IGNORECASE), "حقك علي"),
+    (re.compile(r"\bتِ?بِين\b", re.IGNORECASE), "تبي"),
+    (re.compile(r"\bتَ?بِين\b", re.IGNORECASE), "تبي"),
+    (re.compile(r"\bوِدِّ?كِ\b", re.IGNORECASE), "ودك"),
+    (re.compile(r"\bلَكِ\b", re.IGNORECASE), "لَك"),
+    (re.compile(r"\bعَلَيْكِ\b", re.IGNORECASE), "عَلَيْك"),
+    (re.compile(r"\bمِنْكِ\b", re.IGNORECASE), "مِنْك"),
+    (re.compile(r"\bتَطْلُبِين\b", re.IGNORECASE), "تطلب"),
+    (re.compile(r"\bتِشُوفِين\b", re.IGNORECASE), "تشوف"),
+    (re.compile(r"\bتَاخْذِين\b", re.IGNORECASE), "تاخذ"),
+)
+
+
+def sanitize_gender_for_male_customer(text: str) -> str:
+    """Normalize any accidental feminine customer address into masculine forms."""
+    if not text:
+        return text
+    res = text
+    for pattern, replacement in _FEMININE_ADDRESS_RE:
+        res = pattern.sub(replacement, res)
+    return res
+
+
 def clean_for_speech(text: str) -> str:
-    """Full TTS text pass: tashkeel rules, lexicon respell, then prosody close."""
+    """Full TTS text pass: tashkeel rules, lexicon respell, loanword latinization, and prosody close."""
     cleaned = strip_speech_artifacts(text)
     if not cleaned.strip():
         return ""
-    return finalize_prosody(
-        dialect_respell(
-            latinize_loanwords(
-                deromanize_strays(
-                    repair_number_words(fix_pronunciation(sanitize_tashkeel(cleaned)))
-                )
-            )
+    cleaned = sanitize_gender_for_male_customer(cleaned)
+    # Proclitic tatweel leftovers like الـ / بـ: glued back onto the next
+    # Arabic word («بـ ستة» → «بستة» → «بِسِتَّهْ»). Left apart, a lone «ب» is
+    # a bare letter the TTS can read as its name.
+    cleaned = re.sub(r"(?<![ء-ي])([وبفل]?(?:ال)?)ـ\s*(?=[ء-ي])", r"\1", cleaned)
+    # Strip tatweel (kashida) which breaks token matching and pronunciation
+    cleaned = cleaned.replace("\u0640", "")
+    cleaned = re.sub(r"\b([وبفل]?(?:ال)?)ـ\s*", r"\1 ", cleaned)
+    # Collapse 1-2 transliterated Arabic words immediately followed by parenthesized English
+    # e.g. "إدامامي (Edamame)" -> "Edamame", "تِرِب (Ribeye Steak)" -> "Ribeye Steak"
+    cleaned = re.sub(r"[\u0600-\u06FF\-]+\s*\(([A-Za-z\s\-]+)\)", r" \1 ", cleaned)
+    cleaned = re.sub(r"\(([A-Za-z\s\-]+)\)", r" \1 ", cleaned)
+
+    spoken = dialect_respell(
+        deromanize_strays(
+            repair_number_words(fix_pronunciation(sanitize_tashkeel(cleaned)))
         )
     )
+    # Ensure all forms of دجاج are strictly vocalized as Najdi دِجاج (di-JAJ)
+    spoken = re.sub(
+        r"(?<!\w)([وبفل]?)(ال)?د[َُِ]?ّ?ج[َُِ]?ا?ج([هة]?)",
+        lambda m: f"{m.group(1)}{m.group(2) or ''}{'دِّ' if m.group(2) else 'دِ'}جَاج{m.group(3) or ''}",
+        spoken,
+    )
+    spoken = sanitize_gender_for_male_customer(spoken)
+    spoken = _WORD_RE.sub(lambda m: _pause_taa_marbuta(m.group(0)), spoken)
+    spoken = _HYPHEN_LATIN_RE.sub(" ", spoken)
+    spoken = latinize_loanwords(spoken)
+    # Deduplicate repeated words (e.g. ribeye Ribeye Steak -> Ribeye Steak)
+    spoken = re.sub(r"\b([A-Za-z]+)\s+\1\b", r"\1", spoken, flags=re.IGNORECASE)
+    spoken = " ".join(spoken.split())
+    return finalize_prosody(spoken)
 
 
 # Counts written as digits inside catalog names. 75 family meals are named
@@ -1144,13 +1384,15 @@ def clean_for_speech(text: str) -> str:
 # bare "3" — a Latin numeral in an Arabic sentence, read as a letter or dropped.
 # The count is the whole point of those names, so it is spelled out.
 _COUNT_WORDS: dict[str, str] = {
-    "1": "واحِد", "2": "اثْنَين", "3": "ثَلاثَة", "4": "أَرْبَعَة", "5": "خَمْسَة",
-    "6": "سِتَّة", "7": "سَبْعَة", "8": "ثَمانِيَة", "9": "تِسْعَة", "10": "عَشَرَة",
-    "11": "إِحْدَى عَشَر", "12": "اثْنا عَشَر", "30": "ثَلاثِين",
+    "1": "وَاحِد", "2": "اثْنَيْن", "3": "ثَلَاثَة", "4": "أَرْبَعَة", "5": "خَمْسَة",
+    "6": "سِتَّة", "7": "سَبْعَة", "8": "ثَمَانِيَة", "9": "تِسْعَة", "10": "عَشَرَة",
+    "11": "إِحْدَى عَشَر", "12": "اثْنَا عَشَر", "30": "ثَلَاثِين",
 }
 
 # "لـ" is لام الجر glued on with a tatweel. Spoken it is لِ + the count.
 _LAM_COUNT_RE = re.compile(r"لـ\s*(\d+)")
+# Catalog extras write "جيوزا ×٢". TTS reads the multiply sign as junk.
+_TIMES_COUNT_RE = re.compile(r"[×xX]\s*(\d+)")
 # Decimals are left alone: "زيت ذرة 1.5 لتر" must not become "واحِد.خَمْسَة".
 _COUNT_RE = re.compile(r"(?<![\d.])\d+(?![\d.])")
 
@@ -1160,11 +1402,52 @@ def speak_counts(text: str) -> str:
     if not text:
         return text
     out = text.translate(_ARABIC_INDIC_DIGITS)
+    out = _TIMES_COUNT_RE.sub(
+        lambda m: f" {_COUNT_WORDS[m.group(1)]}" if m.group(1) in _COUNT_WORDS else m.group(0),
+        out,
+    )
+    # Leftover × in "جيوزا ×اثْنَين" — TTS reads the sign as junk.
+    out = re.sub(r"[×xX]\s*", " ", out)
     out = _LAM_COUNT_RE.sub(
         lambda m: f"لِ{_COUNT_WORDS[m.group(1)]}" if m.group(1) in _COUNT_WORDS else m.group(0),
         out,
     )
     return _COUNT_RE.sub(lambda m: _COUNT_WORDS.get(m.group(0), m.group(0)), out)
+
+
+# Isolated catalog titles only. Live 2026-09-08: كاليماري / ميسو / سموذي / جيوزا
+# were unreadable in Arabic script. Do not run the full LATIN_WORDS table here —
+# that turned برجر into barger mid-pitch.
+_NAME_TTS_LATIN = {
+    "كاليماري": "calamari",
+    "كالماري": "calamari",
+    "كلماري": "calamari",
+    "كاليمارى": "calamari",
+    "ميسو": "miso",
+    "سموذي": "smoothie",
+    "سموزي": "smoothie",
+    "جيوزا": "gyoza",
+    "ادامامي": "edamame",
+}
+
+
+def _latinize_name_loans(text: str) -> str:
+    if not text:
+        return text
+
+    def replace(match: re.Match[str]) -> str:
+        word = match.group(0)
+        key = normalize_key(word)
+        latin = _NAME_TTS_LATIN.get(key)
+        if latin is not None:
+            return latin
+        for prefix, rest in _prefix_splits(key):
+            latin = _NAME_TTS_LATIN.get(rest)
+            if latin is not None:
+                return f"{_original_prefix(word, prefix)} {latin}"
+        return word
+
+    return _WORD_RE.sub(replace, text)
 
 
 def speakable_name(name: str) -> str:
@@ -1173,7 +1456,8 @@ def speakable_name(name: str) -> str:
         return ""
     # Names are fragments, not turns — skip prosody finalization so we do not
     # append a period onto every meal title in tool payloads.
-    return speak_counts(fix_pronunciation(sanitize_tashkeel(str(name))))
+    spoken = speak_counts(fix_pronunciation(sanitize_tashkeel(str(name))))
+    return _latinize_name_loans(spoken)
 
 
 _ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
@@ -1196,9 +1480,74 @@ def written_text(value: Any) -> str:
     return " ".join(s.split())
 
 
-def written_phone(value: Any) -> str:
-    """Digits-only Saudi mobile, normalized to 05XXXXXXXX where possible."""
-    raw = written_text(value)
+_SAUDI_MOBILE_LOCAL = re.compile(r"^05\d{8}$")
+_SAUDI_MOBILE_E164 = re.compile(r"^\+9665\d{8}$")
+
+# Longest first. Used only while reading a phone, not catalog names.
+_PHONE_DIGIT_WORDS: tuple[tuple[str, str], ...] = (
+    ("عشرين", "20"),
+    ("تلاتين", "30"),
+    ("ثلاثين", "30"),
+    ("اربعين", "40"),
+    ("أربعين", "40"),
+    ("خمسين", "50"),
+    ("ستين", "60"),
+    ("سبعين", "70"),
+    ("ثمانين", "80"),
+    ("تسعين", "90"),
+    ("عشرة", "10"),
+    ("عشره", "10"),
+    ("ثمانيه", "8"),
+    ("ثمانية", "8"),
+    ("تمانية", "8"),
+    ("ثلاثة", "3"),
+    ("ثلاثه", "3"),
+    ("تلاتة", "3"),
+    ("تلاته", "3"),
+    ("اثنين", "2"),
+    ("إثنين", "2"),
+    ("اتنين", "2"),
+    ("اثنان", "2"),
+    ("اربعة", "4"),
+    ("أربعة", "4"),
+    ("اربعه", "4"),
+    ("خمسة", "5"),
+    ("خمسه", "5"),
+    ("ستة", "6"),
+    ("سته", "6"),
+    ("سبعة", "7"),
+    ("سبعه", "7"),
+    ("تسعة", "9"),
+    ("تسعه", "9"),
+    ("واحد", "1"),
+    ("صفر", "0"),
+    ("تمن", "8"),
+    ("ثمان", "8"),
+    ("عشر", "10"),
+)
+_PHONE_REPEAT_RE = re.compile(
+    r"(تمن|ثمان(?:يه|ية|ي)?|8)\s*(?:من\s+)?(خمسات)",
+)
+
+
+def _expand_spoken_phone_tokens(text: str) -> str:
+    """Turn spoken/grouped phone tokens into digits. Format only, no names."""
+    if not text:
+        return ""
+    out = unicodedata.normalize("NFC", str(text))
+    out = _MARKS.sub("", out)
+    out = out.translate(_ARABIC_INDIC_DIGITS)
+
+    def _repeat(match: re.Match[str]) -> str:
+        return "5" * 8
+
+    out = _PHONE_REPEAT_RE.sub(_repeat, out)
+    for word, digits in _PHONE_DIGIT_WORDS:
+        out = re.sub(re.escape(word), digits, out)
+    return out
+
+
+def _kept_phone_digits(raw: str) -> str:
     kept = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
     if kept.startswith("00966"):
         kept = "+" + kept[2:]
@@ -1211,6 +1560,69 @@ def written_phone(value: Any) -> str:
     if kept.startswith("5") and len(kept) == 9:
         return "0" + kept
     return kept
+
+
+def _is_local_or_e164_mobile(digits: str) -> bool:
+    return bool(
+        _SAUDI_MOBILE_LOCAL.fullmatch(digits) or _SAUDI_MOBILE_E164.fullmatch(digits)
+    )
+
+
+def written_phone(value: Any) -> str:
+    """Digits-only Saudi mobile, normalized to 05XXXXXXXX where possible.
+
+    Live 2026-08-26: ``0, 5, 20, 30, 40, 50`` and ``صفر خمسة … تمن خمسات``
+    must join into 05XXXXXXXX. Commas/spaces are separators, not extra digits.
+    Already-written digits win so ``خمسة أشخاص`` in an address is not glued on.
+    """
+    text = written_text(value) if value is not None else ""
+    if not text and value is not None:
+        text = str(value)
+    from_digits = _kept_phone_digits(text)
+    if _is_local_or_e164_mobile(from_digits):
+        return from_digits
+    # Leftover 05-runs are already a phone attempt. Don't glue "واحد" from
+    # an address onto 0555555555555.
+    if from_digits.startswith("05") and len(from_digits) >= 10:
+        return from_digits
+    return _kept_phone_digits(_expand_spoken_phone_tokens(text))
+
+
+_DIGIT_WORDS = ("صفر", "واحد", "اثنين", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة")
+
+
+def digits_say_ar(digits: str) -> str:
+    """Digits one by one, as she reads a number back: «صفر خمسة واحد…»."""
+    return " ".join(_DIGIT_WORDS[int(d)] for d in str(digits or "") if d.isdigit())
+
+
+def resolve_checkout_phone(phone_arg: Any = "", last_user: Any = "") -> tuple[str, str]:
+    """Saudi mobile from the tool arg, or from the last spoken turn.
+
+    Returns ``(normalized, rejected)``. ``rejected`` is set only when the tool
+    arg was a number that still is not 05XXXXXXXX after grouped/spoken parsing.
+    """
+    arg = written_phone(phone_arg) if phone_arg not in (None, "") else ""
+    if is_saudi_mobile(arg):
+        return arg, ""
+    spoken = written_phone(last_user) if last_user not in (None, "") else ""
+    if is_saudi_mobile(spoken):
+        return spoken, ""
+    if arg:
+        return "", arg
+    return "", ""
+
+
+def is_saudi_mobile(value: Any) -> bool:
+    """True for a Saudi mobile after ``written_phone`` (same shape as checkout).
+
+    Accepts 05 + 8 digits, or +9665 / 9665 / 5… forms that normalize to that.
+    Wrong length, a leading 01/03, or leftover digits after a 05 prefix fail.
+    """
+    digits = written_phone(value)
+    return bool(
+        _SAUDI_MOBILE_LOCAL.fullmatch(digits) or _SAUDI_MOBILE_E164.fullmatch(digits)
+    )
 
 
 # Back-compat alias used by older call sites / tests.

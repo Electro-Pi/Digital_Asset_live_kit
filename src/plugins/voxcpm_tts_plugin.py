@@ -36,7 +36,7 @@ deliberately absent here rather than passed and ignored.
 from __future__ import annotations
 
 import hashlib
-import os
+import math
 import re
 import time
 import unicodedata
@@ -51,6 +51,8 @@ except Exception:  # pragma: no cover - diagnostics only
 from loguru import logger
 
 from livekit.agents import tts, utils
+
+from src.config import CONFIG
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
@@ -126,12 +128,7 @@ _ALL_REMOVABLE_MARKS = re.compile(
     "[" + _TASHKEEL + "\\u0670\\u0640\\u0610-\\u061a\\u06d6-\\u06dc\\u06df-\\u06e8\\u06ea-\\u06ed]"
 )
 
-STRIP_TASHKEEL = os.getenv("TTS_STRIP_TASHKEEL", "0").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+STRIP_TASHKEEL = CONFIG.endpoints.tts_strip_tashkeel
 
 
 def normalize_arabic(text: str, *, strip_tashkeel: bool | None = None) -> str:
@@ -183,6 +180,20 @@ def strip_control_tokens(text: str) -> str:
     if re.search(r"<\s*tool_call\b", cleaned, re.IGNORECASE):
         return ""
     return " ".join(cleaned.split())
+
+
+# A clip that ends in «...» makes the server stop generating mid-word: measured
+# 2026-09-16 over identical sentences, the last word was chopped from full level
+# to digital zero in 10 of 40 clips ending «...»/«؟...» and 0 of 40 ending
+# «.»/«؟». A «...» inside a clip was harmless (0 of 20), so only the final one
+# is settled. It bought no pause anyway: the clip ending is normalised by
+# trim_trailing_artifacts whatever the server generates after the last word.
+_FINAL_ELLIPSIS_RE = re.compile(r"\s*([؟?!])?\s*(?:\.{2,}|…)\s*$")
+
+
+def settle_final_ellipsis(text: str) -> str:
+    """Replace a clip-final «...» with a plain full stop (or keep «؟»/«!»)."""
+    return _FINAL_ELLIPSIS_RE.sub(lambda m: m.group(1) or ".", text)
 
 
 def _text_hash(text: str) -> str:
@@ -252,122 +263,72 @@ def _median_f0(audio_bytes: bytes) -> tuple[float | None, float | None, int | No
     return float(np.median(f0s)), rms, peak
 
 
-# Trailing breath / ghost-word trim.
-#
-# VoxCPM ends almost every generation with an inhale (the user hears it as
-# "تابونة") after the last real syllable. Holding back the last HOLD_MS of
-# the stream lets us cut that tail on flush without un-emitting audio already
-# sent to LiveKit. A pause-then-speech pattern in that window is treated as a
-# hallucinated extra word and dropped.
-HOLD_TAIL_MS = 480
-BREATH_FRAME_MS = 10
-BREATH_RATIO = 0.15
-POST_PAUSE_MS = 90
-TRAILING_SILENCE_MS = 60
-FADE_MS = 18
-# Quiet tail after real speech (inhale) vs the window just before it.
-DECAY_TAIL_MS = 140
-DECAY_RATIO = 0.45
-DECAY_PEAK_RATIO = 0.28
+# Preserve model-generated breaths, pauses, and quiet final consonants. Energy
+# alone cannot distinguish these from hallucinated speech. Only hold enough
+# audio to smooth the final sample and ensure a short pause at a segment end.
+HOLD_TAIL_MS = 120
+TRAILING_SILENCE_MS = 120
+FADE_MS = 5
+# Near digital silence, not a relative speech-energy threshold.
+SILENCE_MAX_AMPLITUDE = 8
 
 
-def _pcm16(pcm: bytes) -> "np.ndarray":
-    aligned = (len(pcm) // 2) * 2
-    return np.frombuffer(pcm[:aligned], dtype="<i2")
+def apply_output_gain(pcm: bytes, gain_db: float) -> bytes:
+    """Boost volume without buffering or changing the sample clock.
 
-
-def _pack_pcm(samples: "np.ndarray") -> bytes:
-    if samples.size == 0:
-        return b""
-    return np.clip(samples, -32767, 32767).astype("<i2").tobytes()
-
-
-def trim_trailing_artifacts(pcm: bytes, sample_rate: int = SERVER_SAMPLE_RATE) -> bytes:
-    """Drop end-of-utterance breath and a ghost word after a pause.
-
-    Do not clip a fixed number of milliseconds off every utterance: that ate
-    the last syllable of every reply (the greeting died at «لقمة» / «اليوم»).
-    Keep the last voiced speech, cut a pause-then-burst ghost word, and only
-    drop a tail that is clearly quieter than the speech before it (the inhale).
+    A smooth limiter above 90% full scale protects peaks. Its per-sample
+    curve is independent of HTTP chunk sizes, so gain cannot pump at joins.
     """
-    if np is None or not pcm:
+    if not pcm or gain_db == 0.0:
         return pcm
-    samples = _pcm16(pcm).astype(np.float32)
-    if samples.size < int(sample_rate * 0.08):
-        return pcm
-
-    frame = max(1, int(sample_rate * BREATH_FRAME_MS / 1000))
-    n_frames = len(samples) // frame
-    if n_frames < 4:
-        return pcm
-
-    rms = np.array(
-        [
-            float(np.sqrt(np.mean(samples[i * frame : (i + 1) * frame] ** 2)))
-            for i in range(n_frames)
-        ],
-        dtype=np.float32,
+    if np is None:
+        raise RuntimeError("Output gain requires numpy")
+    samples = np.frombuffer(pcm, dtype="<i2").astype(np.float64) / 32768.0
+    samples *= 10.0 ** (gain_db / 20.0)
+    magnitude = np.abs(samples)
+    loud = magnitude > 0.9
+    samples[loud] = np.sign(samples[loud]) * (
+        0.9 + 0.1 * np.tanh((magnitude[loud] - 0.9) / 0.1)
     )
-    peak = float(rms.max()) if rms.size else 0.0
-    if peak <= 0:
-        return b""
-    voiced = rms >= (BREATH_RATIO * peak)
+    return np.clip(np.rint(samples * 32768.0), -32768, 32767).astype("<i2").tobytes()
 
-    last_voiced = int(np.max(np.nonzero(voiced)[0])) if voiced.any() else -1
-    if last_voiced < 0:
-        return b""
-    cut_at = last_voiced
 
-    # If the tail is "speech, pause, speech", the second burst is the ghost
-    # word. Cut at the pause.
-    pause_frames = max(1, int(POST_PAUSE_MS / BREATH_FRAME_MS))
-    window_start = max(0, n_frames - int(HOLD_TAIL_MS / BREATH_FRAME_MS) - 2)
-    silent_run = 0
-    for i in range(last_voiced, window_start - 1, -1):
-        if voiced[i]:
-            if silent_run >= pause_frames:
-                cut_at = i
-                break
-            silent_run = 0
-        else:
-            silent_run += 1
+def trim_trailing_artifacts(pcm: bytes, sample_rate: int = SERVER_SAMPLE_RATE, pause_ms: int = TRAILING_SILENCE_MS) -> bytes:
+    """Finish PCM without deleting speech (historical name kept for callers).
 
-    # Inhale rides on the last 100–150ms at a fraction of speech energy.
-    # Only drop it when it is actually quieter than what came before — a
-    # falling last syllable at full-ish energy must stay.
-    decay_frames = max(2, int(DECAY_TAIL_MS / BREATH_FRAME_MS))
-    if cut_at + 1 >= decay_frames * 2:
-        tail_mean = float(rms[cut_at + 1 - decay_frames : cut_at + 1].mean())
-        prev_mean = float(
-            rms[cut_at + 1 - 2 * decay_frames : cut_at + 1 - decay_frames].mean()
-        )
-        if (
-            prev_mean > 0
-            and tail_mean < DECAY_RATIO * prev_mean
-            and tail_mean < DECAY_PEAK_RATIO * peak
-        ):
-            cut_at = max(0, cut_at - decay_frames)
+    Preserve every input sample, including speech after a pause and quiet
+    endings. A tiny fade prevents a discontinuity at EOF. Top up near-digital
+    silence to 120ms without adding another pause when one already exists.
+    This cannot repair speech that the upstream model never generated.
+    """
+    if not pcm:
+        return pcm
+    if len(pcm) % 2:
+        raise ValueError("PCM16 must contain complete samples")
+    if np is None:
+        return pcm + b"\x00\x00" * int(sample_rate * pause_ms / 1000)
 
-    end = min(len(samples), (cut_at + 1) * frame)
-    # Also drop trailing frames that are only breath, even without a pause.
-    while end > frame:
-        tail = samples[max(0, end - frame) : end]
-        if float(np.sqrt(np.mean(tail ** 2))) >= BREATH_RATIO * peak:
-            break
-        end -= frame // 2
-
-    out = samples[:end]
-    fade = min(len(out), int(sample_rate * FADE_MS / 1000))
+    samples = np.frombuffer(pcm, dtype="<i2").copy()
+    active = np.flatnonzero(np.abs(samples.astype(np.int32)) > SILENCE_MAX_AMPLITUDE)
+    trailing_samples = len(samples) - int(active[-1]) - 1 if active.size else len(samples)
+    # Fade only the physical end, never move the cut back into the last word.
+    fade = min(len(samples), int(sample_rate * FADE_MS / 1000))
     if fade > 1:
-        out[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
-    return _pack_pcm(out)
+        samples[-fade:] = np.rint(
+            samples[-fade:].astype(np.float32) * np.linspace(1.0, 0.0, fade)
+        ).astype("<i2")
+    pause = int(sample_rate * pause_ms / 1000)
+    padding = max(0, pause - trailing_samples)
+    return samples.tobytes() + b"\x00\x00" * padding
 
 
 class _TailHoldback:
-    """Keep the last HOLD_TAIL_MS unemitted so flush can trim it."""
+    """Hold a bounded tail for EOF smoothing; push never edits speech."""
 
-    def __init__(self, sample_rate: int, hold_ms: int = HOLD_TAIL_MS) -> None:
+    def __init__(self, sample_rate: int, hold_ms: int = HOLD_TAIL_MS, startup_ms: int = 0) -> None:
         self._hold = int(sample_rate * hold_ms / 1000) * 2
+        self._startup = int(sample_rate * startup_ms / 1000) * 2
+        self._started = False
         self._buf = bytearray()
 
     def push(self, pcm: bytes) -> bytes:
@@ -375,15 +336,18 @@ class _TailHoldback:
             return b""
         self._buf.extend(pcm)
         extra = len(self._buf) - self._hold
+        if not self._started and extra < self._startup:
+            return b""
         if extra < 2:
             return b""
+        self._started = True
         extra -= extra % 2
         emit = bytes(self._buf[:extra])
         del self._buf[:extra]
         return emit
 
-    def flush(self, sample_rate: int) -> bytes:
-        trimmed = trim_trailing_artifacts(bytes(self._buf), sample_rate)
+    def flush(self, sample_rate: int, pause_ms: int = TRAILING_SILENCE_MS) -> bytes:
+        trimmed = trim_trailing_artifacts(bytes(self._buf), sample_rate, pause_ms)
         self._buf.clear()
         return trimmed
 
@@ -529,12 +493,16 @@ class VoxCPMTTSPlugin(tts.TTS):
         self,
         *,
         server_url: str = "http://localhost:16326",
+        api_key: str | None = None,
         model: str = "VoxCPM2",
         voice: str = "nouf",
         ref_audio: str | None = None,
         ref_text: str | None = None,
         seed: int | None = None,
+        style: str | None = None,
+        phrase_streaming: bool = False,
         speed: float = 1.0,
+        gain_db: float = 0.0,
         expected_voice: str = "nouf",
         voice_min_f0: float = VOICE_MIN_F0,
         voice_max_f0: float = VOICE_MAX_F0,
@@ -545,6 +513,9 @@ class VoxCPMTTSPlugin(tts.TTS):
         Args:
             server_url: VoxCPM2 server base URL, WITHOUT the /v1 suffix — the
                 endpoint path is appended here.
+            api_key: optional bearer token, sent as "Authorization: Bearer
+                <key>". Unset on a bare self-hosted server; required by a
+                gated speech gateway (401 without it).
             model: model id served (see GET /v1/models); an unknown id is a 404.
             voice: server-side voice name (see GET /v1/audio/voices). Currently
                 "nouf"/"hoda" (precomputed female) or "default" (male). An
@@ -560,10 +531,18 @@ class VoxCPMTTSPlugin(tts.TTS):
             seed: optional deterministic sampling seed. Without one the server
                 is free-running, so utterance length varies between identical
                 requests.
+            style: optional VoxCPM2 delivery instruction, wrapped in parentheses
+                before the cleaned text. Enable only on a backend supporting
+                VoxCPM2 control prompts; older wrappers may speak the instruction.
+            phrase_streaming: condition each PCM phrase and top up its trailing
+                pause from punctuation. Pair with ConcatPhraseTokenizer; no WAV
+                requests or complete-phrase buffering are used.
             speed: playback-rate multiplier applied locally, below 1.0 for a
                 slower delivery. Pitch-preserving (see _WSOLAStretcher); this is
                 deliberately not the server's `speed`, which resamples and so
                 changes the speaker. 1.0 disables the stretch entirely.
+            gain_db: local output volume boost, 0-12 dB, with soft peak limiting.
+                Does not change pitch, speed, or add a buffering delay.
             voice_min_f0 / voice_max_f0: diagnostic pitch band for this speaker
                 (female nouf ≈ 135-340 Hz, male clone ≈ 70-180 Hz).
         """
@@ -582,11 +561,21 @@ class VoxCPMTTSPlugin(tts.TTS):
                 "endpoint path is appended by this plugin",
                 self._server_url,
             )
+        self._api_key = api_key
         self._model = model
         self._voice = voice
         self._ref_audio = ref_audio
         self._ref_text = ref_text
         self._seed = seed
+        self._phrase_streaming = phrase_streaming
+        self._style = " ".join((style or "").split())
+        if any(char in self._style for char in "()（）"):
+            raise ValueError("style must not contain parentheses; the plugin adds them")
+        self._gain_db = float(gain_db)
+        if not math.isfinite(self._gain_db) or not 0.0 <= self._gain_db <= 12.0:
+            raise ValueError("gain_db must be finite and between 0 and 12")
+        if self._gain_db and np is None:
+            raise RuntimeError("Output gain requires numpy")
         self._speed = min(MAX_SPEED, max(MIN_SPEED, float(speed)))
         if self._speed != float(speed):
             logger.warning(
@@ -612,16 +601,18 @@ class VoxCPMTTSPlugin(tts.TTS):
         self._voice_max_f0 = float(voice_max_f0)
         self._session = http_session
         logger.info(
-            "VoxCPM TTS plugin initialized server_url={} model={} voice={} ref_audio={} "
-            "ref_text_chars={} seed={} speed={} sample_rate={} channels={} "
+            "VoxCPM TTS plugin initialized server_url={} api_key_set={} model={} voice={} ref_audio={} "
+            "ref_text_chars={} seed={} speed={} gain_db={} sample_rate={} channels={} "
             "voice_f0_band={:.0f}-{:.0f}",
             self._server_url,
+            bool(self._api_key),
             self._model,
             self._voice,
             "set" if self._ref_audio else None,
             len(self._ref_text or ""),
             self._seed,
             self._speed,
+            self._gain_db,
             SERVER_SAMPLE_RATE,
             SERVER_CHANNELS,
             self._voice_min_f0,
@@ -683,6 +674,20 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 sanitized_input = self._tts._text_filter(sanitized_input)
             except Exception as e:  # noqa: BLE001 - never lose a turn over this
                 logger.warning("TTS text filter failed, using unfiltered text: {}", e)
+        sanitized_input = settle_final_ellipsis(sanitized_input)
+        pause_ms = TRAILING_SILENCE_MS
+        conditioner = None
+        if self._tts._phrase_streaming:
+            from src.tts_concat import GAP_MS, PCMConditioner, prosody_text
+            # Cleanup can turn a trailing comma into a period. Retain the
+            # authored clause boundary for synthesis and for its pause.
+            end = raw_input.rstrip()[-1:]
+            end = {",": "،", ";": "؛", "?": "؟"}.get(end, end)
+            if end in {"،", "؛", ":"} and sanitized_input:
+                sanitized_input = re.sub(r"[.!؟،؛:]+$", "", sanitized_input).rstrip() + end
+            sanitized_input = prosody_text(sanitized_input)
+            pause_ms = GAP_MS.get(sanitized_input[-1:], 320)
+            conditioner = PCMConditioner(SERVER_SAMPLE_RATE)
 
         # A turn that sanitizes down to nothing must end here, not at the
         # server. Live failure: the model emitted "<|channel>thought <channel|>"
@@ -704,6 +709,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 sample_rate=SERVER_SAMPLE_RATE,
                 num_channels=1,
                 mime_type="audio/pcm",
+                frame_size_ms=20,
             )
             # LiveKit treats "no frames pushed" as a hard TTS error and can
             # kill the turn — which is how a leaked call:show_meal text
@@ -713,9 +719,16 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             output_emitter.flush()
             return
 
+        # VoxCPM2 uses a parenthesized input prefix, not an arbitrary JSON
+        # sampling field. Add it AFTER all speech filters, which strip brackets
+        # and English annotations. Never synthesize style alone for empty input.
+        synthesis_input = (
+            f"({self._tts._style}){sanitized_input}"
+            if self._tts._style else sanitized_input
+        )
         payload = {
             "model": self._tts._model,
-            "input": sanitized_input,
+            "input": synthesis_input,
             "voice": "default" if self._tts._ref_audio else self._tts._voice,
             "language": "Arabic",
             "response_format": "pcm",
@@ -729,12 +742,17 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         if self._tts._seed is not None:
             payload["seed"] = self._tts._seed
 
+        if self._tts._style:
+            logger.info("VoxCPM TTS style enabled request_id={} style={!r}", request_id, self._tts._style)
+
         # Buffer to keep s16 samples 2-byte aligned across chunk boundaries.
         remainder = b""
         analysis_audio = bytearray()
         analysis_limit = int(F0_ANALYSIS_SECONDS * SERVER_SAMPLE_RATE) * 2
         started_at = time.perf_counter()
         first_audio_at: float | None = None
+        previous_audio_at: float | None = None
+        max_audio_gap = 0.0
         chunks = 0
         bytes_received = 0
         bytes_pushed = 0
@@ -748,7 +766,14 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             if speed != 1.0
             else None
         )
-        holdback = _TailHoldback(SERVER_SAMPLE_RATE)
+        # Begin with 240 ms of playable audio instead of a few milliseconds.
+        # This absorbs early network bursts; EOF still flushes short replies.
+        # Keep enough tail to count existing punctuation pauses once.
+        # Onset fading no longer buffers audio or estimates per-phrase gain.
+        holdback = _TailHoldback(
+            SERVER_SAMPLE_RATE, hold_ms=max(HOLD_TAIL_MS, pause_ms),
+            startup_ms=240,
+        )
 
         expected_voice = self._tts._expected_voice
         if (
@@ -799,13 +824,18 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             sample_rate=SERVER_SAMPLE_RATE,
             num_channels=1,
             mime_type="audio/pcm",
+            frame_size_ms=20,
         )
+
+        request_headers = {"X-Request-ID": request_id}
+        if self._tts._api_key:
+            request_headers["Authorization"] = f"Bearer {self._tts._api_key}"
 
         try:
             async with self._tts._ensure_session().post(
                 endpoint,
                 json=payload,
-                headers={"X-Request-ID": request_id},
+                headers=request_headers,
                 timeout=aiohttp.ClientTimeout(
                     total=None,
                     sock_connect=self._conn_options.timeout,
@@ -840,6 +870,10 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 async for chunk in resp.content.iter_chunked(8192):
                     if not chunk:
                         continue
+                    received_at = time.perf_counter()
+                    if previous_audio_at is not None:
+                        max_audio_gap = max(max_audio_gap, received_at - previous_audio_at)
+                    previous_audio_at = received_at
                     if first_audio_at is None:
                         first_audio_at = time.perf_counter()
                         logger.info(
@@ -873,31 +907,31 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                         if stretcher is not None
                         else aligned_chunk
                     )
-                    emitted = holdback.push(stretched)
+                    emitted = holdback.push(conditioner.push(stretched) if conditioner else stretched)
                     if emitted:
                         bytes_pushed += len(emitted)
-                        output_emitter.push(emitted)
+                        output_emitter.push(apply_output_gain(emitted, self._tts._gain_db))
 
             if stretcher is not None:
                 leftover = stretcher.flush()
                 if leftover:
-                    extra = holdback.push(leftover)
+                    extra = holdback.push(conditioner.push(leftover) if conditioner else leftover)
                     if extra:
                         bytes_pushed += len(extra)
-                        output_emitter.push(extra)
+                        output_emitter.push(apply_output_gain(extra, self._tts._gain_db))
 
-            tail = holdback.flush(SERVER_SAMPLE_RATE)
+            if conditioner:
+                extra = holdback.push(conditioner.flush())
+                if extra:
+                    bytes_pushed += len(extra)
+                    output_emitter.push(apply_output_gain(extra, self._tts._gain_db))
+            tail = holdback.flush(SERVER_SAMPLE_RATE, pause_ms)
             if tail:
                 bytes_pushed += len(tail)
-                output_emitter.push(tail)
-
-            # Short closed silence after the fade, not a long hang that sounds
-            # like another inhale.
-            trailing = b"\x00\x00" * int(SERVER_SAMPLE_RATE * TRAILING_SILENCE_MS / 1000)
-            bytes_pushed += len(trailing)
-            output_emitter.push(trailing)
+                output_emitter.push(apply_output_gain(tail, self._tts._gain_db))
 
             output_emitter.flush()
+            logger.info("VoxCPM TTS audio arrival request_id={} max_gap_ms={:.1f} phrase_streaming={} pause_ms={}", request_id, max_audio_gap * 1000, self._tts._phrase_streaming, pause_ms)
             elapsed = time.perf_counter() - started_at
             f0, rms, peak = _median_f0(bytes(analysis_audio))
             audio_seconds = bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2)

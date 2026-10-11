@@ -43,7 +43,7 @@ _META_KEYS = {"done", "skipped", "schemaVersion", "schema_version", "version"}
 _HEADER = "# تفضيلات المستخدم"
 
 _HEADER_NOTE = (
-    "من التطبيق، مو من صوته. استخدميها بصمت. لا تقرينها. كلامه الحين يغلبها."
+    "من الشاشة قبل المكالمة، مو من صوته. استخدميها بصمت. لا تقرينها. كلامه الحين يغلبها."
 )
 
 _NO_PREFS = "ما عبى تفضيلات. تعامل كمستخدم جديد."
@@ -52,7 +52,7 @@ _NO_PREFS = "ما عبى تفضيلات. تعامل كمستخدم جديد."
 # crowding the add-to-cart pairing line out of Gemma's working context.
 _CALORIES_GUIDANCE = {
     "care": (
-        "يتابع السعرات. اذكري calories_say_ar و protein_say_ar مع الترشيح. "
+        "يتابع السعرات. اذكري calories_say_ar ضمن شرح الصنف المفتوح، مو بدل الشرح. "
         "بين خيارين متقاربين رجّحي الأعلى بروتين من رقم الأداة. "
         "طلب بروتين عالي: search_meals بـ min_protein=30 و sort=protein_desc. "
         "مجموع السلة من get_cart فقط."

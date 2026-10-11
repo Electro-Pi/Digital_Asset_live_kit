@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from livekit import rtc
 from livekit.rtc import RpcError
 from loguru import logger
+
+from src import turn_ledger
+from src.config import CONFIG
 
 # Method names are a contract with the frontend. Namespaced so they cannot
 # collide with anything else the app registers on the same participant.
@@ -50,9 +53,9 @@ PROTOCOL_VERSION = 1
 # Short on purpose. This blocks a live conversation: سلمى is mid-sentence while
 # it runs, so a slow answer is worse than a failed one. One quick retry after a
 # timeout (browsers throttle hidden tabs; the second attempt usually lands)
-# keeps the worst case at ~7s instead of a single longer wait.
-DEFAULT_RPC_TIMEOUT = 4.0
-RETRY_RPC_TIMEOUT = 3.0
+# keeps the worst case near seven seconds. Both live in src/config.py.
+DEFAULT_RPC_TIMEOUT = CONFIG.ui.rpc_timeout
+RETRY_RPC_TIMEOUT = CONFIG.ui.rpc_retry_timeout
 
 # RPC error codes that describe a transient transport problem rather than the
 # frontend refusing the call. Worth one retry against a re-resolved target.
@@ -64,6 +67,26 @@ _TRANSIENT_RPC_CODES = frozenset(
         RpcError.ErrorCode.RECIPIENT_NOT_FOUND,
     }
 )
+
+# What each mutating method does to the customer, and the payload field naming
+# what it did it to. This is the whole reason a guard never has to know which
+# tool ran: every call lands here, however deeply it was nested, so
+# ``confirm`` → ``resolve_extras`` → ``add_to_cart`` records one cart_add.
+# Read-only methods (getCart, getSaved, getUiState) change nothing and are
+# deliberately absent — they must not become "the last effect" that
+# :meth:`src.turn_ledger.TurnLedger.promote_last_failure` would promote.
+_EFFECTS: dict[str, tuple[str, str]] = {
+    METHOD_NAVIGATE: (turn_ledger.NAVIGATE, "path"),
+    METHOD_SHOW_MEAL: (turn_ledger.MEAL_PAGE, "mealId"),
+    METHOD_ADD_TO_CART: (turn_ledger.CART_ADD, "mealId"),
+    METHOD_SET_CART_QUANTITY: (turn_ledger.CART_QUANTITY, "mealId"),
+    METHOD_SET_MEAL_OPTIONS: (turn_ledger.MEAL_OPTIONS, "mealId"),
+    METHOD_SET_SAVED: (turn_ledger.SAVED, "mealId"),
+    METHOD_SET_UI_FILTER: (turn_ledger.UI_FILTER, ""),
+    METHOD_FILL_CHECKOUT: (turn_ledger.CHECKOUT_FILL, ""),
+    METHOD_COMPLETE_ORDER: (turn_ledger.ORDER_COMPLETE, ""),
+    METHOD_CLEAR_SAVED: (turn_ledger.SAVED, ""),
+}
 
 
 @dataclass
@@ -82,7 +105,10 @@ class UIResult:
         """
         result: dict[str, Any] = {"ok": self.ok}
         if self.ok:
-            result["say_to_user_ar"] = on_success
+            # Empty success text is not a script. Facts on the tool result
+            # are what she speaks from (meal includes, price, addons, …).
+            if on_success:
+                result["say_to_user_ar"] = on_success
             if self.data:
                 result.update(self.data)
         else:
@@ -100,10 +126,14 @@ class UIBridge:
         identity: Optional[str],
         *,
         timeout: float = DEFAULT_RPC_TIMEOUT,
+        on_effect: Optional[Callable[..., None]] = None,
     ) -> None:
         self._room = room
         self._identity = identity
         self._timeout = timeout
+        # Set by the agent to its TurnLedger.record. Every mutation reports
+        # itself here, so no guard has to infer one from the transcript.
+        self.on_effect = on_effect
         # Do NOT permanently latch UNSUPPORTED_METHOD. A production frontend can
         # be rebuilt mid-day while the voice session stays up; latching made
         # getUiState/fillCheckout dead for the whole call after one miss.
@@ -151,6 +181,29 @@ class UIBridge:
         return {}
 
     async def call(self, method: str, payload: dict[str, Any]) -> UIResult:
+        """Perform one UI call and record what it did to the customer.
+
+        The recording lives here, wrapping every exit path of
+        :meth:`_invoke`, because this is the only place a browser mutation can
+        pass through. Recording in the tools instead would miss the seven
+        places a tool calls another tool internally, which is exactly how the
+        2026-09-21 silent add slipped past the speech guard.
+        """
+        outcome = await self._invoke(method, payload)
+        effect = _EFFECTS.get(method)
+        if effect is not None and self.on_effect is not None:
+            kind, target_key = effect
+            try:
+                self.on_effect(
+                    kind,
+                    target=str(payload.get(target_key) or "") if target_key else "",
+                    ok=outcome.ok,
+                )
+            except Exception as e:  # noqa: BLE001 - bookkeeping must not end a call
+                logger.exception("Effect recording failed method={} error={}", method, e)
+        return outcome
+
+    async def _invoke(self, method: str, payload: dict[str, Any]) -> UIResult:
         identity = self._resolve_identity()
         if not identity or self._room is None:
             logger.warning(
@@ -376,14 +429,19 @@ class UIBridge:
         self,
         *,
         name: str,
-        phone: str,
-        address: str,
+        phone: str = "",
+        address: str = "",
+        idempotency_key: str = "",
     ) -> UIResult:
         """Place the order from the live cart and open the success page."""
-        return await self.call(
-            METHOD_COMPLETE_ORDER,
-            {"name": name, "phone": phone, "address": address},
-        )
+        payload: dict[str, Any] = {
+            "name": name,
+            "phone": phone,
+            "address": address,
+        }
+        if idempotency_key:
+            payload["idempotencyKey"] = idempotency_key
+        return await self.call(METHOD_COMPLETE_ORDER, payload)
 
 
 def _parse_response(method: str, raw: str) -> dict[str, Any]:

@@ -1,0 +1,48 @@
+{
+  "gateway": "https://coda.eracoda.ai/api/tts",
+  "auth": {
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "env": "CODA_API_KEY"
+  },
+  "llm": {
+    "base_url": "https://coda.eracoda.ai/api/tts/v1",
+    "chat_completions": "https://coda.eracoda.ai/api/tts/v1/chat/completions",
+    "model": "Coda-V2",
+    "temperature": 0.6,
+    "max_tokens": 400
+  },
+  "tts": {
+    "base_url": "https://coda.eracoda.ai/api/tts",
+    "speech": "https://coda.eracoda.ai/api/tts/v1/audio/speech",
+    "voices": "https://coda.eracoda.ai/api/tts/v1/audio/voices",
+    "models": "https://coda.eracoda.ai/api/tts/v1/models",
+    "model": "Coda-V2",
+    "voice": "nouf",
+    "language": "Arabic",
+    "response_format": "pcm",
+    "stream": true,
+    "stream_format": "audio",
+    "seed": 1234,
+    "audio": {
+      "sample_rate": 48000,
+      "channels": 1,
+      "sample_width": 2,
+      "encoding": "s16le",
+      "container": "raw-pcm"
+    }
+  },
+  "stt": {
+    "base_url": "https://coda.eracoda.ai/api/tts",
+    "transcriptions": "https://coda.eracoda.ai/api/tts/v1/audio/transcriptions",
+    "model": "Coda-V2",
+    "language": "ar",
+    "response_format": "json",
+    "audio": {
+      "sample_rate": 16000,
+      "channels": 1,
+      "sample_width": 2,
+      "container": "wav"
+    }
+  }
+}

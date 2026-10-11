@@ -206,3 +206,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# dspy/GEPA optimiser venv (scripts/optimize_sales_prompt.py)
+.venv-optim/

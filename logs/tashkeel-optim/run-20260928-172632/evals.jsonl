@@ -1,0 +1,34 @@
+{"t": 16.5, "guide_hash": 873755654, "scores": {"recommend_with_taste": 0.9746, "answers_all_at_once": 0.9743, "you_choose": 0.9067, "meal_deal_accept": 0.9809, "in_a_hurry": 0.8535, "think_about_it": 0.9953, "healthy_work_lunch": 1.0, "two_noes_stop": 0.9945}}
+{"t": 9.0, "guide_hash": 873755654, "scores": {"is_it_good": 0.9872, "pair_after_add": 0.9849, "discover_then_recommend": 0.9951, "group_dinner": 0.9783}}
+{"t": 8.3, "guide_hash": 242921607, "scores": {"is_it_good": 0.9958, "pair_after_add": 0.9858, "discover_then_recommend": 0.9, "group_dinner": 0.8357}}
+{"t": 9.1, "guide_hash": 873755654, "scores": {"price_objection": 0.9257, "meal_deal_pitch": 0.9978, "hungry_open": 0.96, "complaint": 1.0}}
+{"t": 7.6, "guide_hash": 3361988787, "scores": {"price_objection": 0.9333, "meal_deal_pitch": 0.9857, "hungry_open": 1.0, "complaint": 0.9654}}
+{"t": 30.9, "guide_hash": 3361988787, "scores": {"recommend_with_taste": 0.9806, "answers_all_at_once": 0.9636, "you_choose": 0.9921, "meal_deal_accept": 1.0, "in_a_hurry": 0.953, "think_about_it": 0.9948, "healthy_work_lunch": 0.9852, "two_noes_stop": 0.9711}}
+{"t": 7.9, "guide_hash": 873755654, "scores": {"complaint": 0.9692, "is_it_good": 0.9905, "hungry_open": 1.0, "pair_after_add": 0.9935}}
+{"t": 8.3, "guide_hash": 2836292932, "scores": {"complaint": 1.0, "is_it_good": 0.9926, "hungry_open": 1.0, "pair_after_add": 0.9919}}
+{"t": 17.4, "guide_hash": 2836292932, "scores": {"recommend_with_taste": 0.9143, "answers_all_at_once": 0.9775, "you_choose": 0.9275, "meal_deal_accept": 0.9956, "in_a_hurry": 0.8369, "think_about_it": 0.9937, "healthy_work_lunch": 0.9628, "two_noes_stop": 0.9832}}
+{"t": 12.1, "guide_hash": 3361988787, "scores": {"meal_deal_pitch": 0.9879, "discover_then_recommend": 0.9989, "price_objection": 0.9292, "group_dinner": 0.9706}}
+{"t": 12.0, "guide_hash": 2856654261, "scores": {"meal_deal_pitch": 0.993, "discover_then_recommend": 0.9878, "price_objection": 0.8134, "group_dinner": 0.9841}}
+{"t": 9.6, "guide_hash": 2836292932, "scores": {"is_it_good": 0.9934, "complaint": 0.9944, "price_objection": 0.837, "group_dinner": 0.9442}}
+{"t": 9.5, "guide_hash": 4218245304, "scores": {"is_it_good": 0.9745, "complaint": 0.96, "price_objection": 0.9057, "group_dinner": 0.8905}}
+{"t": 10.2, "guide_hash": 873755654, "scores": {"meal_deal_pitch": 0.9909, "hungry_open": 1.0, "pair_after_add": 0.9872, "discover_then_recommend": 0.9898}}
+{"t": 10.4, "guide_hash": 886233452, "scores": {"meal_deal_pitch": 0.9883, "hungry_open": 1.0, "pair_after_add": 0.9952, "discover_then_recommend": 0.9854}}
+{"t": 21.5, "guide_hash": 886233452, "scores": {"recommend_with_taste": 0.9827, "answers_all_at_once": 0.9933, "you_choose": 0.8606, "meal_deal_accept": 0.9909, "in_a_hurry": 0.7484, "think_about_it": 0.9765, "healthy_work_lunch": 0.9846, "two_noes_stop": 0.9991}}
+{"t": 10.7, "guide_hash": 873755654, "scores": {"hungry_open": 1.0, "meal_deal_pitch": 0.9952, "complaint": 1.0, "group_dinner": 0.9826}}
+{"t": 6.8, "guide_hash": 2499786044, "scores": {"hungry_open": 1.0, "meal_deal_pitch": 0.9937, "complaint": 0.9692, "group_dinner": 0.8111}}
+{"t": 10.0, "guide_hash": 886233452, "scores": {"discover_then_recommend": 0.98, "is_it_good": 0.9936, "price_objection": 0.9317, "pair_after_add": 0.96}}
+{"t": 10.9, "guide_hash": 1002532321, "scores": {"discover_then_recommend": 0.9521, "is_it_good": 0.9976, "price_objection": 0.9167, "pair_after_add": 0.9948}}
+{"t": 10.2, "guide_hash": 886233452, "scores": {"meal_deal_pitch": 0.9915, "price_objection": 0.9033, "is_it_good": 0.9914, "complaint": 0.9292}}
+{"t": 14.9, "guide_hash": 1575296275, "scores": {"meal_deal_pitch": 0.9901, "price_objection": 0.85, "is_it_good": 1.0, "complaint": 0.9765}}
+{"t": 11.3, "guide_hash": 1575296275, "scores": {"recommend_with_taste": 0.9043, "answers_all_at_once": 0.98, "you_choose": 0.7908, "meal_deal_accept": 0.9823, "in_a_hurry": 0.9807, "think_about_it": 0.9939, "healthy_work_lunch": 0.977, "two_noes_stop": 0.9662}}
+{"t": 9.3, "guide_hash": 1575296275, "scores": {"hungry_open": 1.0, "group_dinner": 0.9327, "pair_after_add": 0.9874, "discover_then_recommend": 0.9}}
+{"t": 18.1, "guide_hash": 2076112819, "scores": {"hungry_open": 1.0, "group_dinner": 0.9838, "pair_after_add": 0.7959, "discover_then_recommend": 0.9}}
+{"t": 4.9, "guide_hash": 886233452, "scores": {"hungry_open": 1.0, "is_it_good": 0.9943, "meal_deal_pitch": 0.9927, "complaint": 0.9692}}
+{"t": 6.7, "guide_hash": 3025344698, "scores": {"hungry_open": 1.0, "is_it_good": 0.9961, "meal_deal_pitch": 0.9741, "complaint": 0.9683}}
+{"t": 9.4, "guide_hash": 886233452, "scores": {"pair_after_add": 0.9903, "discover_then_recommend": 0.8989, "price_objection": 0.9101, "group_dinner": 0.9674}}
+{"t": 11.2, "guide_hash": 1291631709, "scores": {"pair_after_add": 0.9905, "discover_then_recommend": 0.9914, "price_objection": 0.8385, "group_dinner": 0.917}}
+{"t": 7.8, "guide_hash": 886233452, "scores": {"complaint": 0.9735, "discover_then_recommend": 0.8989, "is_it_good": 0.9937, "meal_deal_pitch": 0.9937}}
+{"t": 6.6, "guide_hash": 2347217996, "scores": {"complaint": 0.9469, "discover_then_recommend": 0.8898, "is_it_good": 0.9939, "meal_deal_pitch": 0.998}}
+{"t": 9.4, "guide_hash": 886233452, "scores": {"hungry_open": 1.0, "group_dinner": 0.9797, "price_objection": 0.8379, "pair_after_add": 0.9935}}
+{"t": 11.3, "guide_hash": 741308678, "scores": {"hungry_open": 0.9964, "group_dinner": 0.9868, "price_objection": 0.9333, "pair_after_add": 0.985}}
+{"t": 18.1, "guide_hash": 741308678, "scores": {"recommend_with_taste": 0.9888, "answers_all_at_once": 0.9928, "you_choose": 0.9333, "meal_deal_accept": 0.9822, "in_a_hurry": 0.9214, "think_about_it": 0.9941, "healthy_work_lunch": 0.985, "two_noes_stop": 0.9953}}
