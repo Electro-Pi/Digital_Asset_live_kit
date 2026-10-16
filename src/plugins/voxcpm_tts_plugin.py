@@ -56,7 +56,7 @@ from src.config import CONFIG
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
-SERVER_SAMPLE_RATE = 48000  # raw pcm output rate of the server
+SERVER_SAMPLE_RATE = 48000  # VoxCPM2's raw pcm rate; Pocket TTS (cpu mode) streams 24 kHz
 SERVER_CHANNELS = 1  # VoxCPM2 is mono on both the stream and wav paths
 # Expected pitch band for the production `nouf` voice — logged, not gated.
 #
@@ -151,6 +151,28 @@ def normalize_arabic(text: str, *, strip_tashkeel: bool | None = None) -> str:
     return pattern.sub("", unicodedata.normalize("NFC", text))
 
 
+# The Saudi Pocket TTS (cpu mode) was trained on one tashkeel convention, from
+# pocket_tts/arabic_text.normalize_tashkeel: no mark on the last letter of a
+# word (a final shadda stays) and no sukun anywhere. Anything else is text the
+# model never saw. The prompt asks for the same final-letter rule, but the LLM
+# and the spoken lexicon do not always follow it, so it is enforced here.
+_POCKET_VOWELS = "ً-ِ"  # tanween, fatha, damma, kasra
+_POCKET_LETTERS = "ء-غف-يٱ-ۓ"
+_POCKET_FINAL_MARKS = re.compile(
+    f"[{_POCKET_VOWELS}]+(?=ّ?(?![{_POCKET_LETTERS}ً-ْٰ]))"
+)
+# src/spoken_lexicon writes every final تاء مربوطة as a pausal «هْ» for VoxCPM,
+# and it is the only final letter it marks, so word-final «هْ» is always a ة.
+# Pocket TTS was trained on the plain spelling.
+_PAUSAL_TAA = re.compile(f"هْ(?![{_POCKET_LETTERS}ً-ْٰ])")
+
+
+def pocket_tashkeel(text: str) -> str:
+    """Write ة for the pausal «هْ», then drop sukun and each word's final marks."""
+    text = _PAUSAL_TAA.sub("ة", unicodedata.normalize("NFC", text))
+    return _POCKET_FINAL_MARKS.sub("", text.replace("ْ", ""))
+
+
 # Chat-template control tokens that leak out of the LLM into the reply text.
 # Observed live: a turn was synthesized as "...طَعْمُه وَاللَّه. <|channel>thought
 # <channel|>", i.e. the voice read the token out loud. They are never speech, so
@@ -225,20 +247,22 @@ def _interesting_headers(headers: aiohttp.typedefs.LooseHeaders | None) -> dict[
     }
 
 
-def _median_f0(audio_bytes: bytes) -> tuple[float | None, float | None, int | None]:
+def _median_f0(
+    audio_bytes: bytes, sample_rate: int = SERVER_SAMPLE_RATE
+) -> tuple[float | None, float | None, int | None]:
     """Return median F0, RMS, and peak for diagnostic logging."""
     if np is None or not audio_bytes:
         return None, None, None
 
     aligned = len(audio_bytes) // 2 * 2
-    if aligned < int(0.08 * SERVER_SAMPLE_RATE) * 2:
+    if aligned < int(0.08 * sample_rate) * 2:
         return None, None, None
 
     samples = np.frombuffer(audio_bytes[:aligned], dtype=np.int16)
     rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
     peak = int(np.max(np.abs(samples))) if samples.size else 0
 
-    win = int(0.04 * SERVER_SAMPLE_RATE)
+    win = int(0.04 * sample_rate)
     if len(samples) < 2 * win:
         return None, rms, peak
 
@@ -253,10 +277,10 @@ def _median_f0(audio_bytes: bytes) -> tuple[float | None, float | None, int | No
             continue
         seg -= seg.mean()
         ac = np.correlate(seg, seg, "full")[len(seg) - 1 :]
-        lo, hi = int(SERVER_SAMPLE_RATE / 500), int(SERVER_SAMPLE_RATE / 60)
+        lo, hi = int(sample_rate / 500), int(sample_rate / 60)
         lag = lo + int(np.argmax(ac[lo:hi]))
         if ac[lag] > 0.4 * ac[0]:
-            f0s.append(SERVER_SAMPLE_RATE / lag)
+            f0s.append(sample_rate / lag)
 
     if len(f0s) < 4:
         return None, rms, peak
@@ -503,6 +527,8 @@ class VoxCPMTTSPlugin(tts.TTS):
         phrase_streaming: bool = False,
         speed: float = 1.0,
         gain_db: float = 0.0,
+        sample_rate: int = SERVER_SAMPLE_RATE,
+        pocket_tashkeel: bool = False,
         expected_voice: str = "nouf",
         voice_min_f0: float = VOICE_MIN_F0,
         voice_max_f0: float = VOICE_MAX_F0,
@@ -543,14 +569,21 @@ class VoxCPMTTSPlugin(tts.TTS):
                 changes the speaker. 1.0 disables the stretch entirely.
             gain_db: local output volume boost, 0-12 dB, with soft peak limiting.
                 Does not change pitch, speed, or add a buffering delay.
+            sample_rate: raw pcm rate the server streams (VoxCPM2 48000,
+                Pocket TTS 24000). A wrong value plays the voice at the wrong
+                pitch and speed.
+            pocket_tashkeel: rewrite input to the Saudi Pocket TTS convention
+                (see pocket_tashkeel): no final-letter marks, no sukun.
             voice_min_f0 / voice_max_f0: diagnostic pitch band for this speaker
                 (female nouf ≈ 135-340 Hz, male clone ≈ 70-180 Hz).
         """
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),
-            sample_rate=SERVER_SAMPLE_RATE,
+            sample_rate=sample_rate,
             num_channels=1,
         )
+        self._sample_rate = int(sample_rate)
+        self._pocket_tashkeel = pocket_tashkeel
         self._server_url = server_url.rstrip("/")
         # The base URL is commonly copy-pasted from the model card with the /v1
         # already on it; appending the endpoint then yields /v1/v1/audio/speech.
@@ -613,7 +646,7 @@ class VoxCPMTTSPlugin(tts.TTS):
             self._seed,
             self._speed,
             self._gain_db,
-            SERVER_SAMPLE_RATE,
+            self._sample_rate,
             SERVER_CHANNELS,
             self._voice_min_f0,
             self._voice_max_f0,
@@ -667,6 +700,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = f"voxcpm-{utils.shortuuid()}"
+        sample_rate = self._tts._sample_rate
         raw_input = self.input_text
         sanitized_input = strip_control_tokens(normalize_arabic(raw_input))
         if self._tts._text_filter is not None:
@@ -674,6 +708,9 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 sanitized_input = self._tts._text_filter(sanitized_input)
             except Exception as e:  # noqa: BLE001 - never lose a turn over this
                 logger.warning("TTS text filter failed, using unfiltered text: {}", e)
+        # After the filter: the spoken lexicon substitutes its own spellings.
+        if self._tts._pocket_tashkeel:
+            sanitized_input = pocket_tashkeel(sanitized_input)
         sanitized_input = settle_final_ellipsis(sanitized_input)
         pause_ms = TRAILING_SILENCE_MS
         conditioner = None
@@ -687,7 +724,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 sanitized_input = re.sub(r"[.!؟،؛:]+$", "", sanitized_input).rstrip() + end
             sanitized_input = prosody_text(sanitized_input)
             pause_ms = GAP_MS.get(sanitized_input[-1:], 320)
-            conditioner = PCMConditioner(SERVER_SAMPLE_RATE)
+            conditioner = PCMConditioner(sample_rate)
 
         # A turn that sanitizes down to nothing must end here, not at the
         # server. Live failure: the model emitted "<|channel>thought <channel|>"
@@ -706,7 +743,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             )
             output_emitter.initialize(
                 request_id=request_id,
-                sample_rate=SERVER_SAMPLE_RATE,
+                sample_rate=sample_rate,
                 num_channels=1,
                 mime_type="audio/pcm",
                 frame_size_ms=20,
@@ -714,7 +751,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             # LiveKit treats "no frames pushed" as a hard TTS error and can
             # kill the turn — which is how a leaked call:show_meal text
             # silenced the pizza recommendation. A few ms of silence is fine.
-            silence = b"\x00\x00" * int(SERVER_SAMPLE_RATE * 0.04)
+            silence = b"\x00\x00" * int(sample_rate * 0.04)
             output_emitter.push(silence)
             output_emitter.flush()
             return
@@ -748,7 +785,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         # Buffer to keep s16 samples 2-byte aligned across chunk boundaries.
         remainder = b""
         analysis_audio = bytearray()
-        analysis_limit = int(F0_ANALYSIS_SECONDS * SERVER_SAMPLE_RATE) * 2
+        analysis_limit = int(F0_ANALYSIS_SECONDS * sample_rate) * 2
         started_at = time.perf_counter()
         first_audio_at: float | None = None
         previous_audio_at: float | None = None
@@ -762,7 +799,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
 
         speed = self._tts._speed
         stretcher = (
-            _WSOLAStretcher(sample_rate=SERVER_SAMPLE_RATE, speed=speed)
+            _WSOLAStretcher(sample_rate=sample_rate, speed=speed)
             if speed != 1.0
             else None
         )
@@ -771,7 +808,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
         # Keep enough tail to count existing punctuation pauses once.
         # Onset fading no longer buffers audio or estimates per-phrase gain.
         holdback = _TailHoldback(
-            SERVER_SAMPLE_RATE, hold_ms=max(HOLD_TAIL_MS, pause_ms),
+            sample_rate, hold_ms=max(HOLD_TAIL_MS, pause_ms),
             startup_ms=240,
         )
 
@@ -821,7 +858,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
 
         output_emitter.initialize(
             request_id=request_id,
-            sample_rate=SERVER_SAMPLE_RATE,
+            sample_rate=sample_rate,
             num_channels=1,
             mime_type="audio/pcm",
             frame_size_ms=20,
@@ -925,7 +962,7 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 if extra:
                     bytes_pushed += len(extra)
                     output_emitter.push(apply_output_gain(extra, self._tts._gain_db))
-            tail = holdback.flush(SERVER_SAMPLE_RATE, pause_ms)
+            tail = holdback.flush(sample_rate, pause_ms)
             if tail:
                 bytes_pushed += len(tail)
                 output_emitter.push(apply_output_gain(tail, self._tts._gain_db))
@@ -933,8 +970,8 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
             output_emitter.flush()
             logger.info("VoxCPM TTS audio arrival request_id={} max_gap_ms={:.1f} phrase_streaming={} pause_ms={}", request_id, max_audio_gap * 1000, self._tts._phrase_streaming, pause_ms)
             elapsed = time.perf_counter() - started_at
-            f0, rms, peak = _median_f0(bytes(analysis_audio))
-            audio_seconds = bytes_received / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2)
+            f0, rms, peak = _median_f0(bytes(analysis_audio), sample_rate)
+            audio_seconds = bytes_received / (sample_rate * SERVER_CHANNELS * 2)
             logger.info(
                 "VoxCPM TTS request complete request_id={} seed={} chunks={} bytes={} "
                 "audio_seconds={:.3f} speed={} emitted_bytes={} emitted_seconds={:.3f} "
@@ -949,13 +986,13 @@ class VoxCPMChunkedStream(tts.ChunkedStream):
                 audio_seconds,
                 speed,
                 bytes_pushed,
-                bytes_pushed / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
+                bytes_pushed / (sample_rate * SERVER_CHANNELS * 2),
                 elapsed,
                 f"{first_audio_at - started_at:.3f}s" if first_audio_at else "none",
                 max_chunk_bytes,
                 odd_boundary_events,
                 len(remainder),
-                len(analysis_audio) / (SERVER_SAMPLE_RATE * SERVER_CHANNELS * 2),
+                len(analysis_audio) / (sample_rate * SERVER_CHANNELS * 2),
                 f"{f0:.1f}" if f0 is not None else "unknown",
                 f"{rms:.1f}" if rms is not None else "unknown",
                 peak if peak is not None else "unknown",

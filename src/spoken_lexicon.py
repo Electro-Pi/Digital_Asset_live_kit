@@ -1340,8 +1340,15 @@ def sanitize_gender_for_male_customer(text: str) -> str:
     return res
 
 
-def clean_for_speech(text: str) -> str:
-    """Full TTS text pass: tashkeel rules, lexicon respell, loanword latinization, and prosody close."""
+def clean_for_speech(text: str, *, arabic_only: bool = False) -> str:
+    """Full TTS text pass: tashkeel rules, lexicon respell, loanword latinization, and prosody close.
+
+    ``arabic_only`` is for the CPU Pocket TTS, which reads Arabic script only:
+    no loanword latinization, and Latin words and digits arriving from the
+    model are put into Arabic (see ``arabize_for_speech``).
+    """
+    if arabic_only:
+        text = spell_digits(text)
     cleaned = strip_speech_artifacts(text)
     if not cleaned.strip():
         return ""
@@ -1353,6 +1360,11 @@ def clean_for_speech(text: str) -> str:
     # Strip tatweel (kashida) which breaks token matching and pronunciation
     cleaned = cleaned.replace("\u0640", "")
     cleaned = re.sub(r"\b([وبفل]?(?:ال)?)ـ\s*", r"\1 ", cleaned)
+    if arabic_only:
+        # «إدامامي (Edamame)»: keep the Arabic, drop the gloss. Done here, so
+        # the lexicon passes below vowel whatever Arabic this produces.
+        cleaned = re.sub(r"\s*\(([A-Za-z\s\-]+)\)", " ", cleaned)
+        cleaned = arabize_for_speech(cleaned)
     # Collapse 1-2 transliterated Arabic words immediately followed by parenthesized English
     # e.g. "إدامامي (Edamame)" -> "Edamame", "تِرِب (Ribeye Steak)" -> "Ribeye Steak"
     cleaned = re.sub(r"[\u0600-\u06FF\-]+\s*\(([A-Za-z\s\-]+)\)", r" \1 ", cleaned)
@@ -1372,11 +1384,105 @@ def clean_for_speech(text: str) -> str:
     spoken = sanitize_gender_for_male_customer(spoken)
     spoken = _WORD_RE.sub(lambda m: _pause_taa_marbuta(m.group(0)), spoken)
     spoken = _HYPHEN_LATIN_RE.sub(" ", spoken)
-    spoken = latinize_loanwords(spoken)
+    if not arabic_only:
+        spoken = latinize_loanwords(spoken)
     # Deduplicate repeated words (e.g. ribeye Ribeye Steak -> Ribeye Steak)
     spoken = re.sub(r"\b([A-Za-z]+)\s+\1\b", r"\1", spoken, flags=re.IGNORECASE)
     spoken = " ".join(spoken.split())
     return finalize_prosody(spoken)
+
+
+# ── Arabic-only speech (CPU Pocket TTS) ─────────────────────────────────────
+#
+# Live 2026-10-15 on the CPU voice: «بَرْجَر … جِرْل بَرْجَر» went out as
+# «burger … grill burger» (latinize_loanwords, built for VoxCPM) and the
+# Pocket model, which only reads Arabic script, produced 14.9s of garbled audio
+# for a ~6s sentence. It also cannot read digits such as «123». So in cpu mode
+# nothing Latin and no digit reaches it: the loanword tables are run backwards,
+# digits are spelled out, and any Latin word we have no Arabic for is dropped,
+# since reading it would garble the whole request.
+
+_LATIN_TOKEN_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
+# A decimal is one number («1.5» → واحد فاصلة خمسة), not two.
+_NUMBER_RE = re.compile(r"\d+(?:[.,٫]\d+)?")
+
+
+@lru_cache(maxsize=1)
+def _arabic_for_latin() -> tuple[tuple[tuple[str, ...], str], ...]:
+    """Latin word sequences → Arabic, longest first. First Arabic spelling wins."""
+    table: dict[tuple[str, ...], str] = {}
+    for mapping in (LATIN_PHRASES, LATIN_WORDS, _NAME_TTS_LATIN):
+        for arabic, latin in mapping.items():
+            table.setdefault(tuple(latin.lower().split()), arabic)
+    for latin, arabic in ROMAN_STRAYS.items():
+        table.setdefault((latin,), arabic)
+    return tuple(sorted(table.items(), key=lambda kv: len(kv[0]), reverse=True))
+
+
+def _spell_number(token: str) -> str:
+    from src.catalog import number_to_arabic_words  # catalog imports this module
+
+    whole, _, fraction = re.sub(r"[,٫]", ".", token).partition(".")
+    if not fraction:
+        # Phone numbers and other long or zero-led digit strings are read digit
+        # by digit, the way she reads a number back.
+        if len(whole) >= 5 or (len(whole) > 1 and whole.startswith("0")):
+            return digits_say_ar(whole)
+        return number_to_arabic_words(int(whole))
+    return f"{number_to_arabic_words(int(whole))} فاصلة {digits_say_ar(fraction)}"
+
+
+def spell_digits(text: str) -> str:
+    """Digits to Arabic words. Runs before sentence splitting, which cuts «4.5»."""
+    if not text:
+        return text
+    text = text.translate(_ARABIC_INDIC_DIGITS)
+    text = re.sub(r"\s*[×]\s*(?=\d)", " ", text)
+    text = re.sub(r"(\d)\s*[%٪]", r"\1 بالمية", text)
+    text = _NUMBER_RE.sub(lambda m: f" {_spell_number(m.group(0))} ", text)
+    return _tidy_spaces(text)
+
+
+def _tidy_spaces(text: str) -> str:
+    return re.sub(r"\s+([،,.؟?!؛:])", r"\1", " ".join(text.split()))
+
+
+def arabize_for_speech(text: str) -> str:
+    """Arabic script only: Latin words to their Arabic spelling, digits to words."""
+    if not text:
+        return text
+    text = spell_digits(text)
+    matches = list(_LATIN_TOKEN_RE.finditer(text))
+    if matches:
+        table = _arabic_for_latin()
+        out: list[str] = []
+        pos = 0
+        i = 0
+        while i < len(matches):
+            m = matches[i]
+            out.append(text[pos:m.start()])
+            replaced = False
+            for latin, arabic in table:
+                n = len(latin)
+                window = matches[i:i + n]
+                if len(window) < n:
+                    continue
+                # A phrase must be one run of words, not words across a clause.
+                if any(text[a.end():b.start()].strip() for a, b in zip(window, window[1:])):
+                    continue
+                words = tuple(w.group(0).lower() for w in window)
+                if words == latin or (n == 1 and words[0].endswith("s") and (words[0][:-1],) == latin):
+                    out.append(arabic)
+                    pos = window[-1].end()
+                    i += n
+                    replaced = True
+                    break
+            if not replaced:
+                pos = m.end()  # no Arabic for it: drop rather than garble
+                i += 1
+        out.append(text[pos:])
+        text = "".join(out)
+    return _tidy_spaces(text)
 
 
 # Counts written as digits inside catalog names. 75 family meals are named

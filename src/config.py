@@ -139,8 +139,19 @@ class VoiceSettings:
     user_away_timeout: float = 45 * 60
 
 
+# Which speech servers carry the call. "gpu" is the Coda gateway (VoxCPM2 TTS +
+# Cohere ASR) configured by TTS_* / STT_*. "cpu" is the self-hosted CPU pair —
+# a Saudi fine-tune of Pocket TTS and the same Cohere ASR — configured by
+# CPU_TTS_* / CPU_STT_*. Both blocks stay in .env.local, so switching back is
+# one line. Shared delivery knobs (TTS_SPEED, TTS_PHRASE_STREAMING,
+# TTS_STRIP_TASHKEEL, …) apply to whichever is selected.
+SPEECH_GPU = "gpu"
+SPEECH_CPU = "cpu"
+
+
 @dataclass(frozen=True)
 class Endpoints:
+    speech_provider: str = SPEECH_GPU
     tts_server_url: str = "http://localhost:16326"
     tts_api_key: Optional[str] = None
     tts_model: str = "VoxCPM2"
@@ -152,6 +163,12 @@ class Endpoints:
     tts_phrase_streaming: bool = True
     tts_speed: float = 1.0
     tts_gain_db: float = 4.0
+    # Raw PCM rate the TTS server streams: VoxCPM2 48 kHz, Pocket TTS 24 kHz.
+    tts_sample_rate: int = 48000
+    # Saudi Pocket TTS input convention: no final-letter marks, no sukun.
+    tts_pocket_tashkeel: bool = False
+    # Pocket TTS reads Arabic script only: no Latin loanwords, no digits.
+    tts_arabic_only: bool = False
     tts_sentence_min_len: int = 32
     # Send the TTS bare letters instead of the partial tashkeel the prompt asks for.
     tts_strip_tashkeel: bool = False
@@ -186,10 +203,67 @@ class Config:
     ui: UISettings = field(default_factory=UISettings)
 
 
+def _endpoints(env: Mapping[str, str]) -> Endpoints:
+    provider = _get(env, "SPEECH_PROVIDER", SPEECH_GPU).lower()
+    if provider not in (SPEECH_GPU, SPEECH_CPU):
+        raise ValueError(f"SPEECH_PROVIDER={provider!r} is not a speech backend; use {SPEECH_GPU!r} or {SPEECH_CPU!r}")
+    shared = dict(
+        speech_provider=provider,
+        tts_ref_audio=_optional(env, "TTS_REF_AUDIO"),
+        tts_ref_text=_optional(env, "TTS_REF_TEXT"),
+        tts_phrase_streaming=_bool(env, "TTS_PHRASE_STREAMING", True),
+        tts_speed=_float(env, "TTS_SPEED", 1.0),
+        tts_sentence_min_len=_int(env, "TTS_SENTENCE_MIN_LEN", 32),
+        tts_strip_tashkeel=_bool(env, "TTS_STRIP_TASHKEEL", False),
+    )
+    if provider == SPEECH_CPU:
+        tts_voice = _get(env, "CPU_TTS_VOICE", "ref_f")
+        return Endpoints(
+            **shared,
+            tts_server_url=_get(env, "CPU_TTS_URL", "http://localhost:8000"),
+            tts_api_key=_optional(env, "CPU_TTS_API_KEY"),
+            tts_model=_get(env, "CPU_TTS_MODEL", "saudi-pocket-tts-6l"),
+            tts_voice=tts_voice,
+            tts_expected_voice=tts_voice,
+            # VoxCPM2 delivery prompts; Pocket TTS would read them aloud.
+            tts_style=None,
+            # Measured 2026-10-15: ~5 dB quieter than VoxCPM2 nouf.
+            tts_gain_db=_float(env, "CPU_TTS_GAIN_DB", 8.0),
+            tts_sample_rate=_int(env, "CPU_TTS_SAMPLE_RATE", 24000),
+            tts_pocket_tashkeel=True,
+            tts_arabic_only=True,
+            stt_base_url=_get(env, "CPU_STT_URL", "http://localhost:8001"),
+            stt_model=_get(env, "CPU_STT_MODEL", "cohere-transcribe-arabic"),
+            stt_api_key=_optional(env, "CPU_STT_API_KEY"),
+        )
+    tts_voice = _get(env, "TTS_VOICE", Endpoints.tts_voice)
+    return Endpoints(
+        **shared,
+        tts_server_url=_get(env, "TTS_SERVER_URL", Endpoints.tts_server_url),
+        tts_api_key=_optional(env, "TTS_API_KEY"),
+        tts_model=_get(env, "TTS_MODEL", Endpoints.tts_model),
+        tts_voice=tts_voice,
+        tts_expected_voice=_get(env, "TTS_EXPECTED_VOICE", tts_voice),
+        tts_style=_optional(env, "TTS_STYLE"),
+        tts_gain_db=_float(env, "TTS_GAIN_DB", 4.0),
+        tts_sample_rate=_int(env, "TTS_SAMPLE_RATE", Endpoints.tts_sample_rate),
+        stt_base_url=_get(env, "STT_BASE_URL", Endpoints.stt_base_url),
+        stt_model=_get(env, "STT_MODEL", Endpoints.stt_model),
+        stt_api_key=_optional(env, "STT_API_KEY"),
+    )
+
+
 def load_config(env: Mapping[str, str] | None = None) -> Config:
     env = os.environ if env is None else env
     d_rules, d_voice, d_ui = BusinessRules(), VoiceSettings(), UISettings()
-    tts_voice = _get(env, "TTS_VOICE", Endpoints.tts_voice)
+    endpoints = _endpoints(env)
+    # Live 2026-10-15 on the CPU servers: v1-mini scored complete Arabic
+    # questions («أخبارك يا سلمى» 0.095) under its 0.35 threshold, so 3 of 4
+    # turns waited the full max delay. 1.5s cut ~1s from those turns.
+    if endpoints.speech_provider == SPEECH_CPU:
+        endpointing_max_delay = _float(env, "CPU_ENDPOINTING_MAX_DELAY", 1.5)
+    else:
+        endpointing_max_delay = _float(env, "ENDPOINTING_MAX_DELAY", d_voice.endpointing_max_delay)
     return Config(
         log_level=_get(env, "LOG_LEVEL", "INFO").upper(),
         agent_port=_int(env, "AGENT_PORT", 2952),
@@ -197,24 +271,7 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
         num_idle_processes=_int(env, "NUM_IDLE_PROCESSES", 3),
         catalog_path=_optional(env, "CATALOG_PATH"),
         frontend_catalog_path=_optional(env, "FRONTEND_CATALOG_PATH"),
-        endpoints=Endpoints(
-            tts_server_url=_get(env, "TTS_SERVER_URL", Endpoints.tts_server_url),
-            tts_api_key=_optional(env, "TTS_API_KEY"),
-            tts_model=_get(env, "TTS_MODEL", Endpoints.tts_model),
-            tts_voice=tts_voice,
-            tts_expected_voice=_get(env, "TTS_EXPECTED_VOICE", tts_voice),
-            tts_ref_audio=_optional(env, "TTS_REF_AUDIO"),
-            tts_ref_text=_optional(env, "TTS_REF_TEXT"),
-            tts_style=_optional(env, "TTS_STYLE"),
-            tts_phrase_streaming=_bool(env, "TTS_PHRASE_STREAMING", True),
-            tts_speed=_float(env, "TTS_SPEED", 1.0),
-            tts_gain_db=_float(env, "TTS_GAIN_DB", 4.0),
-            tts_sentence_min_len=_int(env, "TTS_SENTENCE_MIN_LEN", 32),
-            tts_strip_tashkeel=_bool(env, "TTS_STRIP_TASHKEEL", False),
-            stt_base_url=_get(env, "STT_BASE_URL", Endpoints.stt_base_url),
-            stt_model=_get(env, "STT_MODEL", Endpoints.stt_model),
-            stt_api_key=_optional(env, "STT_API_KEY"),
-        ),
+        endpoints=endpoints,
         voice=VoiceSettings(
             vad_activation_threshold=_float(env, "STT_VAD_ACTIVATION_THRESHOLD", d_voice.vad_activation_threshold),
             vad_deactivation_threshold=_float(env, "STT_VAD_DEACTIVATION_THRESHOLD", d_voice.vad_deactivation_threshold),
@@ -227,7 +284,7 @@ def load_config(env: Mapping[str, str] | None = None) -> Config:
             foreground_min_duration=_float(env, "STT_FOREGROUND_MIN_DURATION", d_voice.foreground_min_duration),
             turn_detector_version=_get(env, "TURN_DETECTOR_VERSION", d_voice.turn_detector_version),
             endpointing_min_delay=_float(env, "ENDPOINTING_MIN_DELAY", d_voice.endpointing_min_delay),
-            endpointing_max_delay=_float(env, "ENDPOINTING_MAX_DELAY", d_voice.endpointing_max_delay),
+            endpointing_max_delay=endpointing_max_delay,
             preemptive_generation=_bool(env, "PREEMPTIVE_GENERATION", d_voice.preemptive_generation),
             max_tool_steps=_int(env, "MAX_TOOL_STEPS", d_voice.max_tool_steps),
             user_away_timeout=_float(env, "USER_AWAY_TIMEOUT", d_voice.user_away_timeout),

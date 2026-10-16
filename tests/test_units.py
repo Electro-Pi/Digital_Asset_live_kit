@@ -194,6 +194,65 @@ def test_config_defaults_and_overrides():
     assert custom.endpoints.tts_expected_voice == "hoda"  # follows TTS_VOICE unless set
 
 
+def test_speech_provider_switch():
+    env = {
+        "TTS_SERVER_URL": "https://gpu", "TTS_VOICE": "nouf", "TTS_STYLE": "calm", "TTS_SPEED": "0.9",
+        "STT_BASE_URL": "https://gpu-stt",
+        "CPU_TTS_URL": "http://cpu:8000/v1", "CPU_TTS_API_KEY": "k", "CPU_STT_URL": "http://cpu:8001/v1",
+    }
+    gpu = load_config(env).endpoints
+    assert gpu.speech_provider == "gpu" and gpu.tts_server_url == "https://gpu"
+    assert gpu.tts_sample_rate == 48000 and gpu.tts_voice == "nouf"
+    cpu = load_config({**env, "SPEECH_PROVIDER": "CPU"}).endpoints
+    assert cpu.speech_provider == "cpu" and cpu.tts_server_url == "http://cpu:8000/v1"
+    assert cpu.tts_model == "saudi-pocket-tts-6l" and cpu.tts_voice == cpu.tts_expected_voice == "ref_f"
+    assert cpu.tts_sample_rate == 24000 and cpu.tts_style is None
+    assert cpu.stt_base_url == "http://cpu:8001/v1" and cpu.stt_model == "cohere-transcribe-arabic"
+    assert cpu.tts_speed == 0.9  # delivery knobs are shared
+    assert cpu.tts_pocket_tashkeel and not gpu.tts_pocket_tashkeel
+    # The shorter end-of-turn wait applies to cpu mode only.
+    env = {**env, "ENDPOINTING_MAX_DELAY": "3.0"}
+    assert load_config(env).voice.endpointing_max_delay == 3.0
+    assert load_config({**env, "SPEECH_PROVIDER": "cpu"}).voice.endpointing_max_delay == 1.5
+    assert load_config({
+        **env, "SPEECH_PROVIDER": "cpu", "CPU_ENDPOINTING_MAX_DELAY": "1.2",
+    }).voice.endpointing_max_delay == 1.2
+    with pytest.raises(ValueError):
+        load_config({"SPEECH_PROVIDER": "tpu"})
+
+
+def test_arabic_only_speech_has_no_latin_or_digits():
+    import re
+    from src.spoken_lexicon import clean_for_speech
+
+    # Live 2026-10-15: the cpu voice got «burger … grill burger» and garbled.
+    burger = "شُوف هَذِي بَرْجَر نَبَاتِي مِن جِرْل بَرْجَر بِثَلَاثِين رِيَال."
+    assert "burger" in clean_for_speech(burger)  # gpu mode unchanged
+    for text in (
+        burger,
+        "السعر 123 ريال والخصم 15% والتقييم 4.5.",
+        "عندنا Cheesecake و burgers و calamari، وفيه OK زيادة.",
+        "إدامامي (Edamame) بـ ٢٥ ريال.",
+    ):
+        spoken = clean_for_speech(text, arabic_only=True)
+        assert not re.search(r"[A-Za-z0-9٠-٩]", spoken), spoken
+    spoken = clean_for_speech("السعر 123 ريال والتقييم 4.5.", arabic_only=True)
+    assert "فاصل" in spoken and "عِشرِين" in spoken.replace("ْ", "")
+    assert "بَرْجَر" in clean_for_speech(burger, arabic_only=True)
+    assert load_config({"SPEECH_PROVIDER": "cpu"}).endpoints.tts_arabic_only
+    assert not load_config({}).endpoints.tts_arabic_only
+
+
+def test_pocket_tashkeel_drops_final_marks_and_sukun():
+    from src.plugins.voxcpm_tts_plugin import pocket_tashkeel
+
+    assert pocket_tashkeel("رِيَالُ كَبْسَةٍ أَبْشِرْ") == "رِيَال كَبسَة أَبشِر"
+    assert pocket_tashkeel("حَقٌّ، مَرَّةً.") == "حَقّ، مَرَّة."  # a final shadda stays
+    assert pocket_tashkeel("شُكْرًا") == "شُكرًا"  # tanween before a final alif is not on the last letter
+    # The lexicon's pausal «هْ» is a ة; a bare final ه is a root letter.
+    assert pocket_tashkeel("لُقْمَهْ اللَّه فِيه") == "لُقمَة اللَّه فِيه"
+
+
 def test_config_is_the_only_env_reader():
     offenders = []
     for path in list((ROOT / "src").rglob("*.py")) + [ROOT / "agent.py"]:

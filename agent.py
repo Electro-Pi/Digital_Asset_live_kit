@@ -19,6 +19,7 @@ one call, starts the session and logs what the session reports.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import sys
 from datetime import datetime
@@ -211,8 +212,8 @@ async def my_agent(ctx: agents.JobContext) -> None:
     e = CONFIG.endpoints
     _log_turn_decisions()
     logger.info(
-        "Call starting room={} llm={} model={} stt={} tts={} turn_detector={}",
-        getattr(ctx.room, "name", None), LLM_BACKEND.provider, LLM_BACKEND.model, e.stt_model, e.tts_model,
+        "Call starting room={} llm={} model={} speech={} stt={} tts={} turn_detector={}",
+        getattr(ctx.room, "name", None), LLM_BACKEND.provider, LLM_BACKEND.model, e.speech_provider, e.stt_model, e.tts_model,
         CONFIG.voice.turn_detector_version,
     )
     participant = None
@@ -239,10 +240,12 @@ async def my_agent(ctx: agents.JobContext) -> None:
         phrase_streaming=e.tts_phrase_streaming,
         speed=e.tts_speed,
         gain_db=e.tts_gain_db,
+        sample_rate=e.tts_sample_rate,
+        pocket_tashkeel=e.tts_pocket_tashkeel,
         expected_voice=profile.expected_voice,
         voice_min_f0=profile.voice_min_f0,
         voice_max_f0=profile.voice_max_f0,
-        text_filter=catalog.clean_for_speech,
+        text_filter=functools.partial(catalog.clean_for_speech, arabic_only=e.tts_arabic_only),
     )
     vad = ctx.proc.userdata.get("vad")
     if vad is None:  # a process started without prewarm (tests, console)
